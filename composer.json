@@ -1,0 +1,49 @@
+{
+    "name": "mfonte/arkhive",
+    "description": "Arkhive is a disaster recovery and backup tool built with Laravel Zero. Designed to streamline and encrypt backups, Arkhive ensures that your critical data is safely vaulted and easily recoverable.",
+    "keywords": [
+        "backup",
+        "encryption",
+        "disaster recovery",
+        "laravel zero"
+    ],
+    "homepage": "https://github.com/mauriziofonte/arkhive",
+    "type": "library",
+    "license": "MIT",
+    "support": {
+        "issues": "https://github.com/mauriziofonte/arkhive/issues",
+        "source": "https://github.com/mauriziofonte/arkhive"
+    },
+    "authors": [
+        {
+            "name": "Maurizio Fonte",
+            "email": "fonte.maurizio@gmail.com"
+        }
+    ],
+    "require": {
+        "php": "^7.3|^8.0"
+    },
+    "require-dev": {
+        "laravel-zero/framework": "^8.8",
+        "symfony/mailer": "^5.4",
+        "vlucas/phpdotenv": "^5.6"
+    },
+    "autoload": {
+        "psr-4": {
+            "Mfonte\\Arkhive\\": "app/"
+        },
+        "files": [
+            "app/helpers.php"
+        ]
+    },
+    "config": {
+        "preferred-install": "dist",
+        "sort-packages": true,
+        "optimize-autoloader": true
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true,
+    "bin": [
+        "builds/arkhive"
+    ]
+}
