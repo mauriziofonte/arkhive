@@ -27,10 +27,10 @@ The easiest way to get started with **Arkhive** is to download the PHAR build:
 
 ```bash
 # Download using curl
-curl -OL https://github.com/mauriziofonte/arkhive/raw/main/builds/arkhive
+curl -OL https://github.com/mauriziofonte/arkhive/raw/refs/heads/main/builds/arkhive.phar
 
 # Or download using wget
-wget https://github.com/mauriziofonte/arkhive/raw/main/builds/arkhive
+wget https://github.com/mauriziofonte/arkhive/raw/refs/heads/main/builds/arkhive.phar
 
 # Then move the cli tool to /usr/local/bin
 sudo mv arkhive /usr/local/bin/arkhive && sudo chmod +x /usr/local/bin/arkhive
@@ -107,7 +107,7 @@ You can also clone the **Arkhive** source and build the PHAR locally:
 ```bash
 git clone https://github.com/mauriziofonte/arkhive
 cd arkhive
-php arkhive app:build arkhive
+php arkhive app:build arkhive.phar
 ```
 
 The build process uses [humbug/box](https://github.com/box-project/box) under the hood (see [Laravel Zero Docs](https://laravel-zero.com/docs/build-a-standalone-application) for more details).
@@ -116,13 +116,18 @@ The build process uses [humbug/box](https://github.com/box-project/box) under th
 
 ## 🔧 Configuration
 
-Arkhive uses a `.env-style` config file. By default, it will look for:
+Arkhive uses a `.env-style` config file. By default, it will look for a valid config in the following locations (in order):
 
 - `./.arkhive-config`
 - `./.config/arkhive-config`
+- `./.config/arkhive/config`
 - `~/.arkhive-config`
 - `~/.config/arkhive-config`
+- `~/.config/arkhive/config`
 - `/etc/arkhive-config`
+- `/etc/arkhive/config`
+
+> Please note that **./** refers to the current working directory, while **~/** refers to the user's home directory.
 
 A sample config:
 

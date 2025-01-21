@@ -1,4 +1,5 @@
 {
+    "check-requirements": true,
     "chmod": "0755",
     "directories": [
         "app",
@@ -10,9 +11,18 @@
         "composer.json"
     ],
     "exclude-composer-files": false,
+    "exclude-dev-files": false,
     "compression": "GZ",
     "compactors": [
         "KevinGH\\Box\\Compactor\\Php",
         "KevinGH\\Box\\Compactor\\Json"
+    ],
+    "banner": [
+        "This file is part of the Arkhive project.",
+        "",
+        "(c) Maurizio Fonte <fonte.maurizio@gmail.com>",
+        "",
+        "This source file is subject to the MIT license that is bundled",
+        "with this source code in the file LICENSE."
     ]
 }

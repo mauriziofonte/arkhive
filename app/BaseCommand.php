@@ -10,6 +10,7 @@ use Symfony\Component\Mailer\Transport;
 use Symfony\Component\Mailer\Transport\TransportInterface;
 use Symfony\Component\Mailer\Mailer;
 use Symfony\Component\Mime\Email;
+use Phar;
 
 /**
  * Class BaseCommand
@@ -28,6 +29,8 @@ abstract class BaseCommand extends Command
     protected $ttyLines = 30;
     /** @var int */
     protected $ttyCols = 120;
+    /** @var bool */
+    protected $isPhar = false;
     /** @var bool */
     protected $hasRootPermissions = false;
     /** @var bool */
@@ -52,6 +55,10 @@ abstract class BaseCommand extends Command
     public function __construct()
     {
         parent::__construct();
+
+        if (Phar::running(false) !== '') {
+            $this->isPhar = true;
+        }
 
         $this->checkFunctions();
         $this->checkEnvironment();
@@ -167,9 +174,9 @@ abstract class BaseCommand extends Command
             $this->ttyCols = 120;
         }
 
-        $this->cwd = rtrim(getcwd(), DIRECTORY_SEPARATOR);
-        $this->commandName = basename($_SERVER['argv'][0]);
-        $this->fullExecutablePath = $this->cwd . DIRECTORY_SEPARATOR . $this->commandName;
+        $this->cwd = dirname(realpath($_SERVER['argv'][0]));
+        $this->commandName = basename(realpath($_SERVER['argv'][0]));
+        $this->fullExecutablePath = realpath($_SERVER['PHP_SELF']);
     }
 
     /**
@@ -268,7 +275,8 @@ abstract class BaseCommand extends Command
         if (empty($foundFile)) {
             $this->criticalError(
                 "Failed to find the Arkhive configuration file. Create any of:\n" .
-                implode("\n", $configFiles)
+                implode("\n", $configFiles) . "\n" .
+                "Please refer to stub config file at https://github.com/mauriziofonte/arkhive/blob/main/.arkhive-config.example"
             );
         }
 
