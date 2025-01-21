@@ -44,6 +44,6 @@
     "minimum-stability": "dev",
     "prefer-stable": true,
     "bin": [
-        "builds/arkhive"
+        "arkhive"
     ]
 }
