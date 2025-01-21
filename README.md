@@ -33,7 +33,7 @@ curl -OL https://github.com/mauriziofonte/arkhive/raw/refs/heads/main/builds/ark
 wget https://github.com/mauriziofonte/arkhive/raw/refs/heads/main/builds/arkhive.phar
 
 # Then move the cli tool to /usr/local/bin
-sudo mv arkhive /usr/local/bin/arkhive && sudo chmod +x /usr/local/bin/arkhive
+sudo mv arkhive.phar /usr/local/bin/arkhive && sudo chmod +x /usr/local/bin/arkhive
 ```
 
 You can now run `arkhive` from anywhere in your system.
