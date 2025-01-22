@@ -12,7 +12,7 @@ use Mfonte\Arkhive\Services\BackupService;
  */
 class BackupCommand extends BaseCommand
 {
-    protected $signature   = 'backup';
+    protected $signature   = 'backup {--no-disk-space-check : Skip the disk space check before running the backup.}';
     protected $description = 'Runs the Backup as per the config file';
 
     public function handle(): void
@@ -23,7 +23,12 @@ class BackupCommand extends BaseCommand
 
             $service = new BackupService($this->config, $this->output);
             $service->preflightOrFail();
-            $service->checkDiskSpace();
+            if (!$this->option('no-disk-space-check')) {
+                $this->info("Checking disk space before running the backup...");
+                $service->checkDiskSpace();
+            }
+
+            // Run the backup
             $size = $service->doBackup();
 
             $this->info("✅ Backup done!");
