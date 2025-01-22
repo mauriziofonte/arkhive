@@ -56,18 +56,20 @@ class SelfUpgradeCommand extends BaseCommand
                 $this->criticalError("Downloaded file is empty or missing. Aborting upgrade.");
             }
 
-            // 5. Make the new file executable
-            chmod($tmpFile, 0755);
-
-            // 6. Replace the current executable with the downloaded one (atomic move)
+            // 5. Replace the current executable with the downloaded one (atomic move)
             //    If $destPath is not writable, this will fail. In that case, run again with sudo.
+            $this->info("Replacing current executable on {$destPath}...");
             if (!@rename($tmpFile, $destPath)) {
                 // fallback: try copying if rename fails
                 if (!@copy($tmpFile, $destPath)) {
+                    @unlink($tmpFile);
                     $this->criticalError("Failed to overwrite {$destPath}. Check permissions.");
                 }
-                unlink($tmpFile);
             }
+
+            // 6. Make the new PHAR executable, and remove the temp file
+            chmod($destPath, 0755);
+            @unlink($tmpFile);
 
             // 7. Confirm success
             $this->info("Arkhive successfully upgraded! Run `arkhive --version` to verify.");

@@ -305,7 +305,7 @@ abstract class BaseCommand extends Command
         }
 
         // MySQL
-        if (!empty($dotenv['WITH_MYSQL'])) {
+        if ($this->isTruthy($dotenv['WITH_MYSQL'])) {
             $mysqlKeys = ['MYSQL_HOST', 'MYSQL_USER', 'MYSQL_PASSWORD', 'MYSQL_DATABASES'];
             foreach ($mysqlKeys as $key) {
                 if (!array_key_exists($key, $dotenv)) {
@@ -318,7 +318,7 @@ abstract class BaseCommand extends Command
         }
 
         // PGSQL
-        if (!empty($dotenv['WITH_PGSQL'])) {
+        if ($this->isTruthy($dotenv['WITH_PGSQL'])) {
             $pgsqlKeys = ['PGSQL_HOST', 'PGSQL_USER', 'PGSQL_DATABASES'];
             foreach ($pgsqlKeys as $key) {
                 if (!array_key_exists($key, $dotenv)) {
@@ -331,7 +331,7 @@ abstract class BaseCommand extends Command
         }
 
         // Crypt
-        if (!empty($dotenv['WITH_CRYPT'])) {
+        if ($this->isTruthy($dotenv['WITH_CRYPT'])) {
             if (empty($dotenv['CRYPT_PASSWORD'])) {
                 $this->criticalError("Missing CRYPT_PASSWORD in {$configFile}.");
             }
@@ -341,7 +341,7 @@ abstract class BaseCommand extends Command
         }
 
         // Notify
-        if (!empty($dotenv['NOTIFY'])) {
+        if ($this->isTruthy($dotenv['NOTIFY'])) {
             $notifyKeys = ['SMTP_HOST', 'SMTP_PORT', 'SMTP_USER', 'SMTP_PASSWORD', 'SMTP_FROM', 'SMTP_TO'];
             foreach ($notifyKeys as $key) {
                 if (!array_key_exists($key, $dotenv)) {
@@ -352,17 +352,28 @@ abstract class BaseCommand extends Command
     }
 
     /**
+     * Checks if a value is truthy.
+     *
+     * @param mixed $value
+     * @return bool
+     */
+    private function isTruthy($value): bool
+    {
+        if (is_null($value)) {
+            return false;
+        }
+
+        return in_array(strtolower($value), ['1', 'yes', 'true'], true);
+    }
+
+    /**
      * Converts boolean-ish strings and populates config collection.
      */
     private function hydrateConfig(array $dotenv): void
     {
-        // Convert "1|true|yes" => true, "0|false|no" => false, "" => null
         foreach ($dotenv as $key => $value) {
-            $lower = strtolower($value);
-            if (in_array($lower, ['1', 'yes', 'true'], true)) {
-                $dotenv[$key] = true;
-            } elseif (in_array($lower, ['0', 'no', 'false'], true)) {
-                $dotenv[$key] = false;
+            if (in_array(strtolower($value), ['1', 'yes', 'true', '0', 'no', 'false'], true)) {
+                $dotenv[$key] = $this->isTruthy($value);
             } elseif ($value === '') {
                 $dotenv[$key] = null;
             }
