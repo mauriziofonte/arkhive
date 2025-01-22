@@ -78,7 +78,7 @@ class BackupService
     public function checkDiskSpace(): void
     {
         // estimate size of backup dir
-        $this->output->comment("Estimating size of backup directory...");
+        $this->output->writeln("[i] Estimating size of backup directory...");
         $backupSize = wrap_exec(
             sprintf(
                 'du -sb %s',
@@ -91,8 +91,14 @@ class BackupService
         // how much free space do we have?
         $freeBytes = disk_free_space(dirname($this->config->get('BACKUP_FILE')));
 
-        // add the crypt padding, and consider a conservative 80% gzip compression
-        $estimatedFreeSpaceNeeded = $backupSize * 1.2 * 0.8;
+        // add the crypt overhead
+        if ($this->config->get('WITH_CRYPT')) {
+            // estimate crypt overhead to compensate the gzip compression
+            $estimatedFreeSpaceNeeded = $backupSize;
+        } else {
+            // consider 30% reduction in size due to gzip compression
+            $estimatedFreeSpaceNeeded = $backupSize * 0.7;
+        }
 
         if ($freeBytes < $estimatedFreeSpaceNeeded) {
             $freeBytes = human_filesize($freeBytes);
@@ -136,7 +142,7 @@ class BackupService
         $init  = time();
 
         if (file_exists($this->config->get('BACKUP_FILE'))) {
-            $this->output->comment("Removing old backup file: {$this->config->get('BACKUP_FILE')}");
+            $this->output->writeln("[i] Removing old backup file: {$this->config->get('BACKUP_FILE')}");
             unlink($this->config->get('BACKUP_FILE'));
         }
 
@@ -154,7 +160,7 @@ class BackupService
             }
 
             $dest = "{$this->config->get('BACKUP_DIRECTORY')}/{$today}-mysqldump.sql";
-            $this->output->comment("Creating {$tool} dump to {$dest}...");
+            $this->output->writeln("[i] Creating {$tool} dump to {$dest}...");
             wrap_exec(
                 sprintf(
                     '%s -u %s -p%s --host=%s --opt --quick --compact --skip-lock-tables --routines --triggers --databases %s > %s',
@@ -172,7 +178,7 @@ class BackupService
         // PGSQL Backup
         if ($this->config->get('WITH_PGSQL')) {
             $dest = "{$this->config->get('BACKUP_DIRECTORY')}/{$today}-pgsqldump.sql";
-            $this->output->comment("Creating PostgreSQL dump to {$dest}...");
+            $this->output->writeln("[i] Creating PostgreSQL dump to {$dest}...");
             wrap_exec(
                 sprintf(
                     'pg_dump -U %s -h %s -d %s --no-owner --no-privileges --format=custom > %s',
@@ -201,7 +207,7 @@ class BackupService
 
         // scp to remote
         $size = human_filesize($this->config->get('BACKUP_FILE'));
-        $this->output->comment("Sending {$size} of backup file to remote SSH server {$this->config->get('SSH_HOST')}...");
+        $this->output->writeln("[i] Sending {$size} of backup file to remote SSH server {$this->config->get('SSH_HOST')}...");
         wrap_exec(
             sprintf(
                 'scp %s %s@%s:%s/%s/%s-%s-arkhive.bak',
@@ -217,7 +223,7 @@ class BackupService
         );
 
         // fix perms on remote
-        $this->output->comment("Fixing permissions on remote SSH server...");
+        $this->output->writeln("[i] Fixing permissions on remote SSH server...");
         remote_ssh_exec(
             $this->config->get('SSH_HOST'),
             $this->config->get('SSH_USER'),
@@ -237,7 +243,7 @@ class BackupService
 
         $end = time();
         $elapsed = $end - $init;
-        $this->output->comment("Backup completed in {$elapsed} seconds.");
+        $this->output->writeln("[i] Backup completed in {$elapsed} seconds.");
 
         return $size;
     }
@@ -255,7 +261,7 @@ class BackupService
         $tempLocal  = sys_get_temp_dir() . "/arkhive-restore-{$date}-" . uniqid() . ".tmp";
 
         // scp download
-        $this->output->comment("Retrieving remote backup file...");
+        $this->output->writeln("[i] Retrieving remote backup file...");
         wrap_exec(
             sprintf(
                 'scp %s@%s:%s %s',
@@ -274,7 +280,7 @@ class BackupService
 
         // decrypt or just extract
         if ($this->config->get('WITH_CRYPT')) {
-            $this->output->comment("Decrypting/Extracting backup...");
+            $this->output->writeln("[i] Decrypting/Extracting backup...");
             wrap_exec(
                 sprintf(
                     'openssl enc -d -aes-256-cbc -salt -pbkdf2 -iter 100000 -pass pass:%s -in %s | tar -xzf - -C %s',
@@ -285,7 +291,7 @@ class BackupService
                 "Cannot decrypt/extract backup"
             );
         } else {
-            $this->output->comment("Extracting backup...");
+            $this->output->writeln("[i] Extracting backup...");
             wrap_exec(
                 sprintf(
                     'tar -xzf %s -C %s',
@@ -304,7 +310,7 @@ class BackupService
      */
     private function cleanupRemote(): void
     {
-        $this->output->comment("Retrieving list of remote backup directories...");
+        $this->output->writeln("[i] Retrieving list of remote backup directories...");
         $listing = remote_ssh_exec(
             $this->config->get('SSH_HOST'),
             $this->config->get('SSH_USER'),
@@ -317,7 +323,7 @@ class BackupService
             if (preg_match('/^\d{4}-\d{2}-\d{2}$/', trim($line))) {
                 $d = strtotime($line);
                 if ($d < strtotime("-{$this->config->get('BACKUP_RETENTION_DAYS')} days")) {
-                    $this->output->comment("Removing old backup dir: {$line}");
+                    $this->output->writeln("[i] Removing old backup dir: {$line}");
                     remote_ssh_exec(
                         $this->config->get('SSH_HOST'),
                         $this->config->get('SSH_USER'),
@@ -335,7 +341,7 @@ class BackupService
     private function createLocalArchive(string $today): void
     {
         if ($this->config->get('WITH_CRYPT')) {
-            $this->output->comment("Creating {$today} Encrypted Backup Archive...");
+            $this->output->writeln("[i] Creating {$today} Encrypted Backup Archive...");
             wrap_exec(
                 sprintf(
                     'tar -zcf - --exclude=\'*.csv\' --exclude=\'*.iso\' --exclude=\'*.txt\' --exclude=\'*.log\' --exclude=\'*.tgz\' --exclude=\'*.sql.gz\' --exclude=\'*.tar.gz\' --exclude=%s %s | openssl enc -aes-256-cbc -salt -pbkdf2 -iter 100000 -pass pass:%s > %s',
@@ -347,7 +353,7 @@ class BackupService
                 "Cannot create Encrypted Backup Archive"
             );
         } else {
-            $this->output->comment("Creating {$today} Non-Encrypted Backup Archive...");
+            $this->output->writeln("[i] Creating {$today} Non-Encrypted Backup Archive...");
             wrap_exec(
                 sprintf(
                     'tar -zcf %s --exclude=\'*.csv\' --exclude=\'*.iso\' --exclude=\'*.txt\' --exclude=\'*.log\' --exclude=\'*.tgz\' --exclude=\'*.sql.gz\' --exclude=\'*.tar.gz\' --exclude=%s %s',
@@ -365,6 +371,6 @@ class BackupService
         }
 
         $size = human_filesize($this->config->get('BACKUP_FILE'));
-        $this->output->comment("Backup file {$this->config->get('BACKUP_FILE')} created. Size: {$size}");
+        $this->output->writeln("[i] Backup file {$this->config->get('BACKUP_FILE')} created. Size: {$size}");
     }
 }

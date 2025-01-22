@@ -18,7 +18,8 @@ class BackupCommand extends BaseCommand
     public function handle(): void
     {
         try {
-            $this->info("💡 Starting Backup...");
+            $this->info("🚀 Welcome to Arkhive " . self::ARKHIVE_VERSION);
+            $this->info("💡 Working in BACKUP mode...");
 
             $service = new BackupService($this->config, $this->output);
             $service->preflightOrFail();

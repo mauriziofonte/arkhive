@@ -68,7 +68,7 @@ if (!function_exists('remote_ssh_exec')) {
     {
         // SSH command to execute the provided command remotely
         $sshCommand = sprintf(
-            'ssh -p %d %s@%s "%s"',
+            'timeout 30 ssh -p %d -o ConnectTimeout=10 %s@%s "%s"',
             $port,
             escapeshellarg($user),
             escapeshellarg($host),

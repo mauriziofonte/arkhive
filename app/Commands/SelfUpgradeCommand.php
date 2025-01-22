@@ -19,6 +19,9 @@ class SelfUpgradeCommand extends BaseCommand
         }
 
         try {
+            $this->info("🚀 Welcome to Arkhive " . self::ARKHIVE_VERSION);
+            $this->info("💡 Working in SELF-UPGRADE mode...");
+            
             // Path to the currently running executable (PHAR or script)
             // Usually $this->fullExecutablePath = /usr/local/bin/arkhive or similar
             $destPath = $this->fullExecutablePath;

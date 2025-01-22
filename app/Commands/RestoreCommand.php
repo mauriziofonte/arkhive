@@ -24,6 +24,9 @@ class RestoreCommand extends BaseCommand
     public function handle(): void
     {
         try {
+            $this->info("🚀 Welcome to Arkhive " . self::ARKHIVE_VERSION);
+            $this->info("💡 Working in RESTORE mode...");
+
             // 1) List the remote directories in SSH_BACKUP_HOME.
             $remoteListing = remote_ssh_exec(
                 $this->config->get('SSH_HOST'),
