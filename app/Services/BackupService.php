@@ -93,11 +93,11 @@ class BackupService
 
         // add the crypt overhead
         if ($this->config->get('WITH_CRYPT')) {
-            // estimate crypt overhead to compensate the gzip compression
-            $estimatedFreeSpaceNeeded = $backupSize;
+            // consider 20% reduction in size due to gzip compression, but with crypt overhead
+            $estimatedFreeSpaceNeeded = $backupSize * 0.8;
         } else {
-            // consider 30% reduction in size due to gzip compression
-            $estimatedFreeSpaceNeeded = $backupSize * 0.7;
+            // consider 40% reduction in size due to gzip compression
+            $estimatedFreeSpaceNeeded = $backupSize * 0.6;
         }
 
         if ($freeBytes < $estimatedFreeSpaceNeeded) {
