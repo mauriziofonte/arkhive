@@ -3,51 +3,163 @@
 if (!function_exists('proc_exec')) {
     /**
      * Executes a shell command, captures output, errors, and returns the exit code.
-     * ATTENTION: the sanitization of the command is up to the caller. This function does not escape the command.
+     * Attention: $command *IS NOT* sanitized. The caller is responsible for sanitizing the command.
+     * If a $progressCallback is provided, progress from `pv` (written to stderr) is parsed.
      *
-     * This function utilizes `proc_open` to execute a shell command, allowing full access
-     * to standard input, output, and error streams. It waits for the process to complete
-     * and returns the exit code, standard output, and standard error.
+     * @example proc_exec('tar cf - /dir/ | pv -f -s $(du -sb %s | awk \'{print $1}\') | gzip > output.tgz', function($percent, $eta, $elapsed, $speed, $transferred) {
+     *    echo "Progress: {$percent}% ETA: {$eta} Elapsed: {$elapsed} Speed: {$speed} Transferred: {$transferred}\n";
+     * });
+     * @param string $command
+     * @param callable|null $progressCallback A function($percent, $etaSec, $elapsedTimeSec, $speed, $transferredSize).
      *
-     * @param string $command The shell command to execute.
-     *
-     * @throws \RuntimeException If the process could not be created.
-     *
-     * @return array{int, string, string} An array containing:
-     *     - int: The exit code of the command.
-     *     - string: The standard output (stdout) of the command.
-     *     - string: The standard error (stderr) of the command.
+     * @return array{0: int, 1: string, 2: string} [exitCode, stdout, stderr]
      */
-    function proc_exec(string $command) : array
+    function proc_exec(string $command, ?callable $progressCallback = null): array
     {
         if (!function_exists('proc_open')) {
-            throw new \RuntimeException('The proc_open function is not available on this system.');
+            throw new \RuntimeException('proc_open is unavailable on this system.');
         }
-        
+
+        $descriptorSpec = [
+            0 => ['pipe', 'r'], // stdin
+            1 => ['pipe', 'w'], // stdout
+            2 => ['pipe', 'w'], // stderr
+        ];
+
         $pipes = [];
-        $process = proc_open($command, [
-            0 => ['pipe', 'r'],
-            1 => ['pipe', 'w'],
-            2 => ['pipe', 'w'],
-        ], $pipes);
+        $process = proc_open($command, $descriptorSpec, $pipes);
 
         if (!is_resource($process)) {
-            throw new \RuntimeException('Could not create a valid process');
+            throw new \RuntimeException('Could not open process for command: ' . $command);
         }
 
-        // This will prevent to program from continuing until the processes is complete
-        // Note: exitcode is created on the final loop here
-        $status = proc_get_status($process);
-        while ($status['running']) {
+        // We'll never write to stdin
+        fclose($pipes[0]);
+
+        // Non-blocking
+        stream_set_blocking($pipes[1], false);
+        stream_set_blocking($pipes[2], false);
+
+        $stdOutBuffer = '';
+        $stdErrBuffer = '';
+        $stdOut = '';
+        $stdErr = '';
+
+        // The default `pv` line might looks like this: " 340MiB 0:00:07 [60.8MiB/s] [==>    ]  5% ETA 0:02:11\r"
+        $progressRegex = '/^([\d\.]+[KMGTP]?i?B?)\s+(\d{1,2}:\d{2}(:\d{2})?)\s+\[([\d\.]+[KMGTP]?i?B?\/s)\]\s+\[.*?\]\s+(\d+)%\s+ETA\s+(\d{1,2}:\d{2}(:\d{2})?)/';
+
+        $parseTimeToSeconds = function (string $time): int {
+            // e.g. "0:02:11" => 131, "01:05" => 65
+            $parts = array_reverse(explode(':', $time));
+            $seconds = 0;
+            foreach ($parts as $i => $p) {
+                $seconds += (int)$p * (60 ** $i);
+            }
+            return $seconds;
+        };
+
+        // Keep reading until the process finishes
+        while (true) {
             $status = proc_get_status($process);
+            if (!$status['running']) {
+                break;
+            }
+
+            // Read stdout
+            $chunkOut = fread($pipes[1], 8192);
+            if ($chunkOut !== false && $chunkOut !== '') {
+                $stdOutBuffer .= $chunkOut;
+                // Split on \r or \n. Usually real output uses \n, but let's handle both
+                $lines = preg_split("/\r\n|\n|\r/", $stdOutBuffer);
+                // Keep the last partial piece
+                $stdOutBuffer = array_pop($lines);
+                // The rest are complete lines
+                foreach ($lines as $line) {
+                    // Not expecting progress on stdout (since `pv` writes progress to stderr)
+                    $stdOut .= $line . "\n";
+                }
+            }
+
+            // Read stderr
+            $chunkErr = fread($pipes[2], 8192);
+            if ($chunkErr !== false && $chunkErr !== '') {
+                $stdErrBuffer .= $chunkErr;
+                // `pv` uses carriage returns to update progress, so parse by \r or \n
+                $lines = preg_split("/\r\n|\n|\r/", $stdErrBuffer);
+                $stdErrBuffer = array_pop($lines);
+
+                foreach ($lines as $line) {
+                    $lineTrim = trim($line);
+                    if ($progressCallback && $lineTrim !== '' && preg_match($progressRegex, $lineTrim, $m)) {
+                        // $m[1] => transferred, $m[2] => elapsed, $m[4] => speed, $m[5] => percent, $m[6] => ETA
+                        // Because capturing parentheses appear more than once, let's get them carefully:
+                        //   1 => e.g. "340MiB"
+                        //   2 => e.g. "0:00:07"
+                        //   3 => e.g. ":07" or missing if not matched
+                        //   4 => e.g. "60.8MiB/s"
+                        //   5 => e.g. "5"
+                        //   6 => e.g. "0:02:11"
+                        $transferredSize = $m[1];
+                        $elapsedTime     = $parseTimeToSeconds($m[2]);
+                        $speed           = $m[4];
+                        $percent         = (int)$m[5];
+                        $eta             = $parseTimeToSeconds($m[6]);
+
+                        $progressCallback($percent, $eta, $elapsedTime, $speed, $transferredSize);
+                    } else {
+                        // Not a recognized progress line -> treat as normal stderr
+                        $stdErr .= $line . "\n";
+                    }
+                }
+            }
+
+            // Sleep briefly to avoid busy-waiting
+            usleep(200000);
         }
 
-        $stdOutput = stream_get_contents($pipes[1]);
-        $stdError  = stream_get_contents($pipes[2]);
+        // Process ended; read any last data
+        // Possibly the command ended very quickly and there's leftover data in buffers.
+        // Let’s do a final flush.
+        $finalOut = stream_get_contents($pipes[1]);
+        if ($finalOut !== false) {
+            $stdOutBuffer .= $finalOut;
+        }
+        $finalErr = stream_get_contents($pipes[2]);
+        if ($finalErr !== false) {
+            $stdErrBuffer .= $finalErr;
+        }
 
-        proc_close($process);
+        fclose($pipes[1]);
+        fclose($pipes[2]);
 
-        return [intval($status['exitcode']), trim($stdOutput), trim($stdError)];
+        // Final parse of leftover buffers
+        if ($stdOutBuffer !== '') {
+            $stdOut .= $stdOutBuffer . "\n";
+        }
+
+        if ($stdErrBuffer !== '') {
+            // This might contain partial progress lines or real errors
+            $lines = preg_split("/\r\n|\n|\r/", $stdErrBuffer);
+            foreach ($lines as $line) {
+                $lineTrim = trim($line);
+                if ($progressCallback && $lineTrim !== '' && preg_match($progressRegex, $lineTrim, $m)) {
+                    $transferredSize = $m[1];
+                    $elapsedTime     = $parseTimeToSeconds($m[2]);
+                    $speed           = $m[4];
+                    $percent         = (int)$m[5];
+                    $eta             = $parseTimeToSeconds($m[6]);
+
+                    $progressCallback($percent, $transferredSize, $elapsedTime, $speed, $eta);
+                } elseif ($lineTrim !== '') {
+                    $stdErr .= $line . "\n";
+                }
+            }
+        }
+
+        // Get the real exit code
+        $exitCode = proc_close($process);
+
+        return [ (int)$exitCode, rtrim($stdOut), rtrim($stdErr) ];
     }
 }
 

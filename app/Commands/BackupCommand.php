@@ -24,14 +24,14 @@ class BackupCommand extends BaseCommand
             $service = new BackupService($this->config, $this->output);
             $service->preflightOrFail();
             if (!$this->option('no-disk-space-check')) {
-                $this->info("Checking disk space before running the backup...");
+                $this->line(" 💻 Checking disk space before running the backup...");
                 $service->checkDiskSpace();
             }
 
             // Run the backup
             $size = $service->doBackup();
 
-            $this->info("✅ Backup done!");
+            $this->info(" ✅ Backup done!");
             $humanSize = human_filesize($size);
             $this->sendEmailNotification(
                 "Backup Completed",

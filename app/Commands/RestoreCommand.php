@@ -68,13 +68,13 @@ class RestoreCommand extends BaseCommand
                 }
             }
 
-            $this->info("💡 Restoring backup from date: {$date} into: {$destination}");
+            $this->info(" 💻 Restoring backup from date: {$date} into: {$destination}");
 
             // 6) Call the service to handle the actual restore logic:
             $service = new BackupService($this->config, $this->output);
             $service->doRestore($date, $destination);
 
-            $this->info("✅ Restore completed successfully!");
+            $this->info(" ✅ Restore completed successfully!");
             $this->sendEmailNotification(
                 "Restore Completed",
                 "Restore of {$date} backup completed successfully into {$destination}."
