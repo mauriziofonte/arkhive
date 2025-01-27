@@ -19,7 +19,7 @@ use Phar;
  */
 abstract class BaseCommand extends Command
 {
-    const ARKHIVE_VERSION = '1.0';
+    const ARKHIVE_VERSION = '1.1';
 
     /** @var string */
     protected $cwd;
