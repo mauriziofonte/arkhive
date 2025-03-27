@@ -19,7 +19,7 @@ use Phar;
  */
 abstract class BaseCommand extends Command
 {
-    const ARKHIVE_VERSION = '1.1';
+    const ARKHIVE_VERSION = '1.2';
 
     /** @var string */
     protected $cwd;
@@ -165,16 +165,11 @@ abstract class BaseCommand extends Command
      */
     private function setCliParams(): void
     {
-        try {
-            $ttyLines = wrap_exec('tput lines');
-            $this->ttyLines = intval($ttyLines);
+        $ttyLines = intval(trim(shell_exec('tput lines 2>/dev/null')));
+        $ttyCols = intval(trim(shell_exec('tput cols 2>/dev/null')));
 
-            $ttyCols = wrap_exec('tput cols');
-            $this->ttyCols = intval($ttyCols);
-        } catch (\Throwable $e) {
-            $this->ttyLines = 30;
-            $this->ttyCols = 120;
-        }
+        $this->ttyLines = $ttyLines > 0 ? $ttyLines : 30;
+        $this->ttyCols = $ttyCols > 0 ? $ttyCols : 120;
 
         $this->cwd = dirname(realpath($_SERVER['argv'][0]));
         $this->commandName = basename(realpath($_SERVER['argv'][0]));
@@ -186,24 +181,14 @@ abstract class BaseCommand extends Command
      */
     private function setRunningUser(): void
     {
-        $uname = $_SERVER['USER'] ?? '';
+        $userInfo = posix_getpwuid(posix_geteuid());
 
-        if (empty($uname)) {
-            $this->criticalError("Failed to get the current user name. Make sure to run from a terminal.");
-        }
-
-        if ($uname === 'root' && !array_key_exists('SUDO_USER', $_SERVER)) {
-            $this->hasRootPermissions = true;
-        } elseif ($uname === 'root' && array_key_exists('SUDO_USER', $_SERVER)) {
-            $this->hasRootPermissions = true;
-            $this->runningAsSudo = true;
-            $uname = $_SERVER['SUDO_USER'];
-        }
-
-        $userInfo = posix_getpwnam($uname);
         if (empty($userInfo)) {
-            $this->criticalError("User {$uname} does not exist.");
+            $this->criticalError("Failed to determine running user context.");
         }
+
+        $this->hasRootPermissions = ($userInfo['uid'] === 0);
+        $this->runningAsSudo = $this->hasRootPermissions && getenv('SUDO_USER') !== false;
 
         $this->userName  = $userInfo['name'];
         $this->userGroup = posix_getgrgid($userInfo['gid'])['name'];
