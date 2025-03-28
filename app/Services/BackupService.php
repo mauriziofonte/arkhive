@@ -35,6 +35,7 @@ class BackupService
      */
     public function preflightOrFail(): void
     {
+        $this->checkBinaries();
         $this->checkLocalDir();
         $this->testSshConnection();
     }
@@ -182,6 +183,41 @@ class BackupService
     /* -----------------------------------------------------------------
        Private helper methods below
     ----------------------------------------------------------------- */
+
+    /**
+     * Checks if the required binaries are available.
+     *
+     * @throws \RuntimeException on missing binaries
+     */
+    private function checkBinaries(): void
+    {
+        if ($this->config->get('WITH_MYSQL')) {
+            if (!binary_exists('mariadb-dump') && !binary_exists('mysqldump')) {
+                throw new \RuntimeException("Cannot find mariadb-dump or mysqldump binary");
+            }
+        }
+        if ($this->config->get('WITH_PGSQL')) {
+            if (!binary_exists('pg_dump')) {
+                throw new \RuntimeException("Cannot find pg_dump binary");
+            }
+        }
+
+        if ($this->config->get('WITH_CRYPT') && !binary_exists('openssl')) {
+            throw new \RuntimeException("Cannot find openssl binary for encryption. Install it or disable encryption.");
+        }
+
+        if (!binary_exists('tar')) {
+            throw new \RuntimeException("Cannot find tar binary. Arkhive cannot run without it.");
+        }
+
+        if (!binary_exists('pv')) {
+            throw new \RuntimeException("Cannot find pv binary. Arkhive cannot run without it.");
+        }
+
+        if (!binary_exists('gzip')) {
+            throw new \RuntimeException("Cannot find gzip binary. Arkhive cannot run without it.");
+        }
+    }
 
     /**
      * Checks if the local backup directory exists and is writable,
@@ -437,7 +473,7 @@ class BackupService
         if ($withCrypt) {
             $this->output->writeln(" 💻 Creating {$today} Encrypted Backup Archive...");
             $command = sprintf(
-                'tar cf - %s --exclude=%s | pv -f -s $(du -sb %s | awk \'{print $1}\') | gzip | openssl enc -aes-256-cbc -salt -pbkdf2 -iter 100000 -pass pass:%s > %s',
+                'tar --exclude=%s -cf - %s | pv -f -s $(du -sb %s | awk \'{print $1}\') | gzip | openssl enc -aes-256-cbc -salt -pbkdf2 -iter 100000 -pass pass:%s > %s',
                 escapeshellarg($backupDir),
                 escapeshellarg($backupFile),
                 escapeshellarg($backupDir),
@@ -447,7 +483,7 @@ class BackupService
         } else {
             $this->output->writeln(" 💻 Creating {$today} Non-Encrypted Backup Archive...");
             $command = sprintf(
-                'tar cf - %s --exclude=%s | pv -f -s $(du -sb %s | awk \'{print $1}\') | gzip > %s',
+                'tar --exclude=%s -cf - %s | pv -f -s $(du -sb %s | awk \'{print $1}\') | gzip > %s',
                 escapeshellarg($backupDir),
                 escapeshellarg($backupFile),
                 escapeshellarg($backupDir),
