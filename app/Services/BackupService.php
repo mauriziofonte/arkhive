@@ -474,8 +474,8 @@ class BackupService
             $this->output->writeln(" 💻 Creating {$today} Encrypted Backup Archive...");
             $command = sprintf(
                 'tar --exclude=%s -cf - %s | pv -f -s $(du -sb %s | awk \'{print $1}\') | gzip | openssl enc -aes-256-cbc -salt -pbkdf2 -iter 100000 -pass pass:%s > %s',
-                escapeshellarg($backupDir),
                 escapeshellarg($backupFile),
+                escapeshellarg($backupDir),
                 escapeshellarg($backupDir),
                 escapeshellarg($password),
                 escapeshellarg($backupFile)
@@ -484,8 +484,8 @@ class BackupService
             $this->output->writeln(" 💻 Creating {$today} Non-Encrypted Backup Archive...");
             $command = sprintf(
                 'tar --exclude=%s -cf - %s | pv -f -s $(du -sb %s | awk \'{print $1}\') | gzip > %s',
-                escapeshellarg($backupDir),
                 escapeshellarg($backupFile),
+                escapeshellarg($backupDir),
                 escapeshellarg($backupDir),
                 escapeshellarg($backupFile)
             );
