@@ -45,7 +45,7 @@ if (!function_exists('proc_exec')) {
         $stdOut = '';
         $stdErr = '';
 
-        // The default `pv` line might looks like this: " 340MiB 0:00:07 [60.8MiB/s] [==>    ]  5% ETA 0:02:11\r"
+        // The default `pv` line might look like this: " 340MiB 0:00:07 [60.8MiB/s] [==>    ]  5% ETA 0:02:11\r"
         $progressRegex = '/^([\d\.]+[KMGTP]?i?B?)\s+(\d{1,2}:\d{2}(:\d{2})?)\s+\[([\d\.]+[KMGTP]?i?B?\/s)\]\s+\[.*?\]\s+(\d+)%\s+ETA\s+(\d{1,2}:\d{2}(:\d{2})?)/';
 
         $parseTimeToSeconds = function (string $time): int {
@@ -187,13 +187,7 @@ if (!function_exists('remote_ssh_exec')) {
             str_replace('"', '\"', $command)
         );
 
-        // Execute using proc_exec helper
-        [$exitCode, $output, $error] = proc_exec($sshCommand);
-
-        if ($exitCode !== 0) {
-            throw new \RuntimeException("SSH command failed with exit code {$exitCode}: {$error}");
-        }
-
+        $output = wrap_exec($sshCommand, "SSH command failed.");
         return $output;
     }
 }
@@ -208,7 +202,8 @@ if (!function_exists('binary_exists')) {
      */
     function binary_exists(string $binary): bool
     {
-        return !empty(shell_exec("command -v $binary"));
+        $binary = escapeshellarg($binary);
+        return !empty(shell_exec("command -v {$binary}"));
     }
 }
 
