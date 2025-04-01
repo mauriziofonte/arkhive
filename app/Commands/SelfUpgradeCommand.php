@@ -77,7 +77,7 @@ class SelfUpgradeCommand extends BaseCommand
             // 7. Confirm success
             $this->info("Arkhive successfully upgraded! Run `arkhive --version` to verify.");
         } catch (\Throwable $e) {
-            $this->criticalError($e->getMessage());
+            $this->criticalError("{$e->getMessage()} at {$e->getFile()}:{$e->getLine()}");
         }
     }
 }

@@ -19,7 +19,7 @@ use Phar;
  */
 abstract class BaseCommand extends Command
 {
-    const ARKHIVE_VERSION = '1.2.3';
+    const ARKHIVE_VERSION = '1.3';
 
     /** @var string */
     protected $cwd;
@@ -76,37 +76,34 @@ abstract class BaseCommand extends Command
      * Immediately halts program execution with an error message.
      *
      * @param string $message
+     * @param bool $withOptionalNotification
      * @return never
      */
-    protected function criticalError(string $message)
+    protected function criticalError(string $message, bool $withOptionalNotification = true)
     {
-        // Clamp TTY columns to avoid weird wrapping if we got a low or zero value:
-        $cols = max($this->ttyCols, 80);
-        $lines = max($this->ttyLines, 24);
+        $errorTag = "✖ Arkhive - Fatal Error";
 
         if ($this->output) {
-            // Use the clamped $cols to do word wrapping
-            $message = wordwrap($message, $cols - 10, "\n", true);
-            $textLines = explode("\n", $message);
-
-            // If the message box would be too tall, just dump it with ->error()
-            if (count($textLines) + 2 > $lines) {
-                $this->error($message);
-            } else {
-                // Print inside asterisks
-                $boxBound = str_repeat("*", $cols);
-                $this->error($boxBound);
-                foreach ($textLines as $line) {
-                    $this->error("*" . str_pad($line, $cols - 2, " ", STR_PAD_BOTH) . "*");
-                }
-                $this->error($boxBound);
-            }
+            $this->output->writeln('');
+            $this->output->writeln("<bg=red;fg=white>  $errorTag  </>");
+            $this->output->writeln("<bg=red;fg=white>  $message  </>");
+            $this->output->writeln('');
         } else {
-            // Fallback if the output isn't available
-            echo "\e[41m\e[97mArkhive - Cannot execute :(\e[0m\n";
-            echo "\e[41m\e[97m{$message}\e[0m\n";
+            // ANSI fallback with UTF-8
+            echo "\033[41;97m  $errorTag  \033[0m\n";
+            echo "\033[41;97m  $message  \033[0m\n";
         }
 
+        // optionally send an email notification
+        if ($withOptionalNotification && $this->config->get('NOTIFY')) {
+            $this->sendEmailNotification(
+                false,
+                "Arkhive - Fatal Error",
+                "An error occurred: {$message}"
+            );
+        }
+
+        // exit with error code
         exit(1);
     }
 
@@ -273,9 +270,9 @@ abstract class BaseCommand extends Command
             $this->hydrateConfig($dotenv);
             $this->configFile = $foundFile;
         } catch (InvalidFileException $e) {
-            $this->criticalError("Invalid .env file format: {$e->getMessage()}");
+            $this->criticalError("Invalid .env file format: {$e->getMessage()} at {$e->getFile()}:{$e->getLine()}");
         } catch (\Throwable $e) {
-            $this->criticalError($e->getMessage());
+            $this->criticalError("{$e->getMessage()} at {$e->getFile()}:{$e->getLine()}");
         }
     }
 
@@ -419,10 +416,11 @@ abstract class BaseCommand extends Command
     /**
      * Sends an email notification if NOTIFY=true.
      *
+     * @param bool $success
      * @param string $subject
      * @param string $message
      */
-    protected function sendEmailNotification(string $subject, string $message): void
+    protected function sendEmailNotification(bool $success, string $subject, string $message): void
     {
         if (!$this->config->get('NOTIFY')) {
             return;
@@ -432,19 +430,40 @@ abstract class BaseCommand extends Command
             $endTime = microtime(true);
             $elapsedMinutes = round(($endTime - $this->startTime) / 60, 2);
 
+            $statusEmoji = $success ? '✅' : '❌';
+            $statusText = $success ? 'Completed Successfully' : 'Failed';
+            $color = $success ? 'green' : 'red';
+
             $body = sprintf(
-                "<p><strong>Arkhive Notification</strong></p>\n\n
-                <p>Hostname: <strong>%s</strong></p>\n
-                <p>Elapsed Time: <strong>%s minutes</strong></p>\n
-                <p>Config File: <strong>%s</strong></p>\n
-                <p>Output:</p>\n
-                <p><pre>%s</pre></p>
-                <p>&nbsp;</p>
-                <p><small>This is an automated notification from <a href='https://github.com/mauriziofonte/arkhive'>Arkhive</a>.</small></p>",
+                <<<HTML
+            <h2 style="color:%s;">%s Arkhive Backup Notification</h2>
+        
+            <p><strong>Status:</strong> %s</p>
+            <p><strong>Date:</strong> %s</p>
+            <p><strong>Hostname:</strong> <code>%s</code></p>
+            <p><strong>Elapsed Time:</strong> <code>%s minutes</code></p>
+            <p><strong>Config File:</strong> <code>%s</code></p>
+            <p><strong>Backup Source:</strong> <code>%s</code></p>
+
+            <hr>
+
+            <p><strong>Message Output:</strong></p>
+            <pre>%s</pre>
+
+            <hr>
+            <p style="font-size: 12px; color: #777;">
+                This is an automated notification from <a href='https://github.com/mauriziofonte/arkhive'>Arkhive</a>.
+            </p>
+            HTML,
+                $color,
+                $statusEmoji,
+                $statusText,
+                date('Y-m-d H:i:s'),
                 system_hostname(),
                 $elapsedMinutes,
                 $this->configFile,
-                $message
+                $this->config->get('BACKUP_DIRECTORY'),
+                htmlspecialchars($message)
             );
 
             $mailer = new Mailer($this->createSmtpTransport());
@@ -457,7 +476,7 @@ abstract class BaseCommand extends Command
 
             $mailer->send($email);
         } catch (\Throwable $e) {
-            $this->criticalError("Failed to send email: {$e->getMessage()}");
+            $this->criticalError("Failed to send email: {$e->getMessage()}", false);
         }
     }
 }

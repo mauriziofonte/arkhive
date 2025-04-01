@@ -10,12 +10,22 @@ class BackupService
     /**
      * @var Collection
      */
-    private Collection $config;
+    private $config;
 
     /**
      * @var OutputStyle|null
      */
-    private ?OutputStyle $output;
+    private $output;
+
+    /**
+     * @var bool
+     */
+    private $checkDiskSpace = false;
+
+    /**
+     * @var bool
+     */
+    private $showProgress = false;
 
     /**
      * @param Collection         $config A collection with all necessary config keys.
@@ -28,6 +38,26 @@ class BackupService
     }
 
     /**
+     * Sets the disk space check flag.
+     *
+     * @param bool $check
+     */
+    public function setDiskSpaceCheck(bool $check): void
+    {
+        $this->checkDiskSpace = $check;
+    }
+
+    /**
+     * Sets the progress display flag.
+     *
+     * @param bool $show
+     */
+    public function setShowProgress(bool $show): void
+    {
+        $this->showProgress = $show;
+    }
+
+    /**
      * Ensures local directories exist, the backup file is writable,
      * and remote SSH is functional.
      *
@@ -35,9 +65,20 @@ class BackupService
      */
     public function preflightOrFail(): void
     {
+        // if we've decided to show progress, but we're not in a TTY console,
+        // we cannot show progress.
+        if (!stream_isatty(STDOUT)) {
+            throw new \RuntimeException("Cannot show progress in non-tty console");
+        }
+
         $this->checkBinaries();
         $this->checkLocalDir();
         $this->testSshConnection();
+
+        if ($this->checkDiskSpace) {
+            $this->writeln(" 💻 Checking disk space before running the backup...");
+            $this->checkDiskSpace();
+        }
     }
 
     /**
@@ -63,10 +104,9 @@ class BackupService
      */
     public function doBackup(): int
     {
-        $start     = time();
-        $today     = date("Y-m-d");
-        $backupDir = $this->config->get('BACKUP_DIRECTORY');
-        $backupFile= $this->config->get('BACKUP_FILE');
+        $start      = time();
+        $today      = date("Y-m-d");
+        $backupFile = $this->config->get('BACKUP_FILE');
 
         // Remove old local backup file if it exists
         $this->cleanupLocalOldFiles($backupFile);
@@ -85,21 +125,8 @@ class BackupService
         // Create a date-based dir on remote
         $this->mkdirRemote($today);
 
-        // Create local archive
-        $this->createLocalArchive($today);
-
-        // Upload using pv
-        $finalSize = filesize($backupFile);
-        $finalSizeHuman = human_filesize($finalSize);
-        $this->output->writeln(" 💻 Uploading {$finalSizeHuman} bytes to remote SSH server...");
-        $this->sendFileViaPv(
-            $backupFile,
-            $finalSize,
-            $this->config->get('SSH_HOST'),
-            $this->config->get('SSH_USER'),
-            $this->config->get('SSH_PORT'),
-            "{$this->config->get('SSH_BACKUP_HOME')}/{$today}/{$today}-{$this->config->get('SSH_USER')}-arkhive.arbk"
-        );
+        // Stream backup archive (without storing it locally) to remote
+        $remoteFileSize = $this->streamBackupToRemote($today);
 
         // Fix perms on remote
         $this->fixRemotePerms($today);
@@ -108,9 +135,9 @@ class BackupService
         $this->cleanupLocalPostBackup($today);
 
         $elapsed = time() - $start;
-        $this->output->writeln(" ✅ Backup completed in $elapsed seconds.");
+        $this->writeln(" ✅ Backup completed in $elapsed seconds.");
 
-        return $finalSize;
+        return $remoteFileSize;
     }
 
     /**
@@ -124,17 +151,29 @@ class BackupService
     public function doRestore(string $date, string $destinationLocalPath): void
     {
         // Construct remote path based on naming scheme
-        $remoteFile = sprintf(
-            '%s/%s/%s-%s-arkhive.arbk',
-            $this->config->get('SSH_BACKUP_HOME'),
-            $date,
-            $date,
-            $this->config->get('SSH_USER')
-        );
+        if ($this->config->get('WITH_CRYPT')) {
+            $remoteFile = sprintf(
+                '%s/%s/%s-%s-arkhive.enc.arbk',
+                $this->config->get('SSH_BACKUP_HOME'),
+                $date,
+                $date,
+                $this->config->get('SSH_USER')
+            );
+        } else {
+            $remoteFile = sprintf(
+                '%s/%s/%s-%s-arkhive.arbk',
+                $this->config->get('SSH_BACKUP_HOME'),
+                $date,
+                $date,
+                $this->config->get('SSH_USER')
+            );
+        }
+        
+        // temporary local file for download
         $tempLocal = sys_get_temp_dir() . "/arkhive-restore-{$date}-" . uniqid() . ".tmp";
 
         // scp download (or use your remote_ssh_exec approach + cat > local)
-        $this->output->writeln(" 💻 Retrieving remote backup file via scp...");
+        $this->writeln(" 💻 Retrieving remote backup file via scp...");
         wrap_exec(
             sprintf(
                 'scp -P %d %s@%s:%s %s',
@@ -154,7 +193,7 @@ class BackupService
 
         // Decrypt or just extract
         if ($this->config->get('WITH_CRYPT')) {
-            $this->output->writeln(" 💻 Decrypting/Extracting backup...");
+            $this->writeln(" 💻 Decrypting/Extracting backup...");
             wrap_exec(
                 sprintf(
                     'openssl enc -d -aes-256-cbc -salt -pbkdf2 -iter 100000 -pass pass:%s -in %s | tar -xzf - -C %s',
@@ -165,7 +204,7 @@ class BackupService
                 "Cannot decrypt/extract backup"
             );
         } else {
-            $this->output->writeln(" 💻 Extracting backup...");
+            $this->writeln(" 💻 Extracting backup...");
             wrap_exec(
                 sprintf(
                     'tar -xzf %s -C %s',
@@ -177,7 +216,7 @@ class BackupService
         }
 
         unlink($tempLocal);
-        $this->output->writeln(" ✅ Restore completed to $destinationLocalPath");
+        $this->writeln(" ✅ Restore completed to $destinationLocalPath");
     }
 
     /* -----------------------------------------------------------------
@@ -191,6 +230,21 @@ class BackupService
      */
     private function checkBinaries(): void
     {
+        $required = ['du', 'df', 'ls', 'mkdir', 'awk', 'tar', 'gzip', 'ssh'];
+        foreach ($required as $cmd) {
+            if (!binary_exists($cmd)) {
+                throw new \RuntimeException("Missing required binary: $cmd");
+            }
+        }
+
+        if ($this->showProgress && !binary_exists('pv')) {
+            throw new \RuntimeException("Cannot find pv binary. If showing progress, install pv or disable it.");
+        }
+
+        if ($this->config->get('WITH_CRYPT') && !binary_exists('openssl')) {
+            throw new \RuntimeException("Cannot find openssl binary for encryption. Install it or disable encryption.");
+        }
+
         if ($this->config->get('WITH_MYSQL')) {
             if (!binary_exists('mariadb-dump') && !binary_exists('mysqldump')) {
                 throw new \RuntimeException("Cannot find mariadb-dump or mysqldump binary");
@@ -200,22 +254,6 @@ class BackupService
             if (!binary_exists('pg_dump')) {
                 throw new \RuntimeException("Cannot find pg_dump binary");
             }
-        }
-
-        if ($this->config->get('WITH_CRYPT') && !binary_exists('openssl')) {
-            throw new \RuntimeException("Cannot find openssl binary for encryption. Install it or disable encryption.");
-        }
-
-        if (!binary_exists('tar')) {
-            throw new \RuntimeException("Cannot find tar binary. Arkhive cannot run without it.");
-        }
-
-        if (!binary_exists('pv')) {
-            throw new \RuntimeException("Cannot find pv binary. Arkhive cannot run without it.");
-        }
-
-        if (!binary_exists('gzip')) {
-            throw new \RuntimeException("Cannot find gzip binary. Arkhive cannot run without it.");
         }
     }
 
@@ -259,37 +297,44 @@ class BackupService
                 throw new \RuntimeException("SSH connected, but user mismatch");
             }
         } catch (\Throwable $e) {
-            throw new \RuntimeException("SSH remote check failed: " . $e->getMessage());
+            throw new \RuntimeException("SSH remote check failed: {$e->getMessage()} at {$e->getFile()}:{$e->getLine()}");
         }
     }
 
     /**
-     * Estimate the size of the backup directory, check local disk space.
+     * Estimate the size needed to backup Mysql/Mariadb and/or Postgres.
      *
      * @throws \RuntimeException on insufficient disk space
      */
     private function checkLocalDiskSpace(): void
     {
-        // Estimate size
-        $backupDir = $this->config->get('BACKUP_DIRECTORY');
-        $backupSize = wrap_exec(
-            sprintf('du -sb %s', escapeshellarg($backupDir)),
-            "Cannot estimate size of backup directory"
+        $mysqlSize = $this->estimateMysqlDatabaseSize(
+            explode(' ', $this->config->get('MYSQL_DATABASES')),
+            $this->config->get('MYSQL_HOST'),
+            $this->config->get('MYSQL_USER'),
+            $this->config->get('MYSQL_PASSWORD')
         );
-        $backupSize = (int) multi_explode([' ', "\t"], $backupSize)[0];
 
-        // Free space
-        $freeBytes = disk_free_space(dirname($this->config->get('BACKUP_FILE')));
+        $pgsqlSize = $this->estimatePostgresDatabaseSize(
+            $this->config->get('PGSQL_DATABASES'),
+            $this->config->get('PGSQL_HOST'),
+            $this->config->get('PGSQL_USER')
+        );
 
-        // Rudimentary estimate factoring in compression
+        $backupSize = $mysqlSize + $pgsqlSize;
+
+        // Rudimentary estimation of reduction/overhead with compression and encryption
         $withCrypt = $this->config->get('WITH_CRYPT');
         $estimatedNeeded = $withCrypt
             ? ($backupSize * 0.8)  // 20% smaller with gzip, then encryption overhead
             : ($backupSize * 0.6); // 40% smaller with gzip
 
+        // Check free space
+        $freeBytes = disk_free_space(dirname($this->config->get('BACKUP_FILE')));
+
         if ($freeBytes < $estimatedNeeded) {
             $msg = sprintf(
-                "Not enough free space: %s available, need ~%s",
+                "Not enough free space on this machine: %s available, need ~%s",
                 human_filesize($freeBytes),
                 human_filesize((int)$estimatedNeeded)
             );
@@ -317,12 +362,28 @@ class BackupService
 
         // Estimate same approach as local
         $backupDir = $this->config->get('BACKUP_DIRECTORY');
-        $backupSize = wrap_exec(
+        $backupDirSize = wrap_exec(
             sprintf('du -sb %s', escapeshellarg($backupDir)),
             "Cannot estimate size of backup directory"
         );
-        $backupSize = (int) multi_explode([' ', "\t"], $backupSize)[0];
+        $backupDirSize = (int) multi_explode([' ', "\t"], $backupDirSize)[0];
 
+        $mysqlSize = $this->estimateMysqlDatabaseSize(
+            explode(' ', $this->config->get('MYSQL_DATABASES')),
+            $this->config->get('MYSQL_HOST'),
+            $this->config->get('MYSQL_USER'),
+            $this->config->get('MYSQL_PASSWORD')
+        );
+
+        $pgsqlSize = $this->estimatePostgresDatabaseSize(
+            $this->config->get('PGSQL_DATABASES'),
+            $this->config->get('PGSQL_HOST'),
+            $this->config->get('PGSQL_USER')
+        );
+
+        $backupSize = $mysqlSize + $pgsqlSize + $backupDirSize;
+
+        // Rudimentary estimation of reduction/overhead with compression and encryption
         $withCrypt = $this->config->get('WITH_CRYPT');
         $estimatedNeeded = $withCrypt
             ? ($backupSize * 0.8)
@@ -346,13 +407,13 @@ class BackupService
     private function cleanupLocalOldFiles(string $backupFile): void
     {
         if (file_exists($backupFile)) {
-            $this->output->writeln(" 💻 Removing old backup file: $backupFile");
+            $this->writeln(" 💻 Removing old backup file: $backupFile");
             unlink($backupFile);
         }
     }
 
     /**
-     * Dumps MySQL with `pv` progress.
+     * Creates a Mysqldump to {backup_directory}/{yyyy-mm-dd}-mysqldump.sql
      *
      * @param string $today e.g. "YYYY-MM-DD"
      * @throws \RuntimeException on failure
@@ -369,8 +430,8 @@ class BackupService
         // Estimate MySQL DB size
         $approxBytes = $this->estimateMysqlDatabaseSize($dbList, $host, $user, $pass);
 
-        $this->output->writeln(" 💻 Creating MySQL dump -> $dest ...");
-        $this->dumpMysqlWithProgress(
+        $this->writeln(" 💻 Creating MySQL dump -> $dest ...");
+        $this->mysqlDump(
             $binary,
             $host,
             $user,
@@ -382,7 +443,7 @@ class BackupService
     }
 
     /**
-     * Dumps PostgreSQL with `pv` progress.
+     * Creates a Postgres dump to {backup_directory}/{yyyy-mm-dd}-pgsqldump.sql
      *
      * @param string $today e.g. "YYYY-MM-DD"
      * @throws \RuntimeException on failure
@@ -399,8 +460,8 @@ class BackupService
         // Estimate Postgres size
         $approxBytes = $this->estimatePostgresDatabaseSize($dbName, $host, $user);
 
-        $this->output->writeln(" 💻 Creating PostgreSQL dump -> $dest ...");
-        $this->dumpPostgresWithProgress(
+        $this->writeln(" 💻 Creating PostgreSQL dump -> $dest ...");
+        $this->pgDump(
             $host,
             $user,
             $dbName,
@@ -415,7 +476,7 @@ class BackupService
      */
     private function cleanupRemote(): void
     {
-        $this->output->writeln(" 💻 Retrieving list of remote backup directories...");
+        $this->writeln(" 💻 Retrieving list of remote backup directories...");
         $listing = remote_ssh_exec(
             $this->config->get('SSH_HOST'),
             $this->config->get('SSH_USER'),
@@ -424,13 +485,13 @@ class BackupService
         );
 
         $lines = array_filter(explode("\n", $listing));
-        $days  = (int) $this->config->get('BACKUP_RETENTION_DAYS', 30);
+        $days = max(0, (int) $this->config->get('BACKUP_RETENTION_DAYS', 30));
         foreach ($lines as $line) {
             $line = trim($line);
             if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $line)) {
                 $timeDir = strtotime($line);
                 if ($timeDir < strtotime("-{$days} days")) {
-                    $this->output->writeln(" 💻 Removing old backup dir: {$line}");
+                    $this->writeln(" 💻 Removing old backup dir: {$line}");
                     remote_ssh_exec(
                         $this->config->get('SSH_HOST'),
                         $this->config->get('SSH_USER'),
@@ -458,60 +519,126 @@ class BackupService
     }
 
     /**
-     * Creates a local tar.gz or tar.gz.enc using pv to show progress.
+     * Streams a backup archive to a remote server, with optional encryption.
      *
-     * @param string $today
-     * @throws \RuntimeException on failure
+     * This method creates a backup archive from the specified backup directory
+     * and streams it to a remote server using SSH. The backup can be encrypted
+     * using AES-256-CBC encryption if configured. Progress can also be displayed
+     * during the streaming process.
+     *
+     * @param string $today The current date string used for naming the backup archive.
+     *
+     * @throws RuntimeException If any command execution fails during the process.
      */
-    private function createLocalArchive(string $today): void
+    private function streamBackupToRemote(string $today): int
     {
-        $backupFile = $this->config->get('BACKUP_FILE');
-        $backupDir  = $this->config->get('BACKUP_DIRECTORY');
-        $withCrypt  = $this->config->get('WITH_CRYPT');
-        $password   = $this->config->get('CRYPT_PASSWORD');
+        $backupDir = $this->config->get('BACKUP_DIRECTORY');
+        $remoteDir = $this->config->get('SSH_BACKUP_HOME');
+        $withCrypt = $this->config->get('WITH_CRYPT');
+        $password = $this->config->get('CRYPT_PASSWORD');
 
+        // Construct the remote file name
         if ($withCrypt) {
-            $this->output->writeln(" 💻 Creating {$today} Encrypted Backup Archive...");
-            $command = sprintf(
-                'tar --exclude=%s -cf - %s | pv -f -s $(du -sb %s | awk \'{print $1}\') | gzip | openssl enc -aes-256-cbc -salt -pbkdf2 -iter 100000 -pass pass:%s > %s',
-                escapeshellarg($backupFile),
-                escapeshellarg($backupDir),
-                escapeshellarg($backupDir),
-                escapeshellarg($password),
-                escapeshellarg($backupFile)
-            );
+            $remoteFile = "{$remoteDir}/{$today}/{$today}-{$this->config->get('SSH_USER')}-arkhive.enc.arbk";
         } else {
-            $this->output->writeln(" 💻 Creating {$today} Non-Encrypted Backup Archive...");
-            $command = sprintf(
-                'tar --exclude=%s -cf - %s | pv -f -s $(du -sb %s | awk \'{print $1}\') | gzip > %s',
-                escapeshellarg($backupFile),
-                escapeshellarg($backupDir),
-                escapeshellarg($backupDir),
-                escapeshellarg($backupFile)
-            );
+            $remoteFile = "{$remoteDir}/{$today}/{$today}-{$this->config->get('SSH_USER')}-arkhive.arbk";
         }
 
-        // Use runPipeCommand to parse progress
-        $this->runPipeCommand($command, function ($percent, $etaSec, $elapsedTimeSec, $speed, $transferredSize) {
-            $this->output->write(
-                sprintf(
-                    "\033[2K\r 🕑 Archiving: %d%% done. [%ss elapsed, ETA %ss]. Running at %s. Transferred: %s",
+        // Get the backup directory size for progress reporting
+        $sizeCmd = sprintf('du -sb %s | awk \'{print $1}\'', escapeshellarg($backupDir));
+        $sizeStr = trim(wrap_exec($sizeCmd, "Cannot get backup directory size"));
+        $backupDirSize = (int)$sizeStr;
+
+        if ($this->showProgress) {
+            if ($withCrypt) {
+                $this->writeln(" 💻 Creating {$today} Encrypted Backup Archive and streaming to remote...");
+                
+                $tarCmd = sprintf('tar -cf - %s', escapeshellarg($backupDir));
+                $command = sprintf(
+                    '%s | pv -f -s %d | gzip | openssl enc -aes-256-cbc -salt -pbkdf2 -iter 100000 -pass pass:%s | ssh -p %s %s@%s "cat > %s"',
+                    $tarCmd,
+                    $backupDirSize,
+                    escapeshellarg($password),
+                    escapeshellarg($this->config->get('SSH_PORT')),
+                    escapeshellarg($this->config->get('SSH_USER')),
+                    escapeshellarg($this->config->get('SSH_HOST')),
+                    escapeshellarg($remoteFile)
+                );
+            } else {
+                $this->writeln(" 💻 Creating {$today} Non-Encrypted Backup Archive and streaming to remote...");
+
+                $tarCmd = sprintf('tar -cf - %s', escapeshellarg($backupDir));
+                $command = sprintf(
+                    '%s | pv -f -s %d | gzip | ssh -p %s %s@%s "cat > %s"',
+                    $tarCmd,
+                    $backupDirSize,
+                    escapeshellarg($this->config->get('SSH_PORT')),
+                    escapeshellarg($this->config->get('SSH_USER')),
+                    escapeshellarg($this->config->get('SSH_HOST')),
+                    escapeshellarg($remoteFile)
+                );
+            }
+
+            // execute the command and show progress
+            $this->runPipeCommand($command, function ($percent, $etaSec, $elapsedTimeSec, $speed, $transferredSize) {
+                $this->write(sprintf(
+                    "\033[2K\r 🕑 Streaming: %d%% done. [%ss elapsed, ETA %ss]. Running at %s. Transferred: %s",
                     $percent,
                     $elapsedTimeSec,
                     $etaSec,
                     $speed,
                     $transferredSize
-                )
-            );
-        });
-        $this->output->writeln(''); // new line
+                ));
+            });
+            $this->writeln('');
+        } else {
+            if ($withCrypt) {
+                $this->writeln(" 💻 Creating {$today} Encrypted Backup Archive and streaming to remote...");
 
-        if (!is_readable($backupFile) || filesize($backupFile) === 0) {
-            throw new \RuntimeException("Backup file $backupFile is empty or unreadable");
+                $command = sprintf(
+                    'tar -cf - %s | gzip | openssl enc -aes-256-cbc -salt -pbkdf2 -iter 100000 -pass pass:%s | ssh -p %s %s@%s "cat > %s"',
+                    escapeshellarg($backupDir),
+                    escapeshellarg($password),
+                    escapeshellarg($this->config->get('SSH_PORT')),
+                    escapeshellarg($this->config->get('SSH_USER')),
+                    escapeshellarg($this->config->get('SSH_HOST')),
+                    escapeshellarg($remoteFile)
+                );
+            } else {
+                $this->writeln(" 💻 Creating {$today} Non-Encrypted Backup Archive and streaming to remote...");
+
+                $command = sprintf(
+                    'tar -cf - %s | gzip | ssh -p %s %s@%s "cat > %s"',
+                    escapeshellarg($backupDir),
+                    escapeshellarg($this->config->get('SSH_PORT')),
+                    escapeshellarg($this->config->get('SSH_USER')),
+                    escapeshellarg($this->config->get('SSH_HOST')),
+                    escapeshellarg($remoteFile)
+                );
+            }
+
+            // execute the command without progress
+            wrap_exec($command, "Cannot stream backup to remote");
         }
 
-        $size = human_filesize(filesize($backupFile));
-        $this->output->writeln(" ✅ Backup file $backupFile created. Size: $size");
+        // Check if the remote file exists and is non-empty, and fetch its size
+        $remoteFileSizeStr = trim(remote_ssh_exec(
+            $this->config->get('SSH_HOST'),
+            $this->config->get('SSH_USER'),
+            $this->config->get('SSH_PORT'),
+            sprintf('stat -c %%s %s 2>/dev/null || echo 0', escapeshellarg($remoteFile))
+        ));
+
+        $remoteFileSize = (int) $remoteFileSizeStr;
+
+        if ($remoteFileSize <= 0) {
+            throw new \RuntimeException("Remote file verification failed: $remoteFile is missing or empty.");
+        }
+        
+        $this->writeln(" ✅ Remote backup streamed successfully to {$remoteFile} with size: " . human_filesize($remoteFileSize));
+
+        // Return the size of the final backup file
+        return $remoteFileSize;
     }
 
     /**
@@ -546,7 +673,7 @@ class BackupService
         );
 
         $this->runPipeCommand($command, function ($percent, $etaSec, $elapsedTimeSec, $speed, $transferredSize) {
-            $this->output->write(sprintf(
+            $this->write(sprintf(
                 "\033[2K\r 🕑 Uploading: %d%% done. [%ss elapsed, ETA %ss]. Running at %s. Transferred: %s",
                 $percent,
                 $elapsedTimeSec,
@@ -555,7 +682,7 @@ class BackupService
                 $transferredSize
             ));
         });
-        $this->output->writeln('');
+        $this->writeln('');
     }
 
     /**
@@ -565,7 +692,7 @@ class BackupService
      */
     private function fixRemotePerms(string $today): void
     {
-        $this->output->writeln(" 💻 Fixing permissions on remote SSH server...");
+        $this->writeln(" 💻 Fixing permissions on remote SSH server...");
         remote_ssh_exec(
             $this->config->get('SSH_HOST'),
             $this->config->get('SSH_USER'),
@@ -629,6 +756,10 @@ class BackupService
      */
     private function estimateMysqlDatabaseSize(array $databases, string $host, string $user, string $pass): int
     {
+        if (!$this->config->get('WITH_MYSQL')) {
+            return 0;
+        }
+        
         if (in_array('*', $databases, true)) {
             $sql = "SELECT SUM(data_length+index_length) FROM information_schema.tables";
         } else {
@@ -659,8 +790,10 @@ class BackupService
      */
     private function estimatePostgresDatabaseSize(string $dbName, string $host, string $user): int
     {
-        // Pseudocode again:
-        //  psql -t -U user -h host -d dbName -c "SELECT pg_database_size('dbName')"
+        if (!$this->config->get('WITH_PGSQL')) {
+            return 0;
+        }
+
         $cmd = sprintf(
             'psql -t -U %s -h %s -d %s -c %s',
             escapeshellarg($user),
@@ -673,7 +806,7 @@ class BackupService
     }
 
     /**
-     * Dumps MySQL with progress. (mysqldump | pv -f -s <size> > dump.sql)
+     * Creates a MySQL dump, optionally showing progress.
      *
      * @param string $dumpBinary e.g. "mysqldump" or "mariadb-dump"
      * @param string $host
@@ -683,7 +816,7 @@ class BackupService
      * @param string $dumpDest
      * @param int    $approxBytes
      */
-    private function dumpMysqlWithProgress(
+    private function mysqlDump(
         string $dumpBinary,
         string $host,
         string $user,
@@ -692,9 +825,6 @@ class BackupService
         string $dumpDest,
         int    $approxBytes
     ): void {
-        // Example:
-        // mysqldump -u user -pPASS --host=host --quick --opt --skip-lock-tables --routines --triggers --databases db1 db2 ...
-        // | pv -f -s <approxBytes> > dump.sql
         if (in_array('*', $dbList, true)) {
             $dbsString = '--all-databases';
         } else {
@@ -702,32 +832,48 @@ class BackupService
             $dbsString = "--databases $dbsString";
         }
 
-        $command = sprintf(
-            '%s -u %s -p%s --host=%s --quick --opt --skip-lock-tables --routines --triggers %s | pv -f -s %d > %s',
-            $dumpBinary,
-            escapeshellarg($user),
-            escapeshellarg($pass),
-            escapeshellarg($host),
-            $dbsString,
-            $approxBytes,
-            escapeshellarg($dumpDest)
-        );
-
-        $this->runPipeCommand($command, function ($percent, $etaSec, $elapsedTimeSec, $speed, $transferredSize) {
-            $this->output->write(sprintf(
-                "\033[2K\r 🕑 Mysql Dump: %d%% done. [%ss elapsed, ETA %ss]. Running at %s. Transferred: %s",
-                $percent,
-                $elapsedTimeSec,
-                $etaSec,
-                $speed,
-                $transferredSize
-            ));
-        });
-        $this->output->writeln('');
+        if ($this->showProgress) {
+            $command = sprintf(
+                '%s -u %s -p%s --host=%s --quick --opt --skip-lock-tables --routines --triggers %s | pv -f -s %d > %s',
+                $dumpBinary,
+                escapeshellarg($user),
+                escapeshellarg($pass),
+                escapeshellarg($host),
+                $dbsString,
+                max(1, $approxBytes), // avoids "pv -s 0"
+                escapeshellarg($dumpDest)
+            );
+            
+            // execute the command and show progress
+            $this->runPipeCommand($command, function ($percent, $etaSec, $elapsedTimeSec, $speed, $transferredSize) {
+                $this->write(sprintf(
+                    "\033[2K\r 🕑 Mysql Dump: %d%% done. [%ss elapsed, ETA %ss]. Running at %s. Transferred: %s",
+                    $percent,
+                    $elapsedTimeSec,
+                    $etaSec,
+                    $speed,
+                    $transferredSize
+                ));
+            });
+            $this->writeln('');
+        } else {
+            $command = sprintf(
+                '%s -u %s -p%s --host=%s --quick --opt --skip-lock-tables --routines --triggers %s > %s',
+                $dumpBinary,
+                escapeshellarg($user),
+                escapeshellarg($pass),
+                escapeshellarg($host),
+                $dbsString,
+                escapeshellarg($dumpDest)
+            );
+            
+            // execute the command without progress
+            wrap_exec($command, "Cannot create MySQL dump");
+        }
     }
 
     /**
-     * Dumps Postgres with progress. (pg_dump | pv -f -s <size> > dump.sql)
+     * Creates a PostgreSQL dump using pg_dump, optionally showing progress.
      *
      * @param string $host
      * @param string $user
@@ -735,36 +881,47 @@ class BackupService
      * @param string $dumpDest
      * @param int    $approxBytes
      */
-    private function dumpPostgresWithProgress(
+    private function pgDump(
         string $host,
         string $user,
         string $dbName,
         string $dumpDest,
         int    $approxBytes
     ): void {
-        // Example:
-        // pg_dump -h host -U user -d dbName --no-owner --no-privileges --format=custom
-        // | pv -f -s <approxBytes> > dump.sql
-        $command = sprintf(
-            'pg_dump -h %s -U %s -d %s --no-owner --no-privileges --format=custom | pv -f -s %d > %s',
-            escapeshellarg($host),
-            escapeshellarg($user),
-            escapeshellarg($dbName),
-            $approxBytes,
-            escapeshellarg($dumpDest)
-        );
-
-        $this->runPipeCommand($command, function ($pct, $transferred, $elapsed, $speed, $eta) {
-            $this->output->write(sprintf(
-                "\033[2K\r 🕑 PG Dump: %d%% done. [%ss elapsed, ETA %ss]. Running at %s. Transferred: %s",
-                $pct,
-                $transferred,
-                $elapsed,
-                $speed,
-                $eta
-            ));
-        });
-        $this->output->writeln('');
+        if ($this->showProgress) {
+            $command = sprintf(
+                'pg_dump -h %s -U %s -d %s --no-owner --no-privileges --format=custom | pv -f -s %d > %s',
+                escapeshellarg($host),
+                escapeshellarg($user),
+                escapeshellarg($dbName),
+                max(1, $approxBytes), // avoids "pv -s 0"
+                escapeshellarg($dumpDest)
+            );
+            
+            // execute the command and show progress
+            $this->runPipeCommand($command, function ($pct, $transferred, $elapsed, $speed, $eta) {
+                $this->write(sprintf(
+                    "\033[2K\r 🕑 PG Dump: %d%% done. [%ss elapsed, ETA %ss]. Running at %s. Transferred: %s",
+                    $pct,
+                    $transferred,
+                    $elapsed,
+                    $speed,
+                    $eta
+                ));
+            });
+            $this->writeln('');
+        } else {
+            $command = sprintf(
+                'pg_dump -h %s -U %s -d %s --no-owner --no-privileges --format=custom > %s',
+                escapeshellarg($host),
+                escapeshellarg($user),
+                escapeshellarg($dbName),
+                escapeshellarg($dumpDest)
+            );
+            
+            // execute the command without progress
+            wrap_exec($command, "Cannot create PostgreSQL dump");
+        }
     }
 
     /**
@@ -779,6 +936,30 @@ class BackupService
         [$exitCode, $out, $err] = proc_exec($command, $progressCallback);
         if ($exitCode !== 0) {
             throw new \RuntimeException("Command failed (exit $exitCode): $command\nStderr: $err");
+        }
+    }
+
+    /**
+     * Writes a message to the output, if output is available.
+     *
+     * @param string $message
+     */
+    private function writeln(string $message): void
+    {
+        if ($this->output) {
+            $this->output->writeln($message);
+        }
+    }
+
+    /**
+     * Writes a message to the output without a newline, if output is available.
+     *
+     * @param string $message
+     */
+    private function write(string $message): void
+    {
+        if ($this->output) {
+            $this->output->write($message);
         }
     }
 }

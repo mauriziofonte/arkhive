@@ -61,6 +61,9 @@ class RestoreCommand extends BaseCommand
             // 4b) transform the destination path to an absolute path:
             $destination = realpath($destination);
 
+            // 4c) append the date, user and host to the destination path:
+            $destination = rtrim($destination, '/') . '/' . $date . '-arkhive-restore-' . $this->config->get('SSH_USER') . '-' . $this->config->get('SSH_HOST');
+
             // 5) Ensure the destination directory exists:
             if (!is_dir($destination)) {
                 if (!mkdir($destination, 0755, true)) {
@@ -76,11 +79,12 @@ class RestoreCommand extends BaseCommand
 
             $this->info(" ✅ Restore completed successfully!");
             $this->sendEmailNotification(
+                true,
                 "Restore Completed",
                 "Restore of {$date} backup completed successfully into {$destination}."
             );
         } catch (\Throwable $e) {
-            $this->criticalError($e->getMessage());
+            $this->criticalError("{$e->getMessage()} at {$e->getFile()}:{$e->getLine()}");
         }
     }
 }
