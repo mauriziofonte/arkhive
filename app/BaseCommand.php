@@ -201,7 +201,6 @@ abstract class BaseCommand extends Command
     {
         $this->config = collect([
             'BACKUP_DIRECTORY'      => null,
-            'BACKUP_FILE'           => null,
             'BACKUP_RETENTION_DAYS' => null,
             'SSH_HOST'              => null,
             'SSH_USER'              => null,
@@ -209,6 +208,7 @@ abstract class BaseCommand extends Command
             'SSH_BACKUP_HOME'       => null,
             'WITH_MYSQL'            => false,
             'MYSQL_HOST'            => 'localhost',
+            'MYSQL_PORT'            => 3306,
             'MYSQL_USER'            => null,
             'MYSQL_PASSWORD'        => null,
             'MYSQL_DATABASES'       => null,
@@ -281,7 +281,7 @@ abstract class BaseCommand extends Command
      */
     private function validateDotenv(array $dotenv, string $configFile): void
     {
-        $requiredKeys = ['BACKUP_DIRECTORY', 'BACKUP_FILE', 'BACKUP_RETENTION_DAYS', 'SSH_HOST', 'SSH_USER', 'SSH_BACKUP_HOME'];
+        $requiredKeys = ['BACKUP_DIRECTORY', 'BACKUP_RETENTION_DAYS', 'SSH_HOST', 'SSH_USER', 'SSH_BACKUP_HOME'];
         foreach ($requiredKeys as $key) {
             if (!array_key_exists($key, $dotenv)) {
                 $this->criticalError("Missing config key: {$key} in {$configFile}.");
@@ -290,7 +290,7 @@ abstract class BaseCommand extends Command
 
         // MySQL
         if ($this->isTruthy($dotenv['WITH_MYSQL'])) {
-            $mysqlKeys = ['MYSQL_HOST', 'MYSQL_USER', 'MYSQL_PASSWORD', 'MYSQL_DATABASES'];
+            $mysqlKeys = ['MYSQL_HOST', 'MYSQL_PORT', 'MYSQL_USER', 'MYSQL_PASSWORD', 'MYSQL_DATABASES'];
             foreach ($mysqlKeys as $key) {
                 if (!array_key_exists($key, $dotenv)) {
                     $this->criticalError("Missing MySQL key: {$key} in {$configFile}.");

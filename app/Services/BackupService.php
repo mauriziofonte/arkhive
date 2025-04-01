@@ -106,10 +106,6 @@ class BackupService
     {
         $start      = time();
         $today      = date("Y-m-d");
-        $backupFile = $this->config->get('BACKUP_FILE');
-
-        // Remove old local backup file if it exists
-        $this->cleanupLocalOldFiles($backupFile);
 
         // Create DB dumps if needed
         if ($this->config->get('WITH_MYSQL')) {
@@ -259,23 +255,24 @@ class BackupService
 
     /**
      * Checks if the local backup directory exists and is writable,
-     * and tests creating the backup file.
+     * and tests creating a temporary file inside it.
      *
      * @throws \RuntimeException on failure
      */
     private function checkLocalDir(): void
     {
-        $dir  = $this->config->get('BACKUP_DIRECTORY');
-        $file = $this->config->get('BACKUP_FILE');
+        $dir      = $this->config->get('BACKUP_DIRECTORY');
+        $testFile = $this->config->get('BACKUP_DIRECTORY') . uniqid('arkhive-backup-', true) . '.tmp';
 
         if (!is_dir($dir)) {
-            throw new \RuntimeException("Backup directory does not exist: $dir");
+            throw new \RuntimeException("Backup directory does not exist: {$dir}");
         }
-        if (!touch($file)) {
-            throw new \RuntimeException("Cannot write backup file: $file");
+        if (!touch($testFile)) {
+            throw new \RuntimeException("Cannot write test file to backup directory: {$dir}");
         }
-        // Clean up that test
-        unlink($file);
+
+        // Clean up that test file
+        unlink($testFile);
     }
 
     /**
@@ -311,6 +308,7 @@ class BackupService
         $mysqlSize = $this->estimateMysqlDatabaseSize(
             explode(' ', $this->config->get('MYSQL_DATABASES')),
             $this->config->get('MYSQL_HOST'),
+            $this->config->get('MYSQL_PORT'),
             $this->config->get('MYSQL_USER'),
             $this->config->get('MYSQL_PASSWORD')
         );
@@ -330,7 +328,7 @@ class BackupService
             : ($backupSize * 0.6); // 40% smaller with gzip
 
         // Check free space
-        $freeBytes = disk_free_space(dirname($this->config->get('BACKUP_FILE')));
+        $freeBytes = disk_free_space($this->config->get('BACKUP_DIRECTORY'));
 
         if ($freeBytes < $estimatedNeeded) {
             $msg = sprintf(
@@ -371,6 +369,7 @@ class BackupService
         $mysqlSize = $this->estimateMysqlDatabaseSize(
             explode(' ', $this->config->get('MYSQL_DATABASES')),
             $this->config->get('MYSQL_HOST'),
+            $this->config->get('MYSQL_PORT'),
             $this->config->get('MYSQL_USER'),
             $this->config->get('MYSQL_PASSWORD')
         );
@@ -400,19 +399,6 @@ class BackupService
     }
 
     /**
-     * Removes the old local backup file if it exists.
-     *
-     * @param string $backupFile
-     */
-    private function cleanupLocalOldFiles(string $backupFile): void
-    {
-        if (file_exists($backupFile)) {
-            $this->writeln(" 💻 Removing old backup file: $backupFile");
-            unlink($backupFile);
-        }
-    }
-
-    /**
      * Creates a Mysqldump to {backup_directory}/{yyyy-mm-dd}-mysqldump.sql
      *
      * @param string $today e.g. "YYYY-MM-DD"
@@ -422,18 +408,20 @@ class BackupService
     {
         $binary = $this->findMysqlBinaryOrFail();
         $host   = $this->config->get('MYSQL_HOST');
+        $port   = $this->config->get('MYSQL_PORT');
         $user   = $this->config->get('MYSQL_USER');
         $pass   = $this->config->get('MYSQL_PASSWORD');
         $dbList = explode(' ', $this->config->get('MYSQL_DATABASES'));
         $dest   = "{$this->config->get('BACKUP_DIRECTORY')}/{$today}-mysqldump.sql";
 
         // Estimate MySQL DB size
-        $approxBytes = $this->estimateMysqlDatabaseSize($dbList, $host, $user, $pass);
+        $approxBytes = $this->estimateMysqlDatabaseSize($dbList, $host, $port, $user, $pass);
 
         $this->writeln(" 💻 Creating MySQL dump -> $dest ...");
         $this->mysqlDump(
             $binary,
             $host,
+            $port,
             $user,
             $pass,
             $dbList,
@@ -642,50 +630,6 @@ class BackupService
     }
 
     /**
-     * Uploads a file to remote via SSH using pv, which displays progress to stderr.
-     *
-     * @param string $localFile
-     * @param int    $fileSize
-     * @param string $sshHost
-     * @param string $sshUser
-     * @param string $sshPort
-     * @param string $remotePath
-     * @throws \RuntimeException on failure
-     */
-    private function sendFileViaPv(
-        string $localFile,
-        int    $fileSize,
-        string $sshHost,
-        string $sshUser,
-        string $sshPort,
-        string $remotePath
-    ): void {
-        // Example:
-        // pv -f -s 123456 /path/to/localfile | ssh -p 22 user@host "cat > /remote/path"
-        $command = sprintf(
-            'pv -f -s %d %s | ssh -p %s %s@%s "cat > %s"',
-            $fileSize,
-            escapeshellarg($localFile),
-            escapeshellarg($sshPort),
-            escapeshellarg($sshUser),
-            escapeshellarg($sshHost),
-            escapeshellarg($remotePath)
-        );
-
-        $this->runPipeCommand($command, function ($percent, $etaSec, $elapsedTimeSec, $speed, $transferredSize) {
-            $this->write(sprintf(
-                "\033[2K\r 🕑 Uploading: %d%% done. [%ss elapsed, ETA %ss]. Running at %s. Transferred: %s",
-                $percent,
-                $elapsedTimeSec,
-                $etaSec,
-                $speed,
-                $transferredSize
-            ));
-        });
-        $this->writeln('');
-    }
-
-    /**
      * Fixes permissions on remote after uploading.
      *
      * @param string $today
@@ -708,11 +652,6 @@ class BackupService
      */
     private function cleanupLocalPostBackup(string $today): void
     {
-        $backupFile = $this->config->get('BACKUP_FILE');
-        if (file_exists($backupFile)) {
-            unlink($backupFile);
-        }
-
         if ($this->config->get('WITH_MYSQL')) {
             $sqlPath = "{$this->config->get('BACKUP_DIRECTORY')}/{$today}-mysqldump.sql";
             if (file_exists($sqlPath)) {
@@ -750,14 +689,23 @@ class BackupService
      *
      * @param array  $databases
      * @param string $host
+     * @param string $port
      * @param string $user
      * @param string $pass
      * @return int in bytes
      */
-    private function estimateMysqlDatabaseSize(array $databases, string $host, string $user, string $pass): int
+    private function estimateMysqlDatabaseSize(array $databases, string $host, string $port, string $user, string $pass): int
     {
         if (!$this->config->get('WITH_MYSQL')) {
             return 0;
+        }
+
+        // determine the binary: either mysql or mariadb
+        $binary = 'mysql';
+        if (binary_exists('mariadb')) {
+            $binary = 'mariadb';
+        } elseif (!binary_exists('mysql')) {
+            throw new \RuntimeException("Cannot find MySQL/MariaDB client binary");
         }
         
         if (in_array('*', $databases, true)) {
@@ -769,10 +717,12 @@ class BackupService
         }
 
         $cmd = sprintf(
-            "mysql --skip-column-names --disable-column-names -u %s -p%s -h %s -e %s 2>/dev/null | awk '/^[0-9]+$/ {print $1}'",
+            "%s --skip-column-names --disable-column-names -u %s -p%s --host=%s --port=%s -e %s 2>/dev/null | awk '/^[0-9]+$/ {print $1}'",
+            $binary,
             escapeshellarg($user),
             escapeshellarg($pass),
             escapeshellarg($host),
+            escapeshellarg($port),
             escapeshellarg($sql)
         );
 
@@ -810,6 +760,7 @@ class BackupService
      *
      * @param string $dumpBinary e.g. "mysqldump" or "mariadb-dump"
      * @param string $host
+     * @param string $port
      * @param string $user
      * @param string $pass
      * @param array  $dbList
@@ -819,6 +770,7 @@ class BackupService
     private function mysqlDump(
         string $dumpBinary,
         string $host,
+        string $port,
         string $user,
         string $pass,
         array  $dbList,
@@ -834,11 +786,12 @@ class BackupService
 
         if ($this->showProgress) {
             $command = sprintf(
-                '%s -u %s -p%s --host=%s --quick --opt --skip-lock-tables --routines --triggers %s | pv -f -s %d > %s',
+                '%s -u %s -p%s --host=%s --port=%s --quick --opt --skip-lock-tables --routines --triggers %s | pv -f -s %d > %s',
                 $dumpBinary,
                 escapeshellarg($user),
                 escapeshellarg($pass),
                 escapeshellarg($host),
+                escapeshellarg($port),
                 $dbsString,
                 max(1, $approxBytes), // avoids "pv -s 0"
                 escapeshellarg($dumpDest)
@@ -858,11 +811,12 @@ class BackupService
             $this->writeln('');
         } else {
             $command = sprintf(
-                '%s -u %s -p%s --host=%s --quick --opt --skip-lock-tables --routines --triggers %s > %s',
+                '%s -u %s -p%s --host=%s --port=%s --quick --opt --skip-lock-tables --routines --triggers %s > %s',
                 $dumpBinary,
                 escapeshellarg($user),
                 escapeshellarg($pass),
                 escapeshellarg($host),
+                escapeshellarg($port),
                 $dbsString,
                 escapeshellarg($dumpDest)
             );

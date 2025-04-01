@@ -1,5 +1,4 @@
 BACKUP_DIRECTORY=/path/to/backup/directory
-BACKUP_FILE=/path/to/backup/directory/backup.tar.gz
 BACKUP_RETENTION_DAYS=10
 SSH_HOST=example.com
 SSH_PORT=22
@@ -7,6 +6,7 @@ SSH_USER=example
 SSH_BACKUP_HOME="~/backup"
 WITH_MYSQL=true
 MYSQL_HOST=localhost
+MYSQL_PORT=3306
 MYSQL_USER=root
 MYSQL_PASSWORD=password
 MYSQL_DATABASES="database1 database2"

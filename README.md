@@ -133,7 +133,6 @@ A sample config:
 
 ```env
 BACKUP_DIRECTORY=/path/to/backup/directory
-BACKUP_FILE=/path/to/backup/directory/backup.tar.gz
 BACKUP_RETENTION_DAYS=10
 SSH_HOST=example.com
 SSH_PORT=22
@@ -141,6 +140,7 @@ SSH_USER=example
 SSH_BACKUP_HOME="~/backup"
 WITH_MYSQL=true
 MYSQL_HOST=localhost
+MYSQL_PORT=3306
 MYSQL_USER=root
 MYSQL_PASSWORD=password
 MYSQL_DATABASES="database1 database2"
@@ -178,7 +178,8 @@ arkhive backup
 - Creates archive (encrypted if `WITH_CRYPT=true`).
 - SCPs it to the remote server (`SSH_HOST`).
 - Removes local archive/dumps.
-- Prunes old backups over `BACKUP_RETENTION_DAYS`.
+- Prunes old backups over `BACKUP_RETENTION_DAYS`. It can also be `0` to disable retention.
+- Sends email notifications (if `NOTIFY=true`).
 
 ### Restore
 
