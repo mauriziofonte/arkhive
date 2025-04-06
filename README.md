@@ -34,7 +34,7 @@ sudo mv arkhive.phar /usr/local/bin/arkhive && sudo chmod +x /usr/local/bin/arkh
 
 You can now run `arkhive` from anywhere in your system.
 
-> Looking for other installation methods? Check [Alternate Installation methods](#alternate-installation-methods).
+> Looking for other installation methods? Check [Alternate Installation Methods](#alternate-installation-methods).
 
 - - -
 
@@ -53,7 +53,7 @@ ArkHive uses a `.env-style` config file. By default, it will look for a valid co
 
 > Please note that **./** refers to the current working directory, while **~/** refers to the user's home directory.
 
-A sample config:
+### Sample Config
 
 ```env
 BACKUP_DIRECTORY=/path/to/backup/directory
@@ -94,16 +94,27 @@ Fill in values to match your environment.
 
 ### Backup
 
+Prerequisite: you must have a valid **ArkHive config file**. [See Sample Config](#sample-config).
+
 ```bash
-arkhive backup
+arkhive backup [--with-disk-space-check] [--with-progress]
 ```
 
-- Dumps databases (if enabled).
-- Creates archive (encrypted if `WITH_CRYPT=true`).
-- SCPs it to the remote server (`SSH_HOST`).
-- Removes local archive/dumps.
-- Prunes old backups over `BACKUP_RETENTION_DAYS`. It can also be `0` to disable retention.
-- Sends email notifications (if `NOTIFY=true`).
+This command will:
+
+- Dump MySQL/PostgreSQL, if `WITH_MYSQL` or `WITH_PGSQL` is set to `true`. Note: MySQL/PostgreSQL dumps are stored in `BACKUP_DIRECTORY`, so, these will be included in the tarball.
+- Create a tarball of the specified `BACKUP_DIRECTORY`.
+- Encrypt the whole tarball if `WITH_CRYPT` is set to `true`.
+- Remove **remote** backups older than `BACKUP_RETENTION_DAYS`. Note: **0** is valid, and means "no retention".
+- Upload the tarball to the remote server using SSH.
+- Notify you via email if `NOTIFY` is set to `true`.
+
+Optional flags:
+
+- `--with-disk-space-check`: Check available disk space before backup. This will be a rough estimate based on gzip compression factor and overhead caused by encryption.
+- `--with-progress`: Show progress during the backup process.
+
+> **Important Note**: don't use `--with-progress` in **non-tty** contexts (e.g., CRON jobs). It will cause the command to fail, because we cannot easily show `pv` progress in this case. The command is designed to fail if it detects that you've required `--with-progress` in a non-tty context.
 
 ### Restore
 
@@ -120,10 +131,15 @@ arkhive restore
 Example:
 
 ```bash
-crontab -e 0 2 * * * /usr/local/bin/arkhive backup
+su - youruser
+touch ~/.arkhive-config
+crontab -e
+0 2 * * * /usr/local/bin/arkhive backup
 ```
 
-Runs a backup every day at 2 AM.
+Runs a backup every day at 2 AM, using the config file in `~/.arkhive-config` of the user `youruser`.
+
+> **Important Note**: Make sure to set the correct permissions for the config file, especially if it contains sensitive information like passwords. You can use `chmod 600 ~/.arkhive-config` to restrict access.
 
 - - -
 
@@ -137,7 +153,7 @@ Runs a backup every day at 2 AM.
 
 - - -
 
-## Alternate Installation methods
+## Alternate Installation Methods
 
 Apart from the PHAR build, you can also install **ArkHive** using Composer or by cloning the repository and building it locally. This is useful if you want to customize the tool or contribute to its development.
 
