@@ -15,11 +15,11 @@ use Phar;
 /**
  * Class BaseCommand
  *
- * Acts as the base for all Arkhive commands.
+ * Acts as the base for all ArkHive commands.
  */
 abstract class BaseCommand extends Command
 {
-    const ARKHIVE_VERSION = '1.3';
+    const ARKHIVE_VERSION = '1.3.2';
 
     /** @var string */
     protected $cwd;
@@ -81,7 +81,7 @@ abstract class BaseCommand extends Command
      */
     protected function criticalError(string $message, bool $withOptionalNotification = true)
     {
-        $errorTag = "✖ Arkhive - Fatal Error";
+        $errorTag = "⛔ ArkHive " . self::ARKHIVE_VERSION . " - Fatal Error";
 
         if ($this->output) {
             $this->output->writeln('');
@@ -98,7 +98,7 @@ abstract class BaseCommand extends Command
         if ($withOptionalNotification && $this->config->get('NOTIFY')) {
             $this->sendEmailNotification(
                 false,
-                "Arkhive - Fatal Error",
+                "ArkHive " . self::ARKHIVE_VERSION . " - Fatal Error",
                 "An error occurred: {$message}"
             );
         }
@@ -258,7 +258,7 @@ abstract class BaseCommand extends Command
 
         if (empty($foundFile)) {
             $this->criticalError(
-                "Failed to find the Arkhive configuration file. Create any of:\n" .
+                "Failed to find the ArkHive configuration file. Create any of:\n" .
                 implode("\n", $configFiles) . "\n" .
                 "Please refer to stub config file at https://github.com/mauriziofonte/arkhive/blob/main/.arkhive-config.example"
             );
@@ -293,7 +293,7 @@ abstract class BaseCommand extends Command
             $mysqlKeys = ['MYSQL_HOST', 'MYSQL_PORT', 'MYSQL_USER', 'MYSQL_PASSWORD', 'MYSQL_DATABASES'];
             foreach ($mysqlKeys as $key) {
                 if (!array_key_exists($key, $dotenv)) {
-                    $this->criticalError("Missing MySQL key: {$key} in {$configFile}.");
+                    $this->criticalError("Missing '{$key}' MySQL config value in {$configFile}.");
                 }
             }
             if (!binary_exists('mysqldump') && !binary_exists('mariadb-dump')) {
@@ -306,7 +306,7 @@ abstract class BaseCommand extends Command
             $pgsqlKeys = ['PGSQL_HOST', 'PGSQL_USER', 'PGSQL_DATABASES'];
             foreach ($pgsqlKeys as $key) {
                 if (!array_key_exists($key, $dotenv)) {
-                    $this->criticalError("Missing PGSQL key: {$key} in {$configFile}.");
+                    $this->criticalError("Missing '{$key}' PGSQL config value in {$configFile}.");
                 }
             }
             if (!binary_exists('pg_dump')) {
@@ -317,7 +317,7 @@ abstract class BaseCommand extends Command
         // Crypt
         if ($this->isTruthy($dotenv['WITH_CRYPT'])) {
             if (empty($dotenv['CRYPT_PASSWORD'])) {
-                $this->criticalError("Missing CRYPT_PASSWORD in {$configFile}.");
+                $this->criticalError("Missing 'CRYPT_PASSWORD' config value in {$configFile}.");
             }
             if (!binary_exists('openssl')) {
                 $this->criticalError("Binary openssl not found.");
@@ -329,7 +329,7 @@ abstract class BaseCommand extends Command
             $notifyKeys = ['SMTP_HOST', 'SMTP_PORT', 'SMTP_USER', 'SMTP_PASSWORD', 'SMTP_FROM', 'SMTP_TO'];
             foreach ($notifyKeys as $key) {
                 if (!array_key_exists($key, $dotenv)) {
-                    $this->criticalError("Missing NOTIFY key: {$key} in {$configFile}.");
+                    $this->criticalError("Missing '{$key}' notification config value in {$configFile}.");
                 }
             }
         }
@@ -436,7 +436,7 @@ abstract class BaseCommand extends Command
 
             $body = sprintf(
                 <<<HTML
-            <h2 style="color:%s;">%s Arkhive Backup Notification</h2>
+            <h2 style="color:%s;">%s ArkHive Backup Notification</h2>
         
             <p><strong>Status:</strong> %s</p>
             <p><strong>Date:</strong> %s</p>
@@ -452,7 +452,7 @@ abstract class BaseCommand extends Command
 
             <hr>
             <p style="font-size: 12px; color: #777;">
-                This is an automated notification from <a href='https://github.com/mauriziofonte/arkhive'>Arkhive</a>.
+                This is an automated notification from <a href='https://github.com/mauriziofonte/arkhive'>ArkHive</a>.
             </p>
             HTML,
                 $color,

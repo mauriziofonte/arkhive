@@ -65,9 +65,8 @@ class BackupService
      */
     public function preflightOrFail(): void
     {
-        // if we've decided to show progress, but we're not in a TTY console,
-        // we cannot show progress.
-        if (!stream_isatty(STDOUT)) {
+        // cannot show progress in a non-TTY console,
+        if ($this->showProgress && !stream_isatty(STDOUT)) {
             throw new \RuntimeException("Cannot show progress in non-tty console");
         }
 

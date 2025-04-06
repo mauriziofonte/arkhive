@@ -1,6 +1,6 @@
 {
     "name": "mfonte/arkhive",
-    "description": "Arkhive is a disaster recovery and backup tool built with Laravel Zero. Designed to streamline and encrypt backups, Arkhive ensures that your critical data is safely vaulted and easily recoverable.",
+    "description": "ArkHive is a disaster recovery and backup tool built with Laravel Zero. Designed to streamline and encrypt backups, ArkHive ensures that your critical data is safely vaulted and easily recoverable.",
     "keywords": [
         "backup",
         "encryption",

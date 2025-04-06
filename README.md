@@ -1,8 +1,8 @@
-# ⚖️ Arkhive - Secure, Automated Backup & Disaster Recovery
+# ⚖️ ArkHive - Secure, Automated Backup & Disaster Recovery
 
 **"Your Data's Ark in the Storm."**
 
-Arkhive is a disaster recovery and backup tool built with [Laravel Zero](https://laravel-zero.com/). Designed to streamline and optionally encrypt backups, Arkhive helps ensure that critical data is safely stored offsite, and can be quickly restored in the event of data loss.
+ArkHive is a disaster recovery and backup tool built with [Laravel Zero](https://laravel-zero.com/). Designed to streamline and optionally encrypt backups, ArkHive helps ensure that critical data is safely stored offsite, and can be quickly restored in the event of data loss.
 
 - - -
 
@@ -19,11 +19,7 @@ Arkhive is a disaster recovery and backup tool built with [Laravel Zero](https:/
 
 ## 🛠️ Installation
 
-Below are multiple ways to install **Arkhive**:
-
-### 1) Download the PHAR File
-
-The easiest way to get started with **Arkhive** is to download the PHAR build:
+The easiest way to get started with **ArkHive** is to download the _PHAR build_ and place it in a valid location in your `PATH`. You can also install it via Composer, either globally or as a project dependency.
 
 ```bash
 # Download using curl
@@ -38,85 +34,13 @@ sudo mv arkhive.phar /usr/local/bin/arkhive && sudo chmod +x /usr/local/bin/arkh
 
 You can now run `arkhive` from anywhere in your system.
 
-- - -
-
-### 2) Global Composer Package
-
-If you use Composer, install **Arkhive** system-wide:
-
-```bash
-composer global require "mfonte/arkhive=*"
-```
-
-Ensure your Composer “global bin” dir is in your `PATH`. Typically:
-
-```bash
-~/.composer/vendor/bin
-```
-
-You can verify or change the bin dir path:
-
-```bash
-composer global config bin-dir --absolute
-```
-
-After that, `arkhive` will be available at:
-
-```bash
-$(composer config -g home)/vendor/bin/arkhive
-```
-
-Consider adding this path to your `.bashrc` or equivalent:
-
-```bash
-echo 'export PATH="$(composer config -g home)/vendor/bin:$PATH"' >> ~/.bashrc
-```
-
-- - -
-
-### 3) Composer Dependency (Per-Project)
-
-Include `mfonte/arkhive` in your project’s composer.json:
-
-```json
-{
-   "require-dev": {
-      "mfonte/arkhive": "*"
-   }
-}
-```
-
-After installing with `composer install`, you can run:
-
-```bash
-./vendor/bin/arkhive
-```
-
-from within your project. You might alias it for convenience, for example:
-
-```bash
-alias arkhive="/usr/bin/php /path/to/project/vendor/bin/arkhive"
-```
-
-- - -
-
-### 4) Git Clone & Build
-
-You can also clone the **Arkhive** source and build the PHAR locally:
-
-```bash
-git clone https://github.com/mauriziofonte/arkhive
-cd arkhive
-php arkhive app:build arkhive.phar
-```
-
-The build process uses [humbug/box](https://github.com/box-project/box) under the hood (see [Laravel Zero Docs](https://laravel-zero.com/docs/build-a-standalone-application) for more details).
+> Looking for other installation methods? Check [Alternate Installation methods](#alternate-installation-methods).
 
 - - -
 
 ## 🔧 Configuration
 
-Arkhive uses a `.env-style` config file. By default, it will look for a valid config in the following locations (in order):
+ArkHive uses a `.env-style` config file. By default, it will look for a valid config in the following locations (in order):
 
 - `./.arkhive-config`
 - `./.config/arkhive-config`
@@ -203,13 +127,105 @@ Runs a backup every day at 2 AM.
 
 - - -
 
-## 🌟 Why Arkhive?
+## 🌟 Why ArkHive?
 
 - Minimal overhead.
 - Straightforward .env-style configuration.
 - Built-in encryption & retention.
 - Optional email notifications for success/failure.
 - Interactive restore flow.
+
+- - -
+
+## Alternate Installation methods
+
+Apart from the PHAR build, you can also install **ArkHive** using Composer or by cloning the repository and building it locally. This is useful if you want to customize the tool or contribute to its development.
+
+### 1) Global Composer Package
+
+If you use Composer, install **ArkHive** system-wide:
+
+```bash
+composer global require "mfonte/arkhive=*"
+```
+
+Ensure your Composer “global bin” dir is in your `PATH`. Typically:
+
+```bash
+~/.composer/vendor/bin
+```
+
+You can verify or change the bin dir path:
+
+```bash
+composer global config bin-dir --absolute
+```
+
+After that, `arkhive` will be available at:
+
+```bash
+$(composer config -g home)/vendor/bin/arkhive
+```
+
+Consider adding this path to your `.bashrc` or equivalent:
+
+```bash
+echo 'export PATH="$(composer config -g home)/vendor/bin:$PATH"' >> ~/.bashrc
+```
+
+- - -
+
+### 2) Composer Dependency (Per-Project)
+
+Include `mfonte/arkhive` in your project’s composer.json:
+
+```json
+{
+   "require-dev": {
+      "mfonte/arkhive": "*"
+   }
+}
+```
+
+After installing with `composer install`, you can run:
+
+```bash
+./vendor/bin/arkhive
+```
+
+from within your project. You might alias it for convenience, for example:
+
+```bash
+alias arkhive="/usr/bin/php /path/to/project/vendor/bin/arkhive"
+```
+
+- - -
+
+### 3) Git Clone & Build
+
+You can also clone the **ArkHive** source and build the PHAR locally:
+
+```bash
+git clone https://github.com/mauriziofonte/arkhive
+cd arkhive
+composer install
+```
+
+Then, build the PHAR using either:
+
+```bash
+php arkhive app:build arkhive.phar
+```
+
+or
+
+```bash
+./build.sh
+```
+
+Either command will create a `builds/arkhive.phar` file.
+
+> The build process uses [humbug/box](https://github.com/box-project/box) under the hood (see [Laravel Zero Docs](https://laravel-zero.com/docs/build-a-standalone-application) for more details).
 
 - - -
 
@@ -223,4 +239,4 @@ MIT License. See `LICENSE` for more information.
 
 Contributions are welcome! Fork the repo, open a PR, or submit an issue.
 
-**Arkhive – Safeguarding your data, one backup at a time.**
+**ArkHive – Safeguarding your data, one backup at a time.**
