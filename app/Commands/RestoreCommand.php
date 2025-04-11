@@ -23,6 +23,9 @@ class RestoreCommand extends BaseCommand
 
     public function handle(): void
     {
+        // we need to load the config for this command to work
+        $this->initConfig();
+        
         try {
             $this->info("🚀 Welcome to ArkHive " . self::ARKHIVE_VERSION);
             $this->info("💡 Working in RESTORE mode...");

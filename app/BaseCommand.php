@@ -62,14 +62,50 @@ abstract class BaseCommand extends Command
             $this->isPhar = true;
         }
 
+        $this->startTime = microtime(true);
         $this->checkFunctions();
         $this->checkEnvironment();
         $this->setCliParams();
         $this->setRunningUser();
+    }
 
-        $this->initConfig();
+    /**
+     * Initializes the config Collection with defaults and loads from .env.
+     */
+    protected function initConfig(): void
+    {
+        $this->config = collect([
+            'BACKUP_DIRECTORY'      => null,
+            'BACKUP_RETENTION_DAYS' => null,
+            'EXCLUSION_PATTERNS'    => [],
+            'SSH_HOST'              => null,
+            'SSH_USER'              => null,
+            'SSH_PORT'              => 22,
+            'SSH_BACKUP_HOME'       => null,
+            'WITH_MYSQL'            => false,
+            'MYSQL_HOST'            => 'localhost',
+            'MYSQL_PORT'            => 3306,
+            'MYSQL_USER'            => null,
+            'MYSQL_PASSWORD'        => null,
+            'MYSQL_DATABASES'       => null,
+            'WITH_PGSQL'            => false,
+            'PGSQL_HOST'            => 'localhost',
+            'PGSQL_USER'            => null,
+            'PGSQL_DATABASES'       => null,
+            'WITH_CRYPT'            => false,
+            'CRYPT_PASSWORD'        => null,
+            'NOTIFY'                => false,
+            'SMTP_HOST'             => null,
+            'SMTP_PORT'             => 25,
+            'SMTP_AUTH'             => 'default',
+            'SMTP_ENCRYPTION'       => 'tls',
+            'SMTP_USER'             => null,
+            'SMTP_PASSWORD'         => null,
+            'SMTP_FROM'             => null,
+            'SMTP_TO'               => null,
+        ]);
 
-        $this->startTime = microtime(true);
+        $this->loadConfig();
     }
 
     /**
@@ -192,44 +228,6 @@ abstract class BaseCommand extends Command
         $this->userHome  = $userInfo['dir'];
         $this->userUid   = $userInfo['uid'];
         $this->userGid   = $userInfo['gid'];
-    }
-
-    /**
-     * Initializes the config Collection with defaults and loads from .env.
-     */
-    protected function initConfig(): void
-    {
-        $this->config = collect([
-            'BACKUP_DIRECTORY'      => null,
-            'BACKUP_RETENTION_DAYS' => null,
-            'SSH_HOST'              => null,
-            'SSH_USER'              => null,
-            'SSH_PORT'              => 22,
-            'SSH_BACKUP_HOME'       => null,
-            'WITH_MYSQL'            => false,
-            'MYSQL_HOST'            => 'localhost',
-            'MYSQL_PORT'            => 3306,
-            'MYSQL_USER'            => null,
-            'MYSQL_PASSWORD'        => null,
-            'MYSQL_DATABASES'       => null,
-            'WITH_PGSQL'            => false,
-            'PGSQL_HOST'            => 'localhost',
-            'PGSQL_USER'            => null,
-            'PGSQL_DATABASES'       => null,
-            'WITH_CRYPT'            => false,
-            'CRYPT_PASSWORD'        => null,
-            'NOTIFY'                => false,
-            'SMTP_HOST'             => null,
-            'SMTP_PORT'             => 25,
-            'SMTP_AUTH'             => 'default',
-            'SMTP_ENCRYPTION'       => 'tls',
-            'SMTP_USER'             => null,
-            'SMTP_PASSWORD'         => null,
-            'SMTP_FROM'             => null,
-            'SMTP_TO'               => null,
-        ]);
-
-        $this->loadConfig();
     }
 
     /**
@@ -365,10 +363,17 @@ abstract class BaseCommand extends Command
 
         // Store in $this->config
         foreach ($dotenv as $key => $value) {
+            // skip the value at all if it's either not a scalar or null
+            if (!is_scalar($value) && !is_null($value)) {
+                continue;
+            }
+
             if (in_array($key, ['BACKUP_RETENTION_DAYS', 'SSH_PORT', 'SMTP_PORT'], true)) {
                 $this->config->put($key, (int) $value);
-            } elseif (in_array($key, ['BACKUP_DIRECTORY', 'SSH_BACKUP_HOME'], true) && is_string($value)) {
-                $this->config->put($key, rtrim($value, DIRECTORY_SEPARATOR));
+            } elseif (in_array($key, ['BACKUP_DIRECTORY', 'SSH_BACKUP_HOME'], true) && $value) {
+                $this->config->put($key, rtrim((string) $value, DIRECTORY_SEPARATOR));
+            } elseif (in_array($key, ['EXCLUSION_PATTERNS'], true) && $value) {
+                $this->config->put($key, array_map('trim', explode(',', (string) $value)));
             } else {
                 $this->config->put($key, $value);
             }

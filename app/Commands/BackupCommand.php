@@ -23,6 +23,9 @@ class BackupCommand extends BaseCommand
 
     public function handle(): void
     {
+        // we need to load the config for this command to work
+        $this->initConfig();
+        
         // hydrate the options
         $this->checkAvailableDiskSpace = $this->option('with-disk-space-check');
         $this->showProgress = $this->option('with-progress');

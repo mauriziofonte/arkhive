@@ -187,7 +187,7 @@ if (!function_exists('remote_ssh_exec')) {
             str_replace('"', '\"', $command)
         );
 
-        $output = wrap_exec($sshCommand, "SSH command failed.");
+        $output = wrap_exec($sshCommand, "SSH command \"{$command}\" on {$user}@{$host} failed.");
         return $output;
     }
 }

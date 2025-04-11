@@ -9,6 +9,7 @@ ArkHive is a disaster recovery and backup tool built with [Laravel Zero](https:/
 ## ✨ Key Features
 
 - **Automated Backups** – Quickly back up MySQL/PostgreSQL data, plus files/directories.
+- **Exclusion Patterns** – Exclude specific files or directories from the backup process.
 - **Encryption (AES-256-CBC)** – Keep your archives protected with strong cryptography.
 - **SSH/Offsite Storage** – Push backups to a remote server over SSH for offsite safety.
 - **Retention** – Automatically remove old backups after a set number of days.
@@ -58,6 +59,7 @@ ArkHive uses a `.env-style` config file. By default, it will look for a valid co
 ```env
 BACKUP_DIRECTORY=/path/to/backup/directory
 BACKUP_RETENTION_DAYS=10
+EXCLUSION_PATTERNS="*/backups/*,*/node_modules/*,*/npm-debug.log,*/package-lock.json,*/.eslintcache,*/vendor/*,*/.git/*,*/.svn/*,*/.hg/*,*/.idea/*,*/.vscode/*,*/.history/*,*.sublime-project,*.pid,*.rar,*.7z,*.iso,*.img,*.exe,*.dll,*.so,*.bin,*.o,*.a,*.class,*.jar,*/node/*,*/go/*,*/.nvm/*,*/.rbenv/*,*/.pyenv/*,*/tmp/*,*/build/*,*/dist/*,*/out/*,*/coverage/*,*.swp,*.swo"
 SSH_HOST=example.com
 SSH_PORT=22
 SSH_USER=example
@@ -88,6 +90,24 @@ SMTP_TO=user@example.com
 
 Fill in values to match your environment.
 
+More specifically:
+
+- `BACKUP_DIRECTORY`: The target directory that will be backed up.
+- `BACKUP_RETENTION_DAYS`: Number of days to keep backups on the remote server. Set to **0** to disable retention.
+- `EXCLUSION_PATTERNS`: Comma-separated list of patterns to exclude from the backup. Use `*` as a wildcard.
+- `SSH_HOST`: The remote server's hostname or IP address.
+- `SSH_PORT`: The SSH port on the remote server (default is **22**).
+- `SSH_USER`: The SSH user to connect to the remote server.
+- `SSH_BACKUP_HOME`: The remote directory where backups will be stored. **Important**: it is suggested to specify an **absolute path** here, to avoid issues.
+- `WITH_MYSQL`: Set to **true** to enable MySQL backup.
+- `MYSQL_*`: MySQL connection parameters.
+- `WITH_PGSQL`: Set to **true** to enable PostgreSQL backup.
+- `PGSQL_*`: PostgreSQL connection parameters.
+- `WITH_CRYPT`: Set to **true** to enable encryption of the backup tarball.
+- `CRYPT_PASSWORD`: The password used for encryption. **Important**: this should be a strong password.
+- `NOTIFY`: Set to **true** to enable email notifications.
+- `SMTP_*`: SMTP parameters for sending email notifications.
+
 - - -
 
 ## 🔒 Basic Usage
@@ -115,6 +135,25 @@ Optional flags:
 - `--with-progress`: Show progress during the backup process.
 
 > **Important Note**: don't use `--with-progress` in **non-tty** contexts (e.g., CRON jobs). It will cause the command to fail, because we cannot easily show `pv` progress in this case. The command is designed to fail if it detects that you've required `--with-progress` in a non-tty context.
+
+#### Example output
+
+```bash
+maurizio:~/libraries/arkhive (main) $ php arkhive backup --with-progress
+🚀 Welcome to ArkHive 1.4.0
+💡 Working in BACKUP mode...
+ 🔐 SSH connection test succeeded.
+ 💻 Retrieving list of remote backup directories...
+ 💻 Creating MySQL dump -> /home/maurizio/2025-04-11-mysqldump.sql ...
+ 🕑 Mysql Dump: 75% done. [193s elapsed, ETA 67s]. Running at 68.4MiB/s. Transferred: 20.4GiB
+ 💻 Enumerating directory /home/maurizio ...
+ 🔍 Filtering files as per exclusions patterns...
+ ✅ Found 360845 files, with 2103546 exclusions.
+ 💻 Creating 2025-04-11 Encrypted Backup Archive and streaming to remote...
+ 🕑 Streaming: 5% done. [210s elapsed, ETA 4126s]. Running at 15.9MiB/s. Transferred: 3.64GiB
+ 💻 Fixing permissions on remote SSH server...
+ ✅ Backup completed in 2543 seconds.
+```
 
 ### Restore
 

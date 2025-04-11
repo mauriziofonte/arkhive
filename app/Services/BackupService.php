@@ -18,6 +18,11 @@ class BackupService
     private $output;
 
     /**
+     * @var FileEnumeratorService
+     */
+    private $fileEnumeratorService;
+
+    /**
      * @var bool
      */
     private $checkDiskSpace = false;
@@ -35,6 +40,7 @@ class BackupService
     {
         $this->config = $config;
         $this->output = $output;
+        $this->fileEnumeratorService = new FileEnumeratorService($output);
     }
 
     /**
@@ -106,6 +112,9 @@ class BackupService
         $start      = time();
         $today      = date("Y-m-d");
 
+        // Remove older backups from remote
+        $this->cleanupRemote();
+
         // Create DB dumps if needed
         if ($this->config->get('WITH_MYSQL')) {
             $this->dumpMysql($today);
@@ -113,9 +122,6 @@ class BackupService
         if ($this->config->get('WITH_PGSQL')) {
             $this->dumpPostgres($today);
         }
-
-        // Remove older backups from remote
-        $this->cleanupRemote();
 
         // Create a date-based dir on remote
         $this->mkdirRemote($today);
@@ -261,7 +267,7 @@ class BackupService
     private function checkLocalDir(): void
     {
         $dir      = $this->config->get('BACKUP_DIRECTORY');
-        $testFile = $this->config->get('BACKUP_DIRECTORY') . uniqid('arkhive-backup-', true) . '.tmp';
+        $testFile = $this->config->get('BACKUP_DIRECTORY') . '/' . uniqid('arkhive-backup-', true) . '.tmp';
 
         if (!is_dir($dir)) {
             throw new \RuntimeException("Backup directory does not exist: {$dir}");
@@ -291,6 +297,8 @@ class BackupService
             );
             if (trim($whoami) !== $this->config->get('SSH_USER')) {
                 throw new \RuntimeException("SSH connected, but user mismatch");
+            } else {
+                $this->writeln(" 🔐 SSH connection test succeeded.");
             }
         } catch (\Throwable $e) {
             throw new \RuntimeException("SSH remote check failed: {$e->getMessage()} at {$e->getFile()}:{$e->getLine()}");
@@ -464,11 +472,13 @@ class BackupService
     private function cleanupRemote(): void
     {
         $this->writeln(" 💻 Retrieving list of remote backup directories...");
+
+        $sshHome = $this->config->get('SSH_BACKUP_HOME');
         $listing = remote_ssh_exec(
             $this->config->get('SSH_HOST'),
             $this->config->get('SSH_USER'),
             $this->config->get('SSH_PORT'),
-            "ls -1 " . $this->config->get('SSH_BACKUP_HOME')
+            "[ -d '{$sshHome}' ] && ls -1 '{$sshHome}' || true"
         );
 
         $lines = array_filter(explode("\n", $listing));
@@ -483,7 +493,7 @@ class BackupService
                         $this->config->get('SSH_HOST'),
                         $this->config->get('SSH_USER'),
                         $this->config->get('SSH_PORT'),
-                        "rm -rf " . $this->config->get('SSH_BACKUP_HOME') . "/{$line}"
+                        "rm -rf '{$sshHome}/{$line}'"
                     );
                 }
             }
@@ -520,6 +530,7 @@ class BackupService
     private function streamBackupToRemote(string $today): int
     {
         $backupDir = $this->config->get('BACKUP_DIRECTORY');
+        $exclusionPatterns = $this->config->get('EXCLUSION_PATTERNS');
         $remoteDir = $this->config->get('SSH_BACKUP_HOME');
         $withCrypt = $this->config->get('WITH_CRYPT');
         $password = $this->config->get('CRYPT_PASSWORD');
@@ -536,11 +547,19 @@ class BackupService
         $sizeStr = trim(wrap_exec($sizeCmd, "Cannot get backup directory size"));
         $backupDirSize = (int)$sizeStr;
 
+        // enumerate the files inside the backup directory
+        [$filesList, $excludedBytes] = $this->fileEnumeratorService->enumerateDirectory($backupDir, $exclusionPatterns);
+
+        // adjust the backup size to account for excluded files
+        $backupDirSize -= $excludedBytes;
+
+        // the tar command is shared among all cases
+        $tarCmd = sprintf('tar -cf - -T %s', escapeshellarg($filesList));
+
         if ($this->showProgress) {
             if ($withCrypt) {
                 $this->writeln(" 💻 Creating {$today} Encrypted Backup Archive and streaming to remote...");
                 
-                $tarCmd = sprintf('tar -cf - %s', escapeshellarg($backupDir));
                 $command = sprintf(
                     '%s | pv -f -s %d | gzip | openssl enc -aes-256-cbc -salt -pbkdf2 -iter 100000 -pass pass:%s | ssh -p %s %s@%s "cat > %s"',
                     $tarCmd,
@@ -554,7 +573,6 @@ class BackupService
             } else {
                 $this->writeln(" 💻 Creating {$today} Non-Encrypted Backup Archive and streaming to remote...");
 
-                $tarCmd = sprintf('tar -cf - %s', escapeshellarg($backupDir));
                 $command = sprintf(
                     '%s | pv -f -s %d | gzip | ssh -p %s %s@%s "cat > %s"',
                     $tarCmd,
@@ -583,8 +601,8 @@ class BackupService
                 $this->writeln(" 💻 Creating {$today} Encrypted Backup Archive and streaming to remote...");
 
                 $command = sprintf(
-                    'tar -cf - %s | gzip | openssl enc -aes-256-cbc -salt -pbkdf2 -iter 100000 -pass pass:%s | ssh -p %s %s@%s "cat > %s"',
-                    escapeshellarg($backupDir),
+                    '%s | gzip | openssl enc -aes-256-cbc -salt -pbkdf2 -iter 100000 -pass pass:%s | ssh -p %s %s@%s "cat > %s"',
+                    $tarCmd,
                     escapeshellarg($password),
                     escapeshellarg($this->config->get('SSH_PORT')),
                     escapeshellarg($this->config->get('SSH_USER')),
@@ -595,8 +613,8 @@ class BackupService
                 $this->writeln(" 💻 Creating {$today} Non-Encrypted Backup Archive and streaming to remote...");
 
                 $command = sprintf(
-                    'tar -cf - %s | gzip | ssh -p %s %s@%s "cat > %s"',
-                    escapeshellarg($backupDir),
+                    '%s | gzip | ssh -p %s %s@%s "cat > %s"',
+                    $tarCmd,
                     escapeshellarg($this->config->get('SSH_PORT')),
                     escapeshellarg($this->config->get('SSH_USER')),
                     escapeshellarg($this->config->get('SSH_HOST')),
