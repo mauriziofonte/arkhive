@@ -1,5 +1,7 @@
 BACKUP_DIRECTORY=/path/to/backup/directory
 BACKUP_RETENTION_DAYS=10
+EXCLUSION_PATTERNS="*/backups/*,*/node_modules/*,npm-debug.log,yarn-error.log,package-lock.json,yarn.lock,pnpm-lock.yaml,.eslintcache,.stylelintcache,*/vendor/*,*/composer.lock,*/.git/*,*/.svn/*,*/.hg/*,*/.idea/*,*/.vscode/*,*/.history/*,*/.DS_Store,Thumbs.db,desktop.ini,*.sublime-project,*.sublime-workspace,*.pid,*.sock,*.log,*.rar,*.7z,*.zip,*.tar,*.tar.gz,*.tar.xz,*.iso,*.img,*.dmg,*.exe,*.dll,*.so,*.dylib,*.bin,*.o,*.a,*.class,*.jar,*.war,*.pyc,*.pyo,__pycache__/*,*/node/*,*/go/*,*/.nvm/*,*/.rbenv/*,*/.pyenv/*,*/.cargo/*,*/.rustup/*,*/tmp/*,*/temp/*,*/cache/*,*/build/*,*/dist/*,*/out/*,*/target/*,*/coverage/*,*/.pytest_cache/*,*/.tox/*,*.swp,*.swo,*.swn,*~,.env.local,.env.*.local"
+COMPRESSION_TYPE=gzip
 SSH_HOST=example.com
 SSH_PORT=22
 SSH_USER=example

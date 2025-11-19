@@ -19,7 +19,7 @@ use Phar;
  */
 abstract class BaseCommand extends Command
 {
-    const ARKHIVE_VERSION = '1.4.0';
+    const ARKHIVE_VERSION = '1.5.0';
 
     /** @var string */
     protected $cwd;
@@ -78,6 +78,7 @@ abstract class BaseCommand extends Command
             'BACKUP_DIRECTORY'      => null,
             'BACKUP_RETENTION_DAYS' => null,
             'EXCLUSION_PATTERNS'    => [],
+            'COMPRESSION_TYPE'      => 'gzip',
             'SSH_HOST'              => null,
             'SSH_USER'              => null,
             'SSH_PORT'              => 22,
@@ -282,7 +283,19 @@ abstract class BaseCommand extends Command
         $requiredKeys = ['BACKUP_DIRECTORY', 'BACKUP_RETENTION_DAYS', 'SSH_HOST', 'SSH_USER', 'SSH_BACKUP_HOME'];
         foreach ($requiredKeys as $key) {
             if (!array_key_exists($key, $dotenv)) {
-                $this->criticalError("Missing config key: {$key} in {$configFile}.");
+                $this->criticalError("Missing required key in config file: {$key} at {$configFile}");
+            }
+        }
+
+        // Validate COMPRESSION_TYPE if provided
+        if (isset($dotenv['COMPRESSION_TYPE'])) {
+            $validTypes = ['gzip', 'xz', 'none'];
+            if (!in_array($dotenv['COMPRESSION_TYPE'], $validTypes, true)) {
+                $this->criticalError("Invalid COMPRESSION_TYPE in config file. Must be one of: " . implode(', ', $validTypes));
+            }
+            // Check if xz is available if compression type is xz
+            if ($dotenv['COMPRESSION_TYPE'] === 'xz' && !binary_exists('xz')) {
+                $this->criticalError("COMPRESSION_TYPE is set to 'xz' but the 'xz' binary is not available on this system.");
             }
         }
 

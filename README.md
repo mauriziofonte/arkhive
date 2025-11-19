@@ -59,7 +59,8 @@ ArkHive uses a `.env-style` config file. By default, it will look for a valid co
 ```env
 BACKUP_DIRECTORY=/path/to/backup/directory
 BACKUP_RETENTION_DAYS=10
-EXCLUSION_PATTERNS="*/backups/*,*/node_modules/*,*/npm-debug.log,*/package-lock.json,*/.eslintcache,*/vendor/*,*/.git/*,*/.svn/*,*/.hg/*,*/.idea/*,*/.vscode/*,*/.history/*,*.sublime-project,*.pid,*.rar,*.7z,*.iso,*.img,*.exe,*.dll,*.so,*.bin,*.o,*.a,*.class,*.jar,*/node/*,*/go/*,*/.nvm/*,*/.rbenv/*,*/.pyenv/*,*/tmp/*,*/build/*,*/dist/*,*/out/*,*/coverage/*,*.swp,*.swo"
+EXCLUSION_PATTERNS="*/backups/*,*/node_modules/*,npm-debug.log,yarn-error.log,package-lock.json,yarn.lock,pnpm-lock.yaml,.eslintcache,.stylelintcache,*/vendor/*,*/composer.lock,*/.git/*,*/.svn/*,*/.hg/*,*/.idea/*,*/.vscode/*,*/.history/*,*/.DS_Store,Thumbs.db,desktop.ini,*.sublime-project,*.sublime-workspace,*.pid,*.sock,*.log,*.rar,*.7z,*.zip,*.tar,*.tar.gz,*.tar.xz,*.iso,*.img,*.dmg,*.exe,*.dll,*.so,*.dylib,*.bin,*.o,*.a,*.class,*.jar,*.war,*.pyc,*.pyo,__pycache__/*,*/node/*,*/go/*,*/.nvm/*,*/.rbenv/*,*/.pyenv/*,*/.cargo/*,*/.rustup/*,*/tmp/*,*/temp/*,*/cache/*,*/build/*,*/dist/*,*/out/*,*/target/*,*/coverage/*,*/.pytest_cache/*,*/.tox/*,*.swp,*.swo,*.swn,*~,.env.local,.env.*.local"
+COMPRESSION_TYPE=gzip
 SSH_HOST=example.com
 SSH_PORT=22
 SSH_USER=example
@@ -94,7 +95,8 @@ More specifically:
 
 - `BACKUP_DIRECTORY`: The target directory that will be backed up.
 - `BACKUP_RETENTION_DAYS`: Number of days to keep backups on the remote server. Set to **0** to disable retention.
-- `EXCLUSION_PATTERNS`: Comma-separated list of patterns to exclude from the backup. Use `*` as a wildcard.
+- `EXCLUSION_PATTERNS`: Comma-separated list of patterns to exclude from the backup. Use `*` as a wildcard. Patterns starting with `/` are anchored to the backup directory root (e.g., `/logs/*`). Patterns without `/` prefix match anywhere in the path (e.g., `*.log`, `node_modules/*`).
+- `COMPRESSION_TYPE`: The compression algorithm to use. Valid values: `gzip` (default, best compatibility), `xz` (better compression, slower), `none` (no compression, fastest). Optional, defaults to `gzip` if not specified.
 - `SSH_HOST`: The remote server's hostname or IP address.
 - `SSH_PORT`: The SSH port on the remote server (default is **22**).
 - `SSH_USER`: The SSH user to connect to the remote server.
@@ -124,6 +126,7 @@ This command will:
 
 - Dump MySQL/PostgreSQL, if `WITH_MYSQL` or `WITH_PGSQL` is set to `true`. Note: MySQL/PostgreSQL dumps are stored in `BACKUP_DIRECTORY`, so, these will be included in the tarball.
 - Create a tarball of the specified `BACKUP_DIRECTORY`.
+- Compress the tarball using the algorithm specified in `COMPRESSION_TYPE` (gzip, xz, or none).
 - Encrypt the whole tarball if `WITH_CRYPT` is set to `true`.
 - Remove **remote** backups older than `BACKUP_RETENTION_DAYS`. Note: **0** is valid, and means "no retention".
 - Upload the tarball to the remote server using SSH.
@@ -131,7 +134,7 @@ This command will:
 
 Optional flags:
 
-- `--with-disk-space-check`: Check available disk space before backup. This will be a rough estimate based on gzip compression factor and overhead caused by encryption.
+- `--with-disk-space-check`: Check available disk space before backup. This will be a rough estimate based on the compression algorithm specified in `COMPRESSION_TYPE` and overhead caused by encryption.
 - `--with-progress`: Show progress during the backup process.
 
 > **Important Note**: don't use `--with-progress` in **non-tty** contexts (e.g., CRON jobs). It will cause the command to fail, because we cannot easily show `pv` progress in this case. The command is designed to fail if it detects that you've required `--with-progress` in a non-tty context.

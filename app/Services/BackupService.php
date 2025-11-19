@@ -151,24 +151,52 @@ class BackupService
      */
     public function doRestore(string $date, string $destinationLocalPath): void
     {
-        // Construct remote path based on naming scheme
-        if ($this->config->get('WITH_CRYPT')) {
-            $remoteFile = sprintf(
-                '%s/%s/%s-%s-arkhive.enc.arbk',
-                $this->config->get('SSH_BACKUP_HOME'),
-                $date,
-                $date,
-                $this->config->get('SSH_USER')
+        // Try to detect the compression type by checking which file exists on remote
+        $remoteBase = sprintf(
+            '%s/%s/%s-%s-arkhive',
+            $this->config->get('SSH_BACKUP_HOME'),
+            $date,
+            $date,
+            $this->config->get('SSH_USER')
+        );
+
+        $withCrypt = $this->config->get('WITH_CRYPT');
+        $cryptSuffix = $withCrypt ? '.enc' : '';
+        
+        // Try to find which compression was used by checking file existence
+        $possibleFiles = [
+            $remoteBase . $cryptSuffix . '.arbk',      // gzip (default)
+            $remoteBase . $cryptSuffix . '.arbk.xz',   // xz
+            $remoteBase . $cryptSuffix . '.tar',       // none
+        ];
+
+        $remoteFile = null;
+        $detectedCompression = 'gzip';
+        
+        foreach ($possibleFiles as $idx => $file) {
+            $checkCmd = sprintf(
+                'test -f %s && echo "exists"',
+                escapeshellarg($file)
             );
-        } else {
-            $remoteFile = sprintf(
-                '%s/%s/%s-%s-arkhive.arbk',
-                $this->config->get('SSH_BACKUP_HOME'),
-                $date,
-                $date,
-                $this->config->get('SSH_USER')
-            );
+            $result = trim(remote_ssh_exec(
+                $this->config->get('SSH_HOST'),
+                $this->config->get('SSH_USER'),
+                $this->config->get('SSH_PORT'),
+                $checkCmd
+            ));
+            
+            if ($result === 'exists') {
+                $remoteFile = $file;
+                $detectedCompression = ['gzip', 'xz', 'none'][$idx];
+                break;
+            }
         }
+
+        if (!$remoteFile) {
+            throw new \RuntimeException("Cannot find backup file for date {$date}. Tried: " . implode(', ', $possibleFiles));
+        }
+
+        $this->writeln(" 💻 Detected backup compression type: {$detectedCompression}");
         
         // temporary local file for download
         $tempLocal = sys_get_temp_dir() . "/arkhive-restore-{$date}-" . uniqid() . ".tmp";
@@ -192,23 +220,33 @@ class BackupService
             throw new \RuntimeException("Downloaded backup file '$tempLocal' is empty or unreadable");
         }
 
+        // Build decompression flag for tar
+        $tarFlag = match($detectedCompression) {
+            'gzip' => 'z',
+            'xz' => 'J',
+            'none' => '',
+            default => 'z'
+        };
+
         // Decrypt or just extract
         if ($this->config->get('WITH_CRYPT')) {
-            $this->writeln(" 💻 Decrypting/Extracting backup...");
+            $this->writeln(" 💻 Decrypting/Extracting backup (compression: {$detectedCompression})...");
             wrap_exec(
                 sprintf(
-                    'openssl enc -d -aes-256-cbc -salt -pbkdf2 -iter 100000 -pass pass:%s -in %s | tar -xzf - -C %s',
+                    'openssl enc -d -aes-256-cbc -salt -pbkdf2 -iter 100000 -pass pass:%s -in %s | tar -x%sf - -C %s',
                     escapeshellarg($this->config->get('CRYPT_PASSWORD')),
                     escapeshellarg($tempLocal),
+                    $tarFlag,
                     escapeshellarg($destinationLocalPath)
                 ),
                 "Cannot decrypt/extract backup"
             );
         } else {
-            $this->writeln(" 💻 Extracting backup...");
+            $this->writeln(" 💻 Extracting backup (compression: {$detectedCompression})...");
             wrap_exec(
                 sprintf(
-                    'tar -xzf %s -C %s',
+                    'tar -x%sf %s -C %s',
+                    $tarFlag,
                     escapeshellarg($tempLocal),
                     escapeshellarg($destinationLocalPath)
                 ),
@@ -534,12 +572,21 @@ class BackupService
         $remoteDir = $this->config->get('SSH_BACKUP_HOME');
         $withCrypt = $this->config->get('WITH_CRYPT');
         $password = $this->config->get('CRYPT_PASSWORD');
+        $compressionType = $this->config->get('COMPRESSION_TYPE', 'gzip');
+
+        // Determine file extension based on compression
+        $extension = match($compressionType) {
+            'gzip' => '.arbk',
+            'xz' => '.arbk.xz',
+            'none' => '.tar',
+            default => '.arbk'
+        };
 
         // Construct the remote file name
         if ($withCrypt) {
-            $remoteFile = "{$remoteDir}/{$today}/{$today}-{$this->config->get('SSH_USER')}-arkhive.enc.arbk";
+            $remoteFile = "{$remoteDir}/{$today}/{$today}-{$this->config->get('SSH_USER')}-arkhive.enc{$extension}";
         } else {
-            $remoteFile = "{$remoteDir}/{$today}/{$today}-{$this->config->get('SSH_USER')}-arkhive.arbk";
+            $remoteFile = "{$remoteDir}/{$today}/{$today}-{$this->config->get('SSH_USER')}-arkhive{$extension}";
         }
 
         // Get the backup directory size for progress reporting
@@ -556,14 +603,23 @@ class BackupService
         // the tar command is shared among all cases
         $tarCmd = sprintf('tar -cf - -T %s', escapeshellarg($filesList));
 
+        // Build compression command
+        $compressionCmd = match($compressionType) {
+            'gzip' => 'gzip',
+            'xz' => 'xz -9',
+            'none' => 'cat',
+            default => 'gzip'
+        };
+
         if ($this->showProgress) {
             if ($withCrypt) {
-                $this->writeln(" 💻 Creating {$today} Encrypted Backup Archive and streaming to remote...");
+                $this->writeln(" 💻 Creating {$today} Encrypted Backup Archive (compression: {$compressionType}) and streaming to remote...");
                 
                 $command = sprintf(
-                    '%s | pv -f -s %d | gzip | openssl enc -aes-256-cbc -salt -pbkdf2 -iter 100000 -pass pass:%s | ssh -p %s %s@%s "cat > %s"',
+                    '%s | pv -f -s %d | %s | openssl enc -aes-256-cbc -salt -pbkdf2 -iter 100000 -pass pass:%s | ssh -p %s %s@%s "cat > %s"',
                     $tarCmd,
                     $backupDirSize,
+                    $compressionCmd,
                     escapeshellarg($password),
                     escapeshellarg($this->config->get('SSH_PORT')),
                     escapeshellarg($this->config->get('SSH_USER')),
@@ -571,12 +627,13 @@ class BackupService
                     escapeshellarg($remoteFile)
                 );
             } else {
-                $this->writeln(" 💻 Creating {$today} Non-Encrypted Backup Archive and streaming to remote...");
+                $this->writeln(" 💻 Creating {$today} Non-Encrypted Backup Archive (compression: {$compressionType}) and streaming to remote...");
 
                 $command = sprintf(
-                    '%s | pv -f -s %d | gzip | ssh -p %s %s@%s "cat > %s"',
+                    '%s | pv -f -s %d | %s | ssh -p %s %s@%s "cat > %s"',
                     $tarCmd,
                     $backupDirSize,
+                    $compressionCmd,
                     escapeshellarg($this->config->get('SSH_PORT')),
                     escapeshellarg($this->config->get('SSH_USER')),
                     escapeshellarg($this->config->get('SSH_HOST')),
@@ -598,11 +655,12 @@ class BackupService
             $this->writeln('');
         } else {
             if ($withCrypt) {
-                $this->writeln(" 💻 Creating {$today} Encrypted Backup Archive and streaming to remote...");
+                $this->writeln(" 💻 Creating {$today} Encrypted Backup Archive (compression: {$compressionType}) and streaming to remote...");
 
                 $command = sprintf(
-                    '%s | gzip | openssl enc -aes-256-cbc -salt -pbkdf2 -iter 100000 -pass pass:%s | ssh -p %s %s@%s "cat > %s"',
+                    '%s | %s | openssl enc -aes-256-cbc -salt -pbkdf2 -iter 100000 -pass pass:%s | ssh -p %s %s@%s "cat > %s"',
                     $tarCmd,
+                    $compressionCmd,
                     escapeshellarg($password),
                     escapeshellarg($this->config->get('SSH_PORT')),
                     escapeshellarg($this->config->get('SSH_USER')),
@@ -610,11 +668,12 @@ class BackupService
                     escapeshellarg($remoteFile)
                 );
             } else {
-                $this->writeln(" 💻 Creating {$today} Non-Encrypted Backup Archive and streaming to remote...");
+                $this->writeln(" 💻 Creating {$today} Non-Encrypted Backup Archive (compression: {$compressionType}) and streaming to remote...");
 
                 $command = sprintf(
-                    '%s | gzip | ssh -p %s %s@%s "cat > %s"',
+                    '%s | %s | ssh -p %s %s@%s "cat > %s"',
                     $tarCmd,
+                    $compressionCmd,
                     escapeshellarg($this->config->get('SSH_PORT')),
                     escapeshellarg($this->config->get('SSH_USER')),
                     escapeshellarg($this->config->get('SSH_HOST')),
