@@ -8,7 +8,7 @@ class SelfUpgradeCommand extends BaseCommand
 {
     const ARKHIVE_PHAR_URL = 'https://github.com/mauriziofonte/arkhive/raw/refs/heads/main/builds/arkhive.phar';
     const ARKHIVE_VERSION_FILE = 'https://raw.githubusercontent.com/mauriziofonte/arkhive/main/builds/version.txt';
-    const ARKHIVE_CHECKSUM_FILE = 'https://raw.githubusercontent.com/mauriziofonte/arkhive/main/builds/arkhive.phar.sha256sum';
+    const ARKHIVE_CHECKSUM_FILE = 'https://raw.githubusercontent.com/mauriziofonte/arkhive/main/builds/arkhive.sha256sum';
 
     protected $signature   = 'self-upgrade';
     protected $description = 'Upgrades the ArkHive phar binary to the latest version.';
