@@ -31,7 +31,7 @@ class BackupCommand extends BaseCommand
         $this->showProgress = $this->option('with-progress');
 
         try {
-            $this->info("🚀 Welcome to ArkHive " . self::ARKHIVE_VERSION);
+            $this->info("🚀 Welcome to ArkHive " . self::$ARKHIVE_VERSION);
             $this->info("💡 Working in BACKUP mode...");
 
             $service = new BackupService($this->config, $this->output);

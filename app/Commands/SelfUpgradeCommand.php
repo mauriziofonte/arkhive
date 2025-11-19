@@ -20,7 +20,7 @@ class SelfUpgradeCommand extends BaseCommand
         }
 
         try {
-            $this->info("🚀 Welcome to ArkHive " . self::ARKHIVE_VERSION);
+            $this->info("🚀 Welcome to ArkHive " . self::$ARKHIVE_VERSION);
             $this->info("💻 Working in SELF-UPGRADE mode...");
             
             // Path to the currently running executable (PHAR or script)
@@ -45,8 +45,8 @@ class SelfUpgradeCommand extends BaseCommand
             }
 
             // Check if the current version is up to date
-            if (version_compare(self::ARKHIVE_VERSION, $latestVersion, '>=')) {
-                $this->info("You are already running the latest version: " . self::ARKHIVE_VERSION);
+            if (version_compare(self::$ARKHIVE_VERSION, $latestVersion, '>=')) {
+                $this->info("You are already running the latest version: " . self::$ARKHIVE_VERSION);
                 return;
             }
 

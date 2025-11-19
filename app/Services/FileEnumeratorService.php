@@ -34,6 +34,11 @@ class FileEnumeratorService
     protected $tempFiles = [];
 
     /**
+     * @var bool
+     */
+    protected $showProgress = false;
+
+    /**
      * @param string             $directory The directory to scan.
      * @param array              $exclusionPatterns An array of exclusion patterns.
      * @param OutputStyle|null   $output An optional Console output for logging messages.
@@ -41,6 +46,16 @@ class FileEnumeratorService
     public function __construct(?OutputStyle $output = null)
     {
         $this->output = $output;
+    }
+
+    /**
+     * Sets whether to show progress during enumeration.
+     *
+     * @param bool $show
+     */
+    public function setShowProgress(bool $show): void
+    {
+        $this->showProgress = $show;
     }
 
     /**
@@ -72,25 +87,49 @@ class FileEnumeratorService
 
         // enumerate
         $this->writeln(" 💻 Enumerating directory {$directory} ...");
-        try {
-            $iterator = new \RecursiveIteratorIterator(
-                new \RecursiveDirectoryIterator($directory, \RecursiveDirectoryIterator::SKIP_DOTS)
-            );
-        } catch (\UnexpectedValueException $e) {
-            fclose($fp);
-            throw new \RuntimeException("Failed to open directory: {$directory}", 0, $e);
-        }
+        
+        // Create a custom RecursiveDirectoryIterator that skips permission errors
+        $dirIterator = new \RecursiveDirectoryIterator(
+            $directory,
+            \RecursiveDirectoryIterator::SKIP_DOTS | \RecursiveDirectoryIterator::FOLLOW_SYMLINKS
+        );
+        
+        $iterator = new \RecursiveIteratorIterator(
+            $dirIterator,
+            \RecursiveIteratorIterator::CATCH_GET_CHILD // This catches permission errors on subdirectories
+        );
 
         // filter out excluded files
         $this->writeln(" 🔍 Filtering files as per exclusions patterns...");
         $written = 0;
         $excluded = 0;
         $excludedBytes = 0;
+        $skippedDirs = [];
+        $lastProgressUpdate = microtime(true);
+        $progressInterval = 0.5; // Update every 0.5 seconds
+        
         foreach ($iterator as $fileInfo) {
-            if (!$fileInfo->isFile()) {
+            // Skip entries we can't access
+            try {
+                if (!$fileInfo->isFile()) {
+                    continue;
+                }
+                $absolutePath = $fileInfo->getPathname();
+            } catch (\UnexpectedValueException $e) {
+                // Permission denied or other access error - skip this entry
+                $skippedPath = $fileInfo->getPathname();
+                if (!in_array($skippedPath, $skippedDirs)) {
+                    $skippedDirs[] = $skippedPath;
+                    if ($this->showProgress) {
+                        $this->writeln("\n ⚠️  Skipped (permission denied): {$skippedPath}");
+                    }
+                }
+                continue;
+            } catch (\RuntimeException $e) {
+                // Other runtime errors - skip
                 continue;
             }
-            $absolutePath = $fileInfo->getPathname();
+            
             $relativePath = substr($absolutePath, strlen(rtrim($directory, DIRECTORY_SEPARATOR)));
             $relativePath = '/' . ltrim($relativePath, DIRECTORY_SEPARATOR);
 
@@ -111,9 +150,32 @@ class FileEnumeratorService
                 throw new \RuntimeException("Failed to write to temporary file: {$tempFile}");
             }
             $written++;
+
+            // Show progress if enabled
+            if ($this->showProgress) {
+                $now = microtime(true);
+                if ($now - $lastProgressUpdate >= $progressInterval) {
+                    $this->write(sprintf(
+                        "\033[2K\r 🔍 Scanned: %s files (%s included, %s excluded)...",
+                        number_format($written + $excluded),
+                        number_format($written),
+                        number_format($excluded)
+                    ));
+                    $lastProgressUpdate = $now;
+                }
+            }
         }
         fclose($fp);
 
+        if ($this->showProgress) {
+            $this->writeln(''); // New line after progress
+        }
+        
+        $skippedCount = count($skippedDirs);
+        if ($skippedCount > 0) {
+            $this->writeln(" ⚠️  Skipped {$skippedCount} directories due to permission errors.");
+        }
+        
         $this->writeln(" ✅ Found {$written} files, with {$excluded} exclusions.");
         $this->tempFiles[$directory] = $tempFile;
 
@@ -154,6 +216,19 @@ class FileEnumeratorService
     {
         if ($this->output) {
             $this->output->writeln($message);
+        }
+    }
+
+    /**
+     * Writes a message to the output without newline (if available).
+     *
+     * @param string $message
+     * @return void
+     */
+    protected function write(string $message): void
+    {
+        if ($this->output) {
+            $this->output->write($message);
         }
     }
 

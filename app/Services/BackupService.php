@@ -338,6 +338,19 @@ class BackupService
             } else {
                 $this->writeln(" 🔐 SSH connection test succeeded.");
             }
+
+            // Expand tilde in SSH_BACKUP_HOME if present
+            $backupHome = $this->config->get('SSH_BACKUP_HOME');
+            if (strpos($backupHome, '~') === 0) {
+                $expandedPath = remote_ssh_exec(
+                    $this->config->get('SSH_HOST'),
+                    $this->config->get('SSH_USER'),
+                    $this->config->get('SSH_PORT'),
+                    "echo {$backupHome}"
+                );
+                $this->config->put('SSH_BACKUP_HOME', trim($expandedPath));
+                $this->writeln(" 💻 Expanded SSH_BACKUP_HOME to: " . trim($expandedPath));
+            }
         } catch (\Throwable $e) {
             throw new \RuntimeException("SSH remote check failed: {$e->getMessage()} at {$e->getFile()}:{$e->getLine()}");
         }
@@ -595,6 +608,7 @@ class BackupService
         $backupDirSize = (int)$sizeStr;
 
         // enumerate the files inside the backup directory
+        $this->fileEnumeratorService->setShowProgress($this->showProgress);
         [$filesList, $excludedBytes] = $this->fileEnumeratorService->enumerateDirectory($backupDir, $exclusionPatterns);
 
         // adjust the backup size to account for excluded files

@@ -19,7 +19,8 @@ use Phar;
  */
 abstract class BaseCommand extends Command
 {
-    const ARKHIVE_VERSION = '1.5.0';
+    /** @var string */
+    protected static $ARKHIVE_VERSION;
 
     /** @var string */
     protected $cwd;
@@ -56,6 +57,8 @@ abstract class BaseCommand extends Command
 
     public function __construct()
     {
+        self::$ARKHIVE_VERSION = config('app.version');
+
         parent::__construct();
 
         if (Phar::running(false) !== '') {
@@ -118,7 +121,7 @@ abstract class BaseCommand extends Command
      */
     protected function criticalError(string $message, bool $withOptionalNotification = true)
     {
-        $errorTag = "⛔ ArkHive " . self::ARKHIVE_VERSION . " - Fatal Error";
+        $errorTag = "⛔ ArkHive " . self::$ARKHIVE_VERSION . " - Fatal Error";
 
         if ($this->output) {
             $this->output->writeln('');
@@ -135,7 +138,7 @@ abstract class BaseCommand extends Command
         if ($withOptionalNotification && $this->config->get('NOTIFY')) {
             $this->sendEmailNotification(
                 false,
-                "ArkHive " . self::ARKHIVE_VERSION . " - Fatal Error",
+                "ArkHive " . self::$ARKHIVE_VERSION . " - Fatal Error",
                 "An error occurred: {$message}"
             );
         }
