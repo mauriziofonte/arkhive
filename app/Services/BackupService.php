@@ -767,7 +767,8 @@ class BackupService
             $this->config->get('SSH_HOST'),
             $this->config->get('SSH_USER'),
             $this->config->get('SSH_PORT'),
-            "cd {$this->config->get('SSH_BACKUP_HOME')} && find . -type d -exec chmod 0755 {} \\; && cd {$this->config->get('SSH_BACKUP_HOME')}/{$today}/ && find . -type f -exec chmod 0644 {} \\;"
+            // only today's backup dir: the backup home itself keeps whatever mode the remote admin chose (e.g. 0750)
+            sprintf('cd %s && chmod 0755 . && find . -type f -exec chmod 0644 {} +', escapeshellarg($this->config->get('SSH_BACKUP_HOME') . '/' . $today))
         );
     }
 
