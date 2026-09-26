@@ -96,6 +96,7 @@ class FileEnumeratorService
         
         $iterator = new \RecursiveIteratorIterator(
             $dirIterator,
+            \RecursiveIteratorIterator::LEAVES_ONLY,
             \RecursiveIteratorIterator::CATCH_GET_CHILD // This catches permission errors on subdirectories
         );
 
@@ -177,6 +178,10 @@ class FileEnumeratorService
         }
         
         $this->writeln(" ✅ Found {$written} files, with {$excluded} exclusions.");
+        if ($written === 0) {
+            @unlink($tempFile);
+            throw new \RuntimeException("No files found to back up in {$directory}: refusing to create an empty archive.");
+        }
         $this->tempFiles[$directory] = $tempFile;
 
         return [$tempFile, $excludedBytes];

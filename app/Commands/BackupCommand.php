@@ -30,6 +30,15 @@ class BackupCommand extends BaseCommand
         $this->checkAvailableDiskSpace = $this->option('with-disk-space-check');
         $this->showProgress = $this->option('with-progress');
 
+        // anti-concurrency lock: one backup at a time per destination
+        $lockFile = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'arkhive-backup-' .
+            md5($this->config->get('SSH_HOST') . '|' . $this->config->get('SSH_USER') . '|' . $this->config->get('SSH_BACKUP_HOME')) . '.lock';
+        $lockHandle = @fopen($lockFile, 'c');
+        if ($lockHandle === false || !flock($lockHandle, LOCK_EX | LOCK_NB)) {
+            $this->criticalError("Another ArkHive backup to the same destination is already running (lock: {$lockFile})");
+            return;
+        }
+
         try {
             $this->info("🚀 Welcome to ArkHive " . self::$ARKHIVE_VERSION);
             $this->info("💡 Working in BACKUP mode...");
@@ -53,6 +62,9 @@ class BackupCommand extends BaseCommand
             );
         } catch (\Throwable $e) {
             $this->criticalError("{$e->getMessage()} at {$e->getFile()}:{$e->getLine()}");
+        } finally {
+            flock($lockHandle, LOCK_UN);
+            fclose($lockHandle);
         }
     }
 }

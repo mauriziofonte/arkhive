@@ -94,7 +94,7 @@ Fill in values to match your environment.
 More specifically:
 
 - `BACKUP_DIRECTORY`: The target directory that will be backed up.
-- `BACKUP_RETENTION_DAYS`: Number of days to keep backups on the remote server. Set to **0** to disable retention.
+- `BACKUP_RETENTION_DAYS`: Number of days to keep backups on the remote server. Set to **0** to keep only today's backup.
 - `EXCLUSION_PATTERNS`: Comma-separated list of patterns to exclude from the backup. Use `*` as a wildcard. Patterns starting with `/` are anchored to the backup directory root (e.g., `/logs/*`). Patterns without `/` prefix match anywhere in the path (e.g., `*.log`, `node_modules/*`).
 - `COMPRESSION_TYPE`: The compression algorithm to use. Valid values: `gzip` (default, best compatibility), `xz` (better compression, slower), `none` (no compression, fastest). Optional, defaults to `gzip` if not specified.
 - `SSH_HOST`: The remote server's hostname or IP address.
@@ -127,10 +127,13 @@ This command will:
 - Dump MySQL/PostgreSQL, if `WITH_MYSQL` or `WITH_PGSQL` is set to `true`. Note: MySQL/PostgreSQL dumps are stored in `BACKUP_DIRECTORY`, so, these will be included in the tarball.
 - Create a tarball of the specified `BACKUP_DIRECTORY`.
 - Compress the tarball using the algorithm specified in `COMPRESSION_TYPE` (gzip, xz, or none).
-- Encrypt the whole tarball if `WITH_CRYPT` is set to `true`.
-- Remove **remote** backups older than `BACKUP_RETENTION_DAYS`. Note: **0** is valid, and means "no retention".
-- Upload the tarball to the remote server using SSH.
+- Encrypt the whole tarball if `WITH_CRYPT` is set to `true` (AES-256-CBC, PBKDF2 with 100000 iterations; the password is passed to `openssl` via environment, never via command line).
+- Stream the archive to the remote server over SSH. The exit status of every pipeline stage is checked (a GNU tar exit code 1, "file changed as we read it", is reported as a warning), and a SHA-256 plus a byte count of the streamed data are computed on the fly.
+- Verify that the remote file size matches the streamed byte count, and write a `<archive>.sha256` sidecar (`sha256sum` format) next to the remote archive.
+- Only after a verified upload, remove **remote** backups older than `BACKUP_RETENTION_DAYS`. Note: **0** is valid, and means "keep only today's backup" (useful when the remote side has its own rotation).
 - Notify you via email if `NOTIFY` is set to `true`.
+
+Only one backup per destination (`SSH_HOST` + `SSH_USER` + `SSH_BACKUP_HOME`) can run at a time: a second concurrent run fails immediately.
 
 Optional flags:
 

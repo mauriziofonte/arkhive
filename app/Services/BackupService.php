@@ -112,9 +112,6 @@ class BackupService
         $start      = time();
         $today      = date("Y-m-d");
 
-        // Remove older backups from remote
-        $this->cleanupRemote();
-
         // Create DB dumps if needed
         if ($this->config->get('WITH_MYSQL')) {
             $this->dumpMysql($today);
@@ -131,6 +128,9 @@ class BackupService
 
         // Fix perms on remote
         $this->fixRemotePerms($today);
+
+        // Remove older backups from remote, only after today's upload has been verified
+        $this->cleanupRemote($today);
 
         // Cleanup local: remove final tar + any DB dumps
         $this->cleanupLocalPostBackup($today);
@@ -231,16 +231,18 @@ class BackupService
         // Decrypt or just extract
         if ($this->config->get('WITH_CRYPT')) {
             $this->writeln(" 💻 Decrypting/Extracting backup (compression: {$detectedCompression})...");
-            wrap_exec(
-                sprintf(
-                    'openssl enc -d -aes-256-cbc -salt -pbkdf2 -iter 100000 -pass pass:%s -in %s | tar -x%sf - -C %s',
-                    escapeshellarg($this->config->get('CRYPT_PASSWORD')),
-                    escapeshellarg($tempLocal),
-                    $tarFlag,
-                    escapeshellarg($destinationLocalPath)
-                ),
-                "Cannot decrypt/extract backup"
-            );
+            with_crypt_password_env((string) $this->config->get('CRYPT_PASSWORD'), function () use ($tempLocal, $tarFlag, $destinationLocalPath) {
+                wrap_exec(
+                    'bash -o pipefail -c ' . escapeshellarg(sprintf(
+                        '%s -in %s | tar -x%sf - -C %s',
+                        crypt_openssl_command(true),
+                        escapeshellarg($tempLocal),
+                        $tarFlag,
+                        escapeshellarg($destinationLocalPath)
+                    )),
+                    "Cannot decrypt/extract backup"
+                );
+            });
         } else {
             $this->writeln(" 💻 Extracting backup (compression: {$detectedCompression})...");
             wrap_exec(
@@ -269,7 +271,7 @@ class BackupService
      */
     private function checkBinaries(): void
     {
-        $required = ['du', 'df', 'ls', 'mkdir', 'awk', 'tar', 'gzip', 'ssh'];
+        $required = ['du', 'df', 'ls', 'mkdir', 'awk', 'tar', 'gzip', 'ssh', 'bash', 'mkfifo', 'tee', 'wc', 'sha256sum'];
         foreach ($required as $cmd) {
             if (!binary_exists($cmd)) {
                 throw new \RuntimeException("Missing required binary: $cmd");
@@ -520,7 +522,7 @@ class BackupService
      * Removes older backups from the remote server, based on BACKUP_RETENTION_DAYS.
      * E.g. if retention is 30 days, remove directories older than 30 days.
      */
-    private function cleanupRemote(): void
+    private function cleanupRemote(string $today): void
     {
         $this->writeln(" 💻 Retrieving list of remote backup directories...");
 
@@ -534,11 +536,15 @@ class BackupService
 
         $lines = array_filter(explode("\n", $listing));
         $days = max(0, (int) $this->config->get('BACKUP_RETENTION_DAYS', 30));
+        $cutoff = strtotime("today -{$days} days");
         foreach ($lines as $line) {
             $line = trim($line);
+            if ($line === $today) {
+                continue;
+            }
             if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $line)) {
                 $timeDir = strtotime($line);
-                if ($timeDir < strtotime("-{$days} days")) {
+                if ($timeDir < $cutoff) {
                     $this->writeln(" 💻 Removing old backup dir: {$line}");
                     remote_ssh_exec(
                         $this->config->get('SSH_HOST'),
@@ -569,14 +575,15 @@ class BackupService
     /**
      * Streams a backup archive to a remote server, with optional encryption.
      *
-     * This method creates a backup archive from the specified backup directory
-     * and streams it to a remote server using SSH. The backup can be encrypted
-     * using AES-256-CBC encryption if configured. Progress can also be displayed
-     * during the streaming process.
+     * The whole pipeline (tar | [pv] | compression | [openssl] | tee | ssh) runs inside bash:
+     * the exit status of every stage is collected via PIPESTATUS, and a SHA-256 plus a byte
+     * count of the exact stream sent over the wire are computed in the same pass (via FIFOs).
+     * After upload, the remote file size must match the local byte count, and a
+     * "<file>.sha256" sidecar is written next to the archive for later verification.
      *
      * @param string $today The current date string used for naming the backup archive.
      *
-     * @throws RuntimeException If any command execution fails during the process.
+     * @throws \RuntimeException If any stage fails or the remote verification fails.
      */
     private function streamBackupToRemote(string $today): int
     {
@@ -584,7 +591,6 @@ class BackupService
         $exclusionPatterns = $this->config->get('EXCLUSION_PATTERNS');
         $remoteDir = $this->config->get('SSH_BACKUP_HOME');
         $withCrypt = $this->config->get('WITH_CRYPT');
-        $password = $this->config->get('CRYPT_PASSWORD');
         $compressionType = $this->config->get('COMPRESSION_TYPE', 'gzip');
 
         // Determine file extension based on compression
@@ -596,11 +602,8 @@ class BackupService
         };
 
         // Construct the remote file name
-        if ($withCrypt) {
-            $remoteFile = "{$remoteDir}/{$today}/{$today}-{$this->config->get('SSH_USER')}-arkhive.enc{$extension}";
-        } else {
-            $remoteFile = "{$remoteDir}/{$today}/{$today}-{$this->config->get('SSH_USER')}-arkhive{$extension}";
-        }
+        $cryptSuffix = $withCrypt ? '.enc' : '';
+        $remoteFile = "{$remoteDir}/{$today}/{$today}-{$this->config->get('SSH_USER')}-arkhive{$cryptSuffix}{$extension}";
 
         // Get the backup directory size for progress reporting
         $sizeCmd = sprintf('du -sb %s | awk \'{print $1}\'', escapeshellarg($backupDir));
@@ -614,106 +617,139 @@ class BackupService
         // adjust the backup size to account for excluded files
         $backupDirSize -= $excludedBytes;
 
-        // the tar command is shared among all cases
-        $tarCmd = sprintf('tar -cf - -T %s', escapeshellarg($filesList));
-
-        // Build compression command
-        $compressionCmd = match($compressionType) {
+        // Build the pipeline stages: [name, command]
+        $stages = [['tar', sprintf('tar -cf - -T %s', escapeshellarg($filesList))]];
+        if ($this->showProgress) {
+            $stages[] = ['pv', sprintf('pv -f -s %d', $backupDirSize)];
+        }
+        $stages[] = ['compression', match($compressionType) {
             'gzip' => 'gzip',
             'xz' => 'xz -9',
             'none' => 'cat',
             default => 'gzip'
-        };
-
-        if ($this->showProgress) {
-            if ($withCrypt) {
-                $this->writeln(" 💻 Creating {$today} Encrypted Backup Archive (compression: {$compressionType}) and streaming to remote...");
-                
-                $command = sprintf(
-                    '%s | pv -f -s %d | %s | openssl enc -aes-256-cbc -salt -pbkdf2 -iter 100000 -pass pass:%s | ssh -p %s %s@%s "cat > %s"',
-                    $tarCmd,
-                    $backupDirSize,
-                    $compressionCmd,
-                    escapeshellarg($password),
-                    escapeshellarg($this->config->get('SSH_PORT')),
-                    escapeshellarg($this->config->get('SSH_USER')),
-                    escapeshellarg($this->config->get('SSH_HOST')),
-                    escapeshellarg($remoteFile)
-                );
-            } else {
-                $this->writeln(" 💻 Creating {$today} Non-Encrypted Backup Archive (compression: {$compressionType}) and streaming to remote...");
-
-                $command = sprintf(
-                    '%s | pv -f -s %d | %s | ssh -p %s %s@%s "cat > %s"',
-                    $tarCmd,
-                    $backupDirSize,
-                    $compressionCmd,
-                    escapeshellarg($this->config->get('SSH_PORT')),
-                    escapeshellarg($this->config->get('SSH_USER')),
-                    escapeshellarg($this->config->get('SSH_HOST')),
-                    escapeshellarg($remoteFile)
-                );
-            }
-
-            // execute the command and show progress
-            $this->runPipeCommand($command, function ($percent, $etaSec, $elapsedTimeSec, $speed, $transferredSize) {
-                $this->write(sprintf(
-                    "\033[2K\r 🕑 Streaming: %d%% done. [%ss elapsed, ETA %ss]. Running at %s. Transferred: %s",
-                    $percent,
-                    $elapsedTimeSec,
-                    $etaSec,
-                    $speed,
-                    $transferredSize
-                ));
-            });
-            $this->writeln('');
-        } else {
-            if ($withCrypt) {
-                $this->writeln(" 💻 Creating {$today} Encrypted Backup Archive (compression: {$compressionType}) and streaming to remote...");
-
-                $command = sprintf(
-                    '%s | %s | openssl enc -aes-256-cbc -salt -pbkdf2 -iter 100000 -pass pass:%s | ssh -p %s %s@%s "cat > %s"',
-                    $tarCmd,
-                    $compressionCmd,
-                    escapeshellarg($password),
-                    escapeshellarg($this->config->get('SSH_PORT')),
-                    escapeshellarg($this->config->get('SSH_USER')),
-                    escapeshellarg($this->config->get('SSH_HOST')),
-                    escapeshellarg($remoteFile)
-                );
-            } else {
-                $this->writeln(" 💻 Creating {$today} Non-Encrypted Backup Archive (compression: {$compressionType}) and streaming to remote...");
-
-                $command = sprintf(
-                    '%s | %s | ssh -p %s %s@%s "cat > %s"',
-                    $tarCmd,
-                    $compressionCmd,
-                    escapeshellarg($this->config->get('SSH_PORT')),
-                    escapeshellarg($this->config->get('SSH_USER')),
-                    escapeshellarg($this->config->get('SSH_HOST')),
-                    escapeshellarg($remoteFile)
-                );
-            }
-
-            // execute the command without progress
-            wrap_exec($command, "Cannot stream backup to remote");
+        }];
+        if ($withCrypt) {
+            $stages[] = ['openssl', crypt_openssl_command(false)];
         }
 
-        // Check if the remote file exists and is non-empty, and fetch its size
-        $remoteFileSizeStr = trim(remote_ssh_exec(
+        $label = $withCrypt ? 'Encrypted' : 'Non-Encrypted';
+        $this->writeln(" 💻 Creating {$today} {$label} Backup Archive (compression: {$compressionType}) and streaming to remote...");
+
+        // upload to a temporary name, renamed only after verification: a failed run never clobbers a good archive
+        $remotePartFile = $remoteFile . '.part';
+
+        $workDir = make_private_temp_dir('arkhive-stream-');
+        try {
+            $sshStage = sprintf(
+                'ssh -p %s %s@%s %s',
+                escapeshellarg((string) $this->config->get('SSH_PORT')),
+                escapeshellarg($this->config->get('SSH_USER')),
+                escapeshellarg($this->config->get('SSH_HOST')),
+                escapeshellarg('cat > ' . escapeshellarg($remotePartFile))
+            );
+            $stages[] = ['tee', sprintf('tee %s %s', escapeshellarg("{$workDir}/f_sha"), escapeshellarg("{$workDir}/f_size"))];
+            $stages[] = ['ssh', $sshStage];
+
+            $script = implode("\n", [
+                'set -u',
+                sprintf('W=%s', escapeshellarg($workDir)),
+                'mkfifo "$W/f_sha" "$W/f_size"',
+                'sha256sum < "$W/f_sha" | awk \'{print $1}\' > "$W/sha" & P_SHA=$!',
+                'wc -c < "$W/f_size" > "$W/size" & P_SIZE=$!',
+                implode(' | ', array_column($stages, 1)),
+                'echo "${PIPESTATUS[*]}" > "$W/pipestatus"',
+                'wait "$P_SHA"; echo $? > "$W/sha_rc"',
+                'wait "$P_SIZE"; echo $? > "$W/size_rc"',
+                'exit 0',
+            ]);
+            $scriptFile = "{$workDir}/pipeline.sh";
+            file_put_contents($scriptFile, $script . "\n");
+
+            $progressCallback = null;
+            if ($this->showProgress) {
+                $progressCallback = function ($percent, $etaSec, $elapsedTimeSec, $speed, $transferredSize) {
+                    $this->write(sprintf(
+                        "\033[2K\r 🕑 Streaming: %d%% done. [%ss elapsed, ETA %ss]. Running at %s. Transferred: %s",
+                        $percent,
+                        $elapsedTimeSec,
+                        $etaSec,
+                        $speed,
+                        $transferredSize
+                    ));
+                };
+            }
+
+            with_crypt_password_env($withCrypt ? (string) $this->config->get('CRYPT_PASSWORD') : null, function () use ($scriptFile, $progressCallback) {
+                [$exitCode, , $err] = proc_exec('bash ' . escapeshellarg($scriptFile), $progressCallback);
+                if ($exitCode !== 0) {
+                    throw new \RuntimeException("Backup pipeline runner failed (exit {$exitCode}). Stderr: {$err}");
+                }
+                $err = trim(preg_replace('/^tar: Removing leading .*$/m', '', $err));
+                if ($err !== '') {
+                    $this->writeln(' ⚠️  Pipeline stderr: ' . $err);
+                }
+            });
+            if ($this->showProgress) {
+                $this->writeln('');
+            }
+
+            // Verify the exit status of every stage
+            $statuses = preg_split('/\s+/', trim((string) @file_get_contents("{$workDir}/pipestatus")));
+            if (count($statuses) !== count($stages)) {
+                throw new \RuntimeException("Cannot read pipeline exit statuses (got: " . implode(' ', $statuses) . ")");
+            }
+            foreach ($stages as $idx => [$stageName]) {
+                $rc = (int) $statuses[$idx];
+                if ($stageName === 'tar' && $rc === 1) {
+                    // GNU tar: exit 1 means "some files differ / changed while reading", non fatal
+                    $this->writeln(" ⚠️  tar reported files changed while reading (exit 1): archive is complete, but some files may be inconsistent.");
+                    continue;
+                }
+                if ($rc !== 0) {
+                    throw new \RuntimeException("Backup pipeline stage '{$stageName}' failed with exit code {$rc}. Statuses: " . implode(' ', $statuses));
+                }
+            }
+            if (trim((string) @file_get_contents("{$workDir}/sha_rc")) !== '0' || trim((string) @file_get_contents("{$workDir}/size_rc")) !== '0') {
+                throw new \RuntimeException("Local checksum/size computation of the backup stream failed");
+            }
+
+            $localSize = (int) trim((string) @file_get_contents("{$workDir}/size"));
+            $localSha = trim((string) @file_get_contents("{$workDir}/sha"));
+            if ($localSize <= 0 || !preg_match('/^[a-f0-9]{64}$/', $localSha)) {
+                throw new \RuntimeException("Invalid local stream size/checksum (size: {$localSize}, sha256: {$localSha})");
+            }
+        } finally {
+            remove_private_temp_dir($workDir);
+        }
+
+        // Verify the remote file size against the bytes actually streamed
+        $remoteFileSize = (int) trim(remote_ssh_exec(
             $this->config->get('SSH_HOST'),
             $this->config->get('SSH_USER'),
             $this->config->get('SSH_PORT'),
-            sprintf('stat -c %%s %s 2>/dev/null || echo 0', escapeshellarg($remoteFile))
+            sprintf('stat -c %%s %s 2>/dev/null || echo 0', escapeshellarg($remotePartFile))
         ));
-
-        $remoteFileSize = (int) $remoteFileSizeStr;
-
-        if ($remoteFileSize <= 0) {
-            throw new \RuntimeException("Remote file verification failed: $remoteFile is missing or empty.");
+        if ($remoteFileSize !== $localSize) {
+            throw new \RuntimeException("Remote file verification failed: {$remotePartFile} is {$remoteFileSize} bytes, expected {$localSize}.");
         }
-        
-        $this->writeln(" ✅ Remote backup streamed successfully to {$remoteFile} with size: " . human_filesize($remoteFileSize));
+
+        // Promote the verified upload to its final name
+        remote_ssh_exec(
+            $this->config->get('SSH_HOST'),
+            $this->config->get('SSH_USER'),
+            $this->config->get('SSH_PORT'),
+            sprintf('mv -f %s %s', escapeshellarg($remotePartFile), escapeshellarg($remoteFile))
+        );
+
+        // Write the checksum sidecar (sha256sum format) next to the archive
+        remote_ssh_exec(
+            $this->config->get('SSH_HOST'),
+            $this->config->get('SSH_USER'),
+            $this->config->get('SSH_PORT'),
+            sprintf('printf %%s %s > %s', escapeshellarg($localSha . '  ' . basename($remoteFile) . "\n"), escapeshellarg($remoteFile . '.sha256'))
+        );
+
+        $this->writeln(" ✅ Remote backup streamed and verified: {$remoteFile} (" . human_filesize($remoteFileSize) . ", sha256 {$localSha})");
 
         // Return the size of the final backup file
         return $remoteFileSize;

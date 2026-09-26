@@ -59,9 +59,12 @@ if (!function_exists('proc_exec')) {
         };
 
         // Keep reading until the process finishes
+        $finalExitCode = null;
         while (true) {
             $status = proc_get_status($process);
             if (!$status['running']) {
+                // the exit code is only reported once, by the first proc_get_status() that sees the process ended
+                $finalExitCode = $status['exitcode'];
                 break;
             }
 
@@ -156,8 +159,9 @@ if (!function_exists('proc_exec')) {
             }
         }
 
-        // Get the real exit code
-        $exitCode = proc_close($process);
+        // Get the real exit code (proc_close() returns -1 when proc_get_status() already consumed it, on PHP < 8.3)
+        $closeCode = proc_close($process);
+        $exitCode = ($finalExitCode !== null && $finalExitCode !== -1) ? $finalExitCode : $closeCode;
 
         return [ (int)$exitCode, rtrim($stdOut), rtrim($stdErr) ];
     }
@@ -361,5 +365,86 @@ if (!function_exists('multi_explode')) {
             }
             return $result;
         }, [$string]);
+    }
+}
+
+if (!function_exists('crypt_openssl_command')) {
+    /**
+     * Returns the openssl command used for archive encryption/decryption.
+     * The password is read from the ARKHIVE_CRYPT_PASSWORD environment variable, never from argv.
+     *
+     * @param bool $decrypt
+     *
+     * @return string
+     */
+    function crypt_openssl_command(bool $decrypt): string
+    {
+        return 'openssl enc ' . ($decrypt ? '-d ' : '') . '-aes-256-cbc -salt -pbkdf2 -iter 100000 -pass env:ARKHIVE_CRYPT_PASSWORD';
+    }
+}
+
+if (!function_exists('with_crypt_password_env')) {
+    /**
+     * Runs a callback with ARKHIVE_CRYPT_PASSWORD exported to child processes, then removes it.
+     *
+     * @param string|null $password Null means "no encryption": the variable is not set.
+     * @param callable $callback
+     *
+     * @return mixed
+     */
+    function with_crypt_password_env(?string $password, callable $callback)
+    {
+        if ($password === null) {
+            return $callback();
+        }
+        if ($password === '') {
+            throw new \RuntimeException('CRYPT_PASSWORD is empty');
+        }
+
+        putenv('ARKHIVE_CRYPT_PASSWORD=' . $password);
+        try {
+            return $callback();
+        } finally {
+            putenv('ARKHIVE_CRYPT_PASSWORD');
+        }
+    }
+}
+
+if (!function_exists('make_private_temp_dir')) {
+    /**
+     * Creates a 0700 temporary directory.
+     *
+     * @param string $prefix
+     *
+     * @return string
+     */
+    function make_private_temp_dir(string $prefix): string
+    {
+        $dir = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . $prefix . bin2hex(random_bytes(8));
+        if (!mkdir($dir, 0700)) {
+            throw new \RuntimeException("Cannot create temporary directory {$dir}");
+        }
+
+        return $dir;
+    }
+}
+
+if (!function_exists('remove_private_temp_dir')) {
+    /**
+     * Removes a flat temporary directory created by make_private_temp_dir().
+     *
+     * @param string $dir
+     */
+    function remove_private_temp_dir(string $dir): void
+    {
+        if (!is_dir($dir)) {
+            return;
+        }
+        foreach (scandir($dir) as $entry) {
+            if ($entry !== '.' && $entry !== '..') {
+                @unlink($dir . DIRECTORY_SEPARATOR . $entry);
+            }
+        }
+        @rmdir($dir);
     }
 }
