@@ -63,4 +63,35 @@ final class CommandTest extends TestCase
 
         self::assertSame('Repository access timed out after 30s (restic)', $result->failure('Repository access'));
     }
+
+    public function testStreamOptionsSurviveEveryWither(): void
+    {
+        $sink = fopen('php://memory', 'w+b');
+        self::assertIsResource($sink);
+        $command = (new Command(['/usr/bin/mariadb', 'shop']))->withInputFile('/tmp/shop.sql')->withOutput($sink)->withTimeout(5.0)->withEnv(['A' => 'b']);
+
+        self::assertSame('/tmp/shop.sql', $command->inputFile);
+        self::assertSame($sink, $command->output);
+        self::assertSame(5.0, $command->timeout);
+        self::assertNull($command->input);
+
+        $withInput = $command->withInput('SELECT 1');
+        self::assertSame('SELECT 1', $withInput->input);
+        self::assertNull($withInput->inputFile, 'string input replaces the input file');
+        self::assertSame($sink, $withInput->output);
+        self::assertSame('/tmp/x.sql', $withInput->withInputFile('/tmp/x.sql')->inputFile);
+        self::assertNull($withInput->withInputFile('/tmp/x.sql')->input);
+    }
+
+    public function testInputFromBothAStringAndAFileIsRejected(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        new Command(['/bin/cat'], input: 'x', inputFile: '/tmp/x');
+    }
+
+    public function testOutputMustBeAStream(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        new Command(['/bin/cat'], output: '/tmp/out');
+    }
 }

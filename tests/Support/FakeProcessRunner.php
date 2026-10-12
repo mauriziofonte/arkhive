@@ -44,7 +44,10 @@ final class FakeProcessRunner implements ProcessRunner
             return $answer;
         }
         [$exit, $stdout, $stderr] = is_int($answer) ? [$answer, '', ''] : $answer;
-        if ($onStdoutLine !== null) {
+        if ($command->output !== null) {
+            fwrite($command->output, $stdout);
+            $stdout = '';
+        } elseif ($onStdoutLine !== null) {
             foreach (explode("\n", rtrim($stdout, "\n")) as $line) {
                 if ($stdout !== '') {
                     $onStdoutLine($line);

@@ -75,6 +75,53 @@ final class SystemProcessRunnerTest extends TestCase
         self::assertSame('hello', $this->runner->run(self::php('echo stream_get_contents(STDIN);')->withInput('hello'))->stdout);
     }
 
+    public function testStdinCanComeFromAFile(): void
+    {
+        $file = $this->tempDir() . '/input.sql';
+        file_put_contents($file, str_repeat("INSERT INTO t VALUES (1);\n", 50000));
+
+        $result = $this->runner->run(self::php('echo strlen(stream_get_contents(STDIN));')->withInputFile($file));
+
+        self::assertSame((string) filesize($file), $result->stdout);
+    }
+
+    public function testAMissingInputFileIsAClearErrorAndNothingRuns(): void
+    {
+        $this->expectException(ArkhiveException::class);
+        $this->expectExceptionMessage('its input /nonexistent/dump.sql is not a readable file');
+
+        $this->runner->run(self::php('echo 1;')->withInputFile('/nonexistent/dump.sql'));
+    }
+
+    public function testStdoutCanBeStreamedToAStreamWithoutBeingKept(): void
+    {
+        $sink = fopen('php://temp', 'w+b');
+        self::assertIsResource($sink);
+        $bytes = random_bytes(300000);
+        $source = $this->tempDir() . '/blob';
+        file_put_contents($source, $bytes);
+
+        $result = $this->runner->run(self::php('readfile(' . var_export($source, true) . '); fwrite(STDERR, "done\n");')->withOutput($sink));
+
+        self::assertSame(0, $result->exitCode);
+        self::assertSame('', $result->stdout);
+        self::assertSame("done\n", $result->stderr);
+        rewind($sink);
+        self::assertSame(hash('sha256', $bytes), hash('sha256', (string) stream_get_contents($sink)));
+    }
+
+    public function testAClosedOutputStreamStopsTheProducer(): void
+    {
+        $sink = fopen('php://memory', 'rb');
+        self::assertIsResource($sink);
+
+        $result = $this->runner->run(self::php('while (true) { echo str_repeat("x", 65536); }')->withOutput($sink)->withTimeout(20));
+
+        self::assertFalse($result->timedOut, 'the producer was stopped, not left running until the timeout');
+        self::assertNotSame(0, $result->exitCode);
+        self::assertStringContainsString('the output stream was closed before ' . basename(PHP_BINARY) . ' finished', $result->stderr);
+    }
+
     public function testLargeInputAndOutputDoNotDeadlock(): void
     {
         $input = str_repeat("0123456789abcdef\n", 200000);

@@ -9,7 +9,7 @@ use Mfonte\Arkhive\Exceptions\InterruptedException;
 
 /**
  * Runs commands with proc_open and an argv array: no shell, no pipelines, LC_ALL=C, stderr kept,
- * stdin from /dev/null unless input is given, SIGINT/SIGTERM forwarded to the child.
+ * stdin from /dev/null unless input (a string or a file) is given, SIGINT/SIGTERM forwarded to the child.
  */
 final class SystemProcessRunner implements ProcessRunner
 {
@@ -37,8 +37,15 @@ final class SystemProcessRunner implements ProcessRunner
             throw new ArkhiveException("Cannot run {$binary}: it is not an executable file");
         }
 
+        if ($command->inputFile !== null && (!is_file($command->inputFile) || !is_readable($command->inputFile))) {
+            throw new ArkhiveException("Cannot run {$command->name()}: its input {$command->inputFile} is not a readable file");
+        }
         $descriptors = [
-            0 => $command->input === null ? ['file', '/dev/null', 'r'] : ['pipe', 'r'],
+            0 => match (true) {
+                $command->input !== null => ['pipe', 'r'],
+                $command->inputFile !== null => ['file', $command->inputFile, 'r'],
+                default => ['file', '/dev/null', 'r'],
+            },
             1 => ['pipe', 'w'],
             2 => ['pipe', 'w'],
         ];
@@ -98,6 +105,7 @@ final class SystemProcessRunner implements ProcessRunner
         $stderr = '';
         $partial = [1 => '', 2 => ''];
         $timedOut = false;
+        $outputClosed = false;
         $killAt = null;
         $exitCode = null;
 
@@ -135,7 +143,14 @@ final class SystemProcessRunner implements ProcessRunner
                             continue;
                         }
                         if ($fd === 1) {
-                            if ($onStdoutLine === null) {
+                            if ($command->output !== null) {
+                                if (!self::copy($command->output, $chunk)) {
+                                    // the reader went away (e.g. `| head`): stop the producer instead of filling memory
+                                    unset($readers[$fd]);
+                                    $outputClosed = true;
+                                    proc_terminate($process, InterruptedException::SIGTERM);
+                                }
+                            } elseif ($onStdoutLine === null) {
                                 $stdout .= $chunk;
                             } else {
                                 self::emitLines($partial[1], $chunk, $onStdoutLine);
@@ -175,8 +190,29 @@ final class SystemProcessRunner implements ProcessRunner
         if (strlen($stderr) > self::STDERR_LIMIT) {
             $stderr = substr($stderr, -self::STDERR_LIMIT);
         }
+        if ($outputClosed) {
+            $stderr .= ($stderr === '' || str_ends_with($stderr, "\n") ? '' : "\n") . "ArkHive: the output stream was closed before {$command->name()} finished\n";
+        }
 
         return [$stdout, $stderr, $exitCode, $timedOut];
+    }
+
+    /**
+     * @param resource $stream
+     */
+    private static function copy($stream, string $chunk): bool
+    {
+        $offset = 0;
+        $length = strlen($chunk);
+        while ($offset < $length) {
+            $written = @fwrite($stream, substr($chunk, $offset));
+            if ($written === false || $written === 0) {
+                return false;
+            }
+            $offset += $written;
+        }
+
+        return true;
     }
 
     /**
