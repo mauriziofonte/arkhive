@@ -358,6 +358,8 @@ final class RestoreTest extends E2eTestCase
     public function testWrongPasswordUnreachableRepositoryAndStaleLockAreExplained(): void
     {
         $this->buildTree();
+        // enough incompressible data that the throttled repair below is still reading when it is killed
+        file_put_contents("{$this->tree}/ballast.bin", random_bytes(4 * 1024 * 1024));
         $this->backup();
         $target = "{$this->dir}/never";
 
