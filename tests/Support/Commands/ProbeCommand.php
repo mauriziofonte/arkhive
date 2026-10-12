@@ -31,6 +31,16 @@ final class ProbeCommand extends ArkhiveCommand
         return $this->log;
     }
 
+    public function interrupts(): \Mfonte\Arkhive\Services\Process\Signals
+    {
+        return $this->interrupts;
+    }
+
+    public function cleanupTasks(): \Mfonte\Arkhive\Services\Process\Cleanup
+    {
+        return $this->cleanup;
+    }
+
     public function writeResult(string $text): void
     {
         $this->result($text);

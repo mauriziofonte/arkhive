@@ -15,6 +15,8 @@ use Mfonte\Arkhive\Services\Context\Terminal;
 use Mfonte\Arkhive\Services\Output\LogFile;
 use Mfonte\Arkhive\Services\Output\Logger;
 use Mfonte\Arkhive\Services\Output\LogStream;
+use Mfonte\Arkhive\Services\Process\Cleanup;
+use Mfonte\Arkhive\Services\Process\Signals;
 use Mfonte\Arkhive\Support\Clock;
 use Symfony\Component\Console\Input\InputOption;
 use Throwable;
@@ -27,6 +29,8 @@ abstract class ArkhiveCommand extends Command
 {
     protected ExecutionContext $context;
     protected Logger $log;
+    protected Signals $interrupts;
+    protected Cleanup $cleanup;
 
     public function __construct()
     {
@@ -37,8 +41,10 @@ abstract class ArkhiveCommand extends Command
         $this->addOption('log-file', null, InputOption::VALUE_REQUIRED, 'Also append log lines to this file (rotated by size)');
     }
 
-    final public function handle(Terminal $terminal, LogStream $stream, Clock $clock): int
+    final public function handle(Terminal $terminal, LogStream $stream, Clock $clock, Signals $signals, Cleanup $cleanup): int
     {
+        $this->interrupts = $signals;
+        $this->cleanup = $cleanup;
         try {
             $this->context = ContextDetector::detect(
                 $terminal->environment(),
@@ -72,6 +78,7 @@ abstract class ArkhiveCommand extends Command
 
         $this->log = new Logger($this->context, $stream->resource(), $file, $clock, $this->output->isVerbose());
 
+        $installed = $signals->installed() || !$signals->install();
         try {
             return $this->perform();
         } catch (ArkhiveException $e) {
@@ -85,6 +92,13 @@ abstract class ArkhiveCommand extends Command
             $this->log->error(sprintf('Unexpected error: %s (%s:%d)', $e->getMessage(), $e->getFile(), $e->getLine()));
 
             return ExitCode::FAILURE;
+        } finally {
+            foreach ($cleanup->runAll() as $failure) {
+                $this->log->warning("Cleanup failed: {$failure}");
+            }
+            if (!$installed) {
+                $signals->uninstall();
+            }
         }
     }
 

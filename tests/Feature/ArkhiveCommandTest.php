@@ -6,9 +6,11 @@ namespace Tests\Feature;
 
 use Illuminate\Support\Facades\Artisan;
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
+use Mfonte\Arkhive\Exceptions\InterruptedException;
 use Mfonte\Arkhive\Exceptions\RefusedException;
 use Mfonte\Arkhive\Exceptions\UsageException;
 use Mfonte\Arkhive\ExitCode;
+use PHPUnit\Framework\Attributes\DataProvider;
 use RuntimeException;
 use Tests\Support\Commands\ProbeCommand;
 use Tests\Support\TempDir;
@@ -134,5 +136,82 @@ final class ArkhiveCommandTest extends TestCase
 
         self::assertSame(ExitCode::USAGE, Artisan::call('test:probe', ['--interactive' => true]));
         self::assertStringContainsString('--interactive needs a terminal on stdin', $this->logOutput());
+    }
+
+    public function testCleanupRunsAfterSuccessAndFailuresAreWarnings(): void
+    {
+        $ran = [];
+        ProbeCommand::$body = static function (ProbeCommand $c) use (&$ran): int {
+            $c->cleanupTasks()->add('remove temp', static function () use (&$ran): void {
+                $ran[] = 'temp';
+            });
+            $c->cleanupTasks()->add('release the lock', static function (): void {
+                throw new RuntimeException('lock file vanished');
+            });
+
+            return ExitCode::SUCCESS;
+        };
+
+        self::assertSame(ExitCode::SUCCESS, Artisan::call('test:probe'));
+        self::assertSame(['temp'], $ran);
+        self::assertSame("2026-10-12T10:20:30+02:00 warning Cleanup failed: release the lock: lock file vanished\n", $this->logOutput());
+    }
+
+    public function testCleanupRunsAfterAFailure(): void
+    {
+        $ran = false;
+        ProbeCommand::$body = static function (ProbeCommand $c) use (&$ran): int {
+            $c->cleanupTasks()->add('remove temp', static function () use (&$ran): void {
+                $ran = true;
+            });
+
+            throw new ArkhiveException('restic failed');
+        };
+
+        self::assertSame(ExitCode::FAILURE, Artisan::call('test:probe'));
+        self::assertTrue($ran);
+    }
+
+    /**
+     * @return iterable<string, array{int, int, string}>
+     */
+    public static function interruptions(): iterable
+    {
+        yield 'SIGINT' => [InterruptedException::SIGINT, ExitCode::SIGINT, 'Interrupted by SIGINT: cleaned up and released the lock'];
+        yield 'SIGTERM' => [InterruptedException::SIGTERM, ExitCode::SIGTERM, 'Interrupted by SIGTERM: cleaned up and released the lock'];
+    }
+
+    #[DataProvider('interruptions')]
+    public function testASignalRunsCleanupAndExits130Or143(int $signal, int $exit, string $message): void
+    {
+        $ran = false;
+        ProbeCommand::$body = static function (ProbeCommand $c) use (&$ran, $signal): int {
+            $c->cleanupTasks()->add('empty the dump directory', static function () use (&$ran): void {
+                $ran = true;
+            });
+            $c->interrupts()->receive($signal);
+            $c->interrupts()->check();
+
+            return ExitCode::SUCCESS;
+        };
+
+        self::assertSame($exit, Artisan::call('test:probe'));
+        self::assertTrue($ran);
+        self::assertSame("2026-10-12T10:20:30+02:00 error {$message}\n", $this->logOutput());
+    }
+
+    public function testSignalHandlersAreInstalledOnlyForTheCommand(): void
+    {
+        $installed = null;
+        ProbeCommand::$body = static function (ProbeCommand $c) use (&$installed): int {
+            $installed = $c->interrupts()->installed();
+
+            return ExitCode::SUCCESS;
+        };
+
+        Artisan::call('test:probe');
+
+        self::assertSame(\Mfonte\Arkhive\Services\Process\Signals::supported(), $installed);
+        self::assertFalse($this->app->make(\Mfonte\Arkhive\Services\Process\Signals::class)->installed());
     }
 }
