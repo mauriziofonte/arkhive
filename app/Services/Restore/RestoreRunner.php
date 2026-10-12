@@ -115,7 +115,12 @@ final class RestoreRunner
         }
 
         $selection = $plan->selection;
-        $args = ['restore', '--json', '--verify', '--target', $plan->target];
+        $args = ['restore', '--json', '--verify'];
+        if ($restic->supportsSparseRestore()) {
+            // runs of zeros become holes again: sparse files (images, databases) keep their real size on disk
+            $args[] = '--sparse';
+        }
+        array_push($args, '--target', $plan->target);
         foreach ($selection->includes as $include) {
             array_push($args, '--include', $include);
         }
@@ -282,10 +287,10 @@ final class RestoreRunner
             return [];
         }
         if ($this->uid !== 0) {
-            $warning = "Ownership was not restored: running as uid {$this->uid}, the restored files belong to you (run as root to restore the original owners)";
-            $log->warning($warning);
+            // what --owner current means for a non-root user: said, but not a failure (exit 0)
+            $log->warning("Ownership was not restored: running as uid {$this->uid}, the restored files belong to you (run as root to restore the original owners)");
 
-            return [$warning];
+            return [];
         }
         $failed = 0;
         foreach ($this->restoredRoots($plan) as $root) {

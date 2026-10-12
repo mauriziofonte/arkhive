@@ -25,6 +25,11 @@ final class Restic
     /** seconds allowed for the reachability check */
     public const REACH_TIMEOUT = 300.0;
 
+    /** `restore --sparse` (zero runs written as holes); assumed from 0.15 to stay on the safe side */
+    public const SPARSE_RESTORE_VERSION = '0.15.0';
+
+    private ?string $version = null;
+
     public function __construct(
         public readonly ResticSettings $settings,
         public readonly string $binary,
@@ -86,13 +91,21 @@ final class Restic
      */
     public function version(): string
     {
+        if ($this->version !== null) {
+            return $this->version;
+        }
         $result = $this->runner->run(new Command([$this->binary, 'version']));
         $version = self::parseVersion($result->stdout);
         if (!$result->succeeded() || $version === null) {
             throw new ArkhiveException($result->failure("Running {$this->binary} version"));
         }
 
-        return $version;
+        return $this->version = $version;
+    }
+
+    public function supportsSparseRestore(): bool
+    {
+        return version_compare($this->version(), self::SPARSE_RESTORE_VERSION, '>=');
     }
 
     public static function parseVersion(string $output): ?string

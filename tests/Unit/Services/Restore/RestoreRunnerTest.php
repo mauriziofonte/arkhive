@@ -106,7 +106,7 @@ final class RestoreRunnerTest extends TestCase
         self::assertSame(82, $this->runner()->preflight($this->restic, $plan, null));
         $report = $this->runner()->run($this->restic, $plan, null, 'web1.example.com', $this->log(), self::sink());
 
-        self::assertSame(['restore', '--json', '--verify', '--target', $target, '--', $this->snapshot->id], $this->fake->callsOf('restore')[0]);
+        self::assertSame(['restore', '--json', '--verify', '--sparse', '--target', $target, '--', $this->snapshot->id], $this->fake->callsOf('restore')[0]);
         self::assertFileExists("{$target}/srv/www/site/index.php");
         self::assertTrue($report->verified);
         self::assertSame(14, $report->files);
@@ -123,12 +123,24 @@ final class RestoreRunnerTest extends TestCase
         self::assertSame('everything', $report->toArray()['selection']);
     }
 
+    public function testResticOlderThanSparseSupportRestoresWithoutSparse(): void
+    {
+        $this->fake->version = "restic 0.14.0 compiled with go1.19 on linux/amd64\n";
+        $target = "{$this->root}/restore";
+
+        $this->runner()->run($this->restic, $this->plan(Selection::everything(), $target), null, 'h', $this->log(), self::sink());
+        $this->restic->supportsSparseRestore();
+
+        self::assertSame(['restore', '--json', '--verify', '--target', $target, '--', $this->snapshot->id], $this->fake->callsOf('restore')[0]);
+        self::assertCount(1, $this->fake->callsOf('version'), 'the version is asked once');
+    }
+
     public function testIncludesAndExcludesArePassedToRestic(): void
     {
         $target = "{$this->root}/restore";
         $report = $this->runner()->run($this->restic, $this->plan(Selection::paths(['/srv/www/site', '/srv/www/with space'], ['*.css']), $target), null, 'h', $this->log(), self::sink());
 
-        self::assertSame(['restore', '--json', '--verify', '--target', $target, '--include', '/srv/www/site', '--include', '/srv/www/with space', '--exclude', '*.css', '--', $this->snapshot->id], $this->fake->callsOf('restore')[0]);
+        self::assertSame(['restore', '--json', '--verify', '--sparse', '--target', $target, '--include', '/srv/www/site', '--include', '/srv/www/with space', '--exclude', '*.css', '--', $this->snapshot->id], $this->fake->callsOf('restore')[0]);
         self::assertSame("Review, then put it in place with: rsync -aHAX --numeric-ids '{$target}/srv/www/site/' '/srv/www/site/'", $report->nextSteps[0]);
         self::assertSame("or restore in place (a safety snapshot is taken first): arkhive restore --snapshot 6118b3c5 --include '/srv/www/site' --include '/srv/www/with space' --in-place --force", self::last($report->nextSteps));
     }
@@ -212,7 +224,7 @@ final class RestoreRunnerTest extends TestCase
 
         self::assertSame(['backup', 'restore'], $order);
         self::assertSame(['backup', '--json', '--tag', 'pre-restore', '--host', 'web1.example.com', '--', $original], $this->fake->callsOf('backup')[0], 'only paths that exist');
-        self::assertSame(['restore', '--json', '--verify', '--target', '/', '--', 'aaaa1111'], $this->fake->callsOf('restore')[0]);
+        self::assertSame(['restore', '--json', '--verify', '--sparse', '--target', '/', '--', 'aaaa1111'], $this->fake->callsOf('restore')[0]);
         self::assertSame('e8ecb7f41958b511ccbdba5c2db6c0ab81cdf6b2cb2afd345240800c7bf7c036', $report->safetySnapshot);
         self::assertSame(['Undo this restore with: arkhive restore --snapshot e8ecb7f4 --in-place --force'], $report->nextSteps);
         self::assertStringContainsString('success Safety snapshot e8ecb7f4 saved (tag pre-restore); undo the restore with: arkhive restore --snapshot e8ecb7f4 --in-place --force', $this->stream->contents());
@@ -285,7 +297,7 @@ final class RestoreRunnerTest extends TestCase
     {
         $report = $this->runner(1000)->run($this->restic, $this->plan(Selection::paths(['/srv/www/site']), "{$this->root}/r", OwnerMode::Current), null, 'h', $this->log(), self::sink());
 
-        self::assertSame(['Ownership was not restored: running as uid 1000, the restored files belong to you (run as root to restore the original owners)'], $report->warnings);
+        self::assertSame([], $report->warnings, 'the restore did what --owner current asks: exit 0');
         self::assertStringContainsString('warning Ownership was not restored', $this->stream->contents());
     }
 

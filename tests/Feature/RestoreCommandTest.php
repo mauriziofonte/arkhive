@@ -75,7 +75,7 @@ final class RestoreCommandTest extends TestCase
         self::assertSame($target, $json['target']);
         self::assertSame(['/srv/www/site'], $json['includes']);
         self::assertTrue($json['verified']);
-        self::assertSame(['restore', '--json', '--verify', '--target', $target, '--include', '/srv/www/site', '--', $json['snapshot']], $this->restic->callsOf('restore')[0]);
+        self::assertSame(['restore', '--json', '--verify', '--sparse', '--target', $target, '--include', '/srv/www/site', '--', $json['snapshot']], $this->restic->callsOf('restore')[0]);
         self::assertStringContainsString('info Opening the repository /srv/restic-repo', $this->logOutput());
         self::assertStringNotContainsString("\033[", $this->logOutput());
     }
