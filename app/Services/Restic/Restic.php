@@ -62,12 +62,16 @@ final class Restic
      * @param array<string, string|null>    $env
      * @param (callable(string): void)|null $onStdoutLine
      * @param list<int>                     $acceptedExitCodes
+     * @param resource|null                 $output            receives stdout as it arrives (restic dump)
      */
-    public function run(array $args, string $what, array $env = [], ?callable $onStdoutLine = null, array $acceptedExitCodes = [0], ?float $timeout = null, ?callable $onStderrLine = null): ProcessResult
+    public function run(array $args, string $what, array $env = [], ?callable $onStdoutLine = null, array $acceptedExitCodes = [0], ?float $timeout = null, ?callable $onStderrLine = null, $output = null): ProcessResult
     {
         $command = $this->command($args, $env);
         if ($timeout !== null) {
             $command = $command->withTimeout($timeout);
+        }
+        if ($output !== null) {
+            $command = $command->withOutput($output);
         }
         $result = $this->runner->run($command, $onStdoutLine, $onStderrLine);
         if (!in_array($result->exitCode, $acceptedExitCodes, true) || $result->timedOut) {
@@ -134,5 +138,155 @@ final class Restic
         }
 
         return '';
+    }
+
+    /**
+     * Snapshots, newest first.
+     *
+     * @param list<string> $paths only snapshots that include all these paths
+     * @param list<string> $tags  only snapshots carrying these tags
+     *
+     * @return list<Snapshot>
+     */
+    public function snapshots(?string $host = null, array $paths = [], array $tags = []): array
+    {
+        $args = ['snapshots', '--json'];
+        if ($host !== null) {
+            array_push($args, '--host', $host);
+        }
+        foreach ($paths as $path) {
+            array_push($args, '--path', $path);
+        }
+        foreach ($tags as $tag) {
+            array_push($args, '--tag', $tag);
+        }
+        $result = $this->run($args, 'Listing the snapshots', timeout: self::REACH_TIMEOUT);
+        $data = json_decode(trim($result->stdout), true);
+        if (!is_array($data)) {
+            throw new ArkhiveException('restic snapshots returned something that is not a JSON list: ' . substr(trim($result->stdout), 0, 200));
+        }
+        $snapshots = [];
+        foreach ($data as $item) {
+            if (is_array($item)) {
+                /** @var array<string, mixed> $item */
+                $snapshots[] = Snapshot::fromJson($item);
+            }
+        }
+        usort($snapshots, static fn (Snapshot $a, Snapshot $b): int => [$b->time, $b->id] <=> [$a->time, $a->id]);
+
+        return $snapshots;
+    }
+
+    /**
+     * Streams the entries of a snapshot: the directories given (their direct children, or everything
+     * below them with $recursive), or the whole snapshot when none is given.
+     *
+     * @param list<string>         $directories absolute paths inside the snapshot
+     * @param callable(Node): void $onNode
+     */
+    public function ls(string $snapshotId, array $directories, bool $recursive, callable $onNode): void
+    {
+        $args = ['ls', '--json'];
+        if ($recursive) {
+            $args[] = '--recursive';
+        }
+        array_push($args, '--', $snapshotId, ...$directories);
+        $this->run($args, "Listing snapshot {$snapshotId}", onStdoutLine: static function (string $line) use ($onNode): void {
+            $data = ResticJson::decode($line);
+            if ($data !== null && ($data['struct_type'] ?? '') === 'node') {
+                $onNode(Node::fromJson($data));
+            }
+        });
+    }
+
+    /**
+     * Which snapshots contain entries whose name matches $pattern.
+     *
+     * @param list<string> $snapshotIds only these snapshots (all when empty)
+     *
+     * @return list<array{string, Node}> [snapshot id, entry]
+     */
+    public function find(string $pattern, ?string $host = null, array $snapshotIds = []): array
+    {
+        $args = ['find', '--json'];
+        if ($host !== null) {
+            array_push($args, '--host', $host);
+        }
+        foreach ($snapshotIds as $id) {
+            array_push($args, '--snapshot', $id);
+        }
+        array_push($args, '--', $pattern);
+        $result = $this->run($args, "Searching the snapshots for {$pattern}");
+        $data = json_decode(trim($result->stdout), true);
+        if (trim($result->stdout) === '' || $data === null) {
+            return [];
+        }
+        if (!is_array($data)) {
+            throw new ArkhiveException('restic find returned something that is not a JSON list: ' . substr(trim($result->stdout), 0, 200));
+        }
+        $found = [];
+        foreach ($data as $group) {
+            if (!is_array($group) || !is_string($group['snapshot'] ?? null) || !is_array($group['matches'] ?? null)) {
+                continue;
+            }
+            foreach ($group['matches'] as $match) {
+                if (is_array($match)) {
+                    /** @var array<string, mixed> $match */
+                    $found[] = [$group['snapshot'], Node::fromJson($match)];
+                }
+            }
+        }
+
+        return $found;
+    }
+
+    /**
+     * Bytes a full restore of the snapshot writes (`restic stats --mode restore-size`).
+     */
+    public function restoreSize(string $snapshotId): int
+    {
+        $result = $this->run(['stats', '--json', '--mode', 'restore-size', '--', $snapshotId], "Measuring snapshot {$snapshotId}");
+        $data = ResticJson::decode($result->stdout);
+        if ($data === null || !array_key_exists('total_size', $data)) {
+            throw new ArkhiveException('restic stats did not report a size: ' . substr(trim($result->stdout), 0, 200));
+        }
+
+        return ResticJson::int($data, 'total_size');
+    }
+
+    /**
+     * The repository's lock files (read without taking a lock).
+     *
+     * @return list<RepositoryLock>
+     */
+    public function locks(): array
+    {
+        $result = $this->run(['list', 'locks', '--no-lock'], 'Listing the repository locks', timeout: self::REACH_TIMEOUT);
+        $locks = [];
+        foreach (preg_split('/\R/', trim($result->stdout)) ?: [] as $id) {
+            $id = trim($id);
+            if (preg_match('/^[0-9a-f]{64}$/', $id) !== 1) {
+                continue;
+            }
+            $lock = $this->runner->run($this->command(['cat', 'lock', '--no-lock', '--', $id]));
+            $data = json_decode($lock->stdout, true);
+            if ($lock->succeeded() && is_array($data)) {
+                /** @var array<string, mixed> $data */
+                $locks[] = RepositoryLock::fromJson($id, $data);
+            }
+            // a lock removed between list and cat is simply gone
+        }
+
+        return $locks;
+    }
+
+    /**
+     * Writes one file of a snapshot to $output (`restic dump`).
+     *
+     * @param resource $output
+     */
+    public function dump(string $snapshotId, string $path, $output): void
+    {
+        $this->run(['dump', '--', $snapshotId, $path], "Reading {$path} from snapshot {$snapshotId}", output: $output);
     }
 }
