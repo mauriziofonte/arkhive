@@ -211,6 +211,24 @@ final class ResticTest extends TestCase
         self::assertSame('', (new Restic(self::settings('/srv/restic-repo'), '/usr/bin/restic', $noId))->init());
     }
 
+    public function testInitOfAnExistingRepositoryIsNullOn019And016(): void
+    {
+        $json = (new FakeProcessRunner())->on('restic', static fn (): array => [1, '', '{"message_type":"exit_error","code":1,"message":"Fatal: Fatal: create repository at /srv/restic-repo failed: config file already exists"}' . "\n"]);
+        self::assertNull((new Restic(self::settings('/srv/restic-repo'), '/usr/bin/restic', $json))->init());
+
+        $text = (new FakeProcessRunner())->on('restic', static fn (): array => [1, '', "Fatal: create repository at /srv/restic-repo failed: config file already exists\n"]);
+        self::assertNull((new Restic(self::settings('/srv/restic-repo'), '/usr/bin/restic', $text))->init());
+    }
+
+    public function testInitFailuresAreErrors(): void
+    {
+        $runner = (new FakeProcessRunner())->on('restic', static fn (): array => [1, '', "Fatal: create repository at /srv/restic-repo failed: mkdir /srv/restic-repo: permission denied\n"]);
+
+        $this->expectException(ArkhiveException::class);
+        $this->expectExceptionMessage('Creating the restic repository failed (restic exit 1): Fatal: create repository at /srv/restic-repo failed: mkdir /srv/restic-repo: permission denied');
+        (new Restic(self::settings('/srv/restic-repo'), '/usr/bin/restic', $runner))->init();
+    }
+
     public function testFactoryFindsResticOrTheConfiguredBinary(): void
     {
         $dir = $this->tempDir();

@@ -138,11 +138,19 @@ final class Restic
     }
 
     /**
-     * @return string the repository id
+     * @return string|null the new repository id ('' when restic did not print one), null when a
+     *                     repository already exists at that location (it is left untouched)
      */
-    public function init(): string
+    public function init(): ?string
     {
-        $result = $this->run(['init', '--json'], 'Creating the restic repository');
+        $result = $this->run(['init', '--json'], 'Creating the restic repository', acceptedExitCodes: [0, 1]);
+        if ($result->exitCode !== 0) {
+            if (str_contains($result->stdout . $result->stderr, 'config file already exists')) {
+                return null;
+            }
+
+            throw ResticErrors::exception($result, 'Creating the restic repository', $this->settings);
+        }
         foreach (preg_split('/\R/', $result->stdout) ?: [] as $line) {
             $data = ResticJson::decode($line);
             if ($data !== null && ResticJson::string($data, 'id') !== '') {
