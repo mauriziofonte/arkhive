@@ -1,0 +1,9 @@
+NAME="Fedora Linux"
+VERSION="42 (Container Image)"
+RELEASE_TYPE=stable
+ID=fedora
+VERSION_ID=42
+PLATFORM_ID="platform:f42"
+PRETTY_NAME="Fedora Linux 42 (Container Image)"
+VARIANT="Container Image"
+VARIANT_ID=container

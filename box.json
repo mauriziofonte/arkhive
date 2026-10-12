@@ -1,5 +1,5 @@
 {
-    "check-requirements": true,
+    "check-requirements": false,
     "chmod": "0755",
     "directories": [
         "app",

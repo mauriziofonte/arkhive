@@ -14,12 +14,13 @@ final class Cli
 {
     /**
      * @param list<string>          $args
-     * @param array<string, string> $env  added to a minimal environment (PATH, HOME, TERM)
+     * @param array<string, string> $env        added to a minimal environment (PATH, HOME, TERM)
+     * @param list<string>          $phpOptions options for the PHP binary itself (e.g. -n)
      */
-    public static function run(array $args, array $env = [], bool $pty = false, string $stdin = '', ?string $entry = null): CliResult
+    public static function run(array $args, array $env = [], bool $pty = false, string $stdin = '', ?string $entry = null, array $phpOptions = []): CliResult
     {
         $entry ??= dirname(__DIR__, 2) . '/arkhive';
-        $argv = array_merge([PHP_BINARY, $entry], $args);
+        $argv = array_merge([PHP_BINARY], $phpOptions, [$entry], $args);
         if ($pty) {
             $argv = ['script', '-qec', implode(' ', array_map('escapeshellarg', $argv)), '/dev/null'];
         }

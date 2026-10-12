@@ -37,7 +37,8 @@
             "Mfonte\\Arkhive\\": "app/"
         },
         "files": [
-            "app/helpers.php"
+            "app/helpers.php",
+            "bootstrap/requirements.php"
         ]
     },
     "autoload-dev": {

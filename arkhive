@@ -6,6 +6,17 @@ declare(strict_types=1);
 define('LARAVEL_START', microtime(true));
 
 /*
+| Requirements first, in syntax old PHP versions can parse: a host with PHP 8.1 or without pcntl
+| gets the install command for its distribution instead of a parse error or a fatal error.
+*/
+require_once __DIR__.'/bootstrap/requirements.php';
+$problems = arkhive_startup_problems();
+if ($problems !== []) {
+    fwrite(STDERR, implode(PHP_EOL, $problems).PHP_EOL);
+    exit(1);
+}
+
+/*
 |--------------------------------------------------------------------------
 | Register The Auto Loader
 |--------------------------------------------------------------------------

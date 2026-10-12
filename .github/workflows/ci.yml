@@ -112,6 +112,36 @@ jobs:
           name: arkhive-phar
           path: build/arkhive.phar
 
+  old-php:
+    name: Startup check on PHP ${{ matrix.php }} (unsupported)
+    needs: phar
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['7.4', '8.1', '8.2']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2.37.2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+      - uses: actions/download-artifact@v4
+        with:
+          name: arkhive-phar
+          path: build
+      - name: The PHAR refuses to start and names the PHP source for Ubuntu
+        run: |
+          set +e
+          php build/arkhive.phar --version > out.txt 2> err.txt
+          status=$?
+          set -e
+          cat err.txt
+          test "$status" -eq 1
+          test ! -s out.txt
+          grep -q '^ArkHive needs PHP 8.3 or newer; this is PHP ${{ matrix.php }}' err.txt
+          grep -q 'ppa:ondrej/php' err.txt
+
   e2e:
     name: End-to-end (Docker)
     needs: phar
