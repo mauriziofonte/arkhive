@@ -130,6 +130,7 @@ final class DistroTest extends TestCase
         yield 'mariadb-dump' => [Dependency::MysqlDump, ['apt' => 'mariadb-client', 'dnf' => 'mariadb', 'apk' => 'mariadb-client', 'pacman' => 'mariadb-clients', 'zypper' => 'mariadb-client']];
         yield 'mariadb client' => [Dependency::MysqlClient, ['apt' => 'mariadb-client', 'dnf' => 'mariadb', 'apk' => 'mariadb-client', 'pacman' => 'mariadb-clients', 'zypper' => 'mariadb-client']];
         yield 'pg_dump' => [Dependency::PgDump, ['apt' => 'postgresql-client', 'dnf' => 'postgresql', 'apk' => 'postgresql-client', 'pacman' => 'postgresql', 'zypper' => 'postgresql']];
+        yield 'psql' => [Dependency::PgClient, ['apt' => 'postgresql-client', 'dnf' => 'postgresql', 'apk' => 'postgresql-client', 'pacman' => 'postgresql', 'zypper' => 'postgresql']];
         yield 'ssh' => [Dependency::Ssh, ['apt' => 'openssh-client', 'dnf' => 'openssh-clients', 'apk' => 'openssh-client', 'pacman' => 'openssh', 'zypper' => 'openssh-clients']];
         yield 'openssl' => [Dependency::Openssl, ['apt' => 'openssl', 'dnf' => 'openssl', 'apk' => 'openssl', 'pacman' => 'openssl', 'zypper' => 'openssl']];
         yield 'xz' => [Dependency::Xz, ['apt' => 'xz-utils', 'dnf' => 'xz', 'apk' => 'xz', 'pacman' => 'xz', 'zypper' => 'xz']];

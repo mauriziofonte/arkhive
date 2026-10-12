@@ -154,6 +154,13 @@ jobs:
           extensions: pcntl, posix, mbstring, curl, zlib
           coverage: none
       - run: composer install --no-interaction --no-progress --prefer-dist
+      - name: Install the MariaDB and PostgreSQL client tools
+        # the runner's MySQL 8 mysqldump cannot dump MariaDB 11 (it queries COLUMN_STATISTICS)
+        run: |
+          sudo apt-get update -q
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends mariadb-client postgresql-client
+          mariadb-dump --version
+          pg_dump --version
       - uses: actions/download-artifact@v4
         with:
           name: arkhive-phar

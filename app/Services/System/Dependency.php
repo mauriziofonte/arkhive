@@ -13,6 +13,7 @@ enum Dependency: string
     case MysqlDump = 'mysql-dump';
     case MysqlClient = 'mysql-client';
     case PgDump = 'pg_dump';
+    case PgClient = 'psql';
     case Ssh = 'ssh';
     case Openssl = 'openssl';
     case Xz = 'xz';
@@ -30,6 +31,7 @@ enum Dependency: string
             self::MysqlDump => ['mariadb-dump', 'mysqldump'],
             self::MysqlClient => ['mariadb', 'mysql'],
             self::PgDump => ['pg_dump'],
+            self::PgClient => ['psql'],
             self::Ssh => ['ssh'],
             self::Openssl => ['openssl'],
             self::Xz => ['xz'],
@@ -54,7 +56,7 @@ enum Dependency: string
                 PackageManager::Pacman => 'mariadb-clients',
                 default => 'mariadb-client',
             }],
-            self::PgDump => [match ($manager) {
+            self::PgDump, self::PgClient => [match ($manager) {
                 PackageManager::Apt, PackageManager::Apk => 'postgresql-client',
                 default => 'postgresql',
             }],
