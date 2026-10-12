@@ -377,13 +377,15 @@ final class RestoreTest extends E2eTestCase
         // a stale exclusive lock: a repair killed while it holds the lock
         $repair = proc_open(
             [self::env('E2E_RESTIC'), '-o', "sftp.command={$this->sftpCommand}", 'repair', 'index', '--read-all-packs', '--limit-download', '1'],
-            [0 => ['file', '/dev/null', 'r'], 1 => ['file', '/dev/null', 'w'], 2 => ['file', '/dev/null', 'w']],
+            [0 => ['file', '/dev/null', 'r'], 1 => ['file', '/dev/null', 'w'], 2 => ['file', "{$this->dir}/repair.stderr", 'w']],
             $pipes,
             null,
             self::environment(['RESTIC_REPOSITORY' => $this->repository, 'RESTIC_PASSWORD_FILE' => self::env('E2E_PASSWORD_FILE')]),
         );
         self::assertIsResource($repair);
-        self::assertTrue(self::waitFor(fn (): bool => trim(self::restic(['list', 'locks', '--no-lock'], $this->repository, $this->sftpCommand)->stdout) !== '', 60), 'the repair takes its lock');
+        $locked = self::waitFor(fn (): bool => trim(self::restic(['list', 'locks', '--no-lock'], $this->repository, $this->sftpCommand)->stdout) !== '', 60);
+        $state = proc_get_status($repair);
+        self::assertTrue($locked, sprintf('the repair takes its lock (running: %s, exit %d): %s', $state['running'] ? 'yes' : 'no', $state['exitcode'], (string) @file_get_contents("{$this->dir}/repair.stderr")));
         proc_terminate($repair, 9);
         proc_close($repair);
         try {
