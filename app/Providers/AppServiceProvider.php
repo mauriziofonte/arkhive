@@ -12,6 +12,8 @@ use Mfonte\Arkhive\Services\Process\Cleanup;
 use Mfonte\Arkhive\Services\Process\ProcessRunner;
 use Mfonte\Arkhive\Services\Process\Signals;
 use Mfonte\Arkhive\Services\Process\SystemProcessRunner;
+use Mfonte\Arkhive\Services\Restore\Prompter;
+use Mfonte\Arkhive\Services\Restore\StreamPrompter;
 use Mfonte\Arkhive\Services\System\BinaryFinder;
 use Mfonte\Arkhive\Services\System\Distro;
 use Mfonte\Arkhive\Support\Clock;
@@ -29,5 +31,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(ProcessRunner::class, SystemProcessRunner::class);
         $this->app->singleton(BinaryFinder::class, static fn (): BinaryFinder => BinaryFinder::fromEnvironment());
         $this->app->singleton(Distro::class, static fn (): Distro => Distro::detect());
+        // questions on stderr next to the log, answers from stdin: stdout stays for results
+        $this->app->bind(Prompter::class, static fn ($app): Prompter => new StreamPrompter(STDIN, $app->make(LogStream::class)->resource(), $app->make(Signals::class), getenv('NO_COLOR') === false));
     }
 }

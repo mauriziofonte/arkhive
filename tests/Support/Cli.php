@@ -17,7 +17,7 @@ final class Cli
      * @param array<string, string> $env        added to a minimal environment (PATH, HOME, TERM)
      * @param list<string>          $phpOptions options for the PHP binary itself (e.g. -n)
      */
-    public static function run(array $args, array $env = [], bool $pty = false, string $stdin = '', ?string $entry = null, array $phpOptions = []): CliResult
+    public static function run(array $args, array $env = [], bool $pty = false, string $stdin = '', ?string $entry = null, array $phpOptions = [], ?string $cwd = null): CliResult
     {
         $entry ??= dirname(__DIR__, 2) . '/arkhive';
         $argv = array_merge([PHP_BINARY], $phpOptions, [$entry], $args);
@@ -31,7 +31,7 @@ final class Cli
             'TERM' => 'xterm-256color',
             'LC_ALL' => 'C',
         ];
-        $process = proc_open($argv, [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, $env + $base);
+        $process = proc_open($argv, [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, $cwd, $env + $base);
         if (!is_resource($process)) {
             throw new RuntimeException('cannot start ' . implode(' ', $argv));
         }

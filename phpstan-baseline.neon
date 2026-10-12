@@ -55,30 +55,6 @@ parameters:
 			path: app/BaseCommand.php
 
 		-
-			message: '#^Binary operation "\." between non\-falsy\-string and array\|string results in an error\.$#'
-			identifier: binaryOp.invalid
-			count: 1
-			path: app/Commands/RestoreCommand.php
-
-		-
-			message: '#^Parameter \#1 \$date of method Mfonte\\Arkhive\\Services\\BackupService\:\:doRestore\(\) expects string, array\|string given\.$#'
-			identifier: argument.type
-			count: 1
-			path: app/Commands/RestoreCommand.php
-
-		-
-			message: '#^Parameter \#1 \$string of function rtrim expects string, string\|false given\.$#'
-			identifier: argument.type
-			count: 1
-			path: app/Commands/RestoreCommand.php
-
-		-
-			message: '#^Part \$date \(array\|string\) of encapsed string cannot be cast to string\.$#'
-			identifier: encapsedStringPart.nonString
-			count: 2
-			path: app/Commands/RestoreCommand.php
-
-		-
 			message: '#^Cannot access offset 0\|1\|2\|3\|4\|5 on list\<string\>\|false\.$#'
 			identifier: offsetAccess.nonOffsetAccessible
 			count: 1
