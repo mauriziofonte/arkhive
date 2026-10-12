@@ -166,7 +166,8 @@ jobs:
           name: arkhive-phar
           path: build
       - name: Run tests/e2e/run.sh
-        run: tests/e2e/run.sh
+        # as root, so ownership, tmpfs (insufficient space) and non-root (setpriv) restore cases run too
+        run: sudo -E env "PATH=$PATH" tests/e2e/run.sh
         env:
           E2E_PHAR: build/arkhive.phar
       - name: Summary
