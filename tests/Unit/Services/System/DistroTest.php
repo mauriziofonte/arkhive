@@ -134,6 +134,7 @@ final class DistroTest extends TestCase
         yield 'ssh' => [Dependency::Ssh, ['apt' => 'openssh-client', 'dnf' => 'openssh-clients', 'apk' => 'openssh-client', 'pacman' => 'openssh', 'zypper' => 'openssh-clients']];
         yield 'openssl' => [Dependency::Openssl, ['apt' => 'openssl', 'dnf' => 'openssl', 'apk' => 'openssl', 'pacman' => 'openssl', 'zypper' => 'openssl']];
         yield 'xz' => [Dependency::Xz, ['apt' => 'xz-utils', 'dnf' => 'xz', 'apk' => 'xz', 'pacman' => 'xz', 'zypper' => 'xz']];
+        yield 'tar' => [Dependency::Tar, ['apt' => 'tar', 'dnf' => 'tar', 'apk' => 'tar', 'pacman' => 'tar', 'zypper' => 'tar']];
         yield 'fuse' => [Dependency::Fuse, ['apt' => 'fuse3', 'dnf' => 'fuse3', 'apk' => 'fuse3', 'pacman' => 'fuse3', 'zypper' => 'fuse3']];
     }
 
@@ -161,6 +162,7 @@ final class DistroTest extends TestCase
         self::assertSame(['ssh'], Dependency::Ssh->binaries());
         self::assertSame(['openssl'], Dependency::Openssl->binaries());
         self::assertSame(['xz'], Dependency::Xz->binaries());
+        self::assertSame(['tar'], Dependency::Tar->binaries());
     }
 
     /**

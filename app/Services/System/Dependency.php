@@ -17,6 +17,7 @@ enum Dependency: string
     case Ssh = 'ssh';
     case Openssl = 'openssl';
     case Xz = 'xz';
+    case Tar = 'tar';
     case Fuse = 'fuse';
 
     /**
@@ -35,6 +36,7 @@ enum Dependency: string
             self::Ssh => ['ssh'],
             self::Openssl => ['openssl'],
             self::Xz => ['xz'],
+            self::Tar => ['tar'],
             self::Fuse => ['fusermount3', 'fusermount'],
         };
     }
@@ -67,6 +69,7 @@ enum Dependency: string
             }],
             self::Openssl => ['openssl'],
             self::Xz => [$manager === PackageManager::Apt ? 'xz-utils' : 'xz'],
+            self::Tar => ['tar'],
             self::Fuse => ['fuse3'],
         };
     }
