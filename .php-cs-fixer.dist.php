@@ -8,7 +8,6 @@ $finder = PhpCsFixer\Finder::create()
     ->notPath([
         'BaseCommand.php',
         'helpers.php',
-        'Commands/BackupCommand.php',
         'Commands/RestoreCommand.php',
         'Commands/SelfUpgradeCommand.php',
         'Services/BackupService.php',

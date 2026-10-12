@@ -55,24 +55,6 @@ parameters:
 			path: app/BaseCommand.php
 
 		-
-			message: '#^Property Mfonte\\Arkhive\\Commands\\BackupCommand\:\:\$checkAvailableDiskSpace has no type specified\.$#'
-			identifier: missingType.property
-			count: 1
-			path: app/Commands/BackupCommand.php
-
-		-
-			message: '#^Property Mfonte\\Arkhive\\Commands\\BackupCommand\:\:\$showProgress has no type specified\.$#'
-			identifier: missingType.property
-			count: 1
-			path: app/Commands/BackupCommand.php
-
-		-
-			message: '#^Unreachable statement \- code above always terminates\.$#'
-			identifier: deadCode.unreachable
-			count: 1
-			path: app/Commands/BackupCommand.php
-
-		-
 			message: '#^Binary operation "\." between non\-falsy\-string and array\|string results in an error\.$#'
 			identifier: binaryOp.invalid
 			count: 1

@@ -17,7 +17,6 @@ use Mfonte\Arkhive\Services\Process\SystemProcessRunner;
 use Mfonte\Arkhive\Services\System\BinaryFinder;
 use Mfonte\Arkhive\Services\System\Dependencies;
 use Mfonte\Arkhive\Services\System\Distro;
-use Tests\Support\TempDir;
 
 /**
  * Real dumps from the seeded MariaDB and PostgreSQL servers, imported into fresh databases: rows,
@@ -26,8 +25,6 @@ use Tests\Support\TempDir;
  */
 final class DumpRoundTripTest extends E2eTestCase
 {
-    use TempDir;
-
     /** characters that break naive option files, pgpass files and URLs */
     private const TRICKY_PASSWORD = 'p"a\\ss\'#w:r d$x;@/';
 
@@ -198,7 +195,7 @@ final class DumpRoundTripTest extends E2eTestCase
         $this->psql('GRANT pg_read_all_data TO e2e_tricky');
 
         $samples = $this->tempDir() . '/samples';
-        $sampler = self::startSampler($samples);
+        $sampler = new ProcessSampler($samples);
         try {
             $staging = new DumpStaging($this->tempDir() . '/dumps');
             $staging->prepare();
@@ -223,7 +220,7 @@ final class DumpRoundTripTest extends E2eTestCase
             }
             $pg->close();
         } finally {
-            $seen = self::stopSampler($sampler, $samples);
+            $seen = $sampler->stop();
         }
 
         self::assertNotSame('', $seen, 'the sampler saw no process at all');
@@ -232,46 +229,5 @@ final class DumpRoundTripTest extends E2eTestCase
         self::assertStringNotContainsString('p"a', $seen);
         self::assertStringNotContainsString(self::env('E2E_MYSQL_PASSWORD'), $seen);
         self::assertStringNotContainsString(self::env('E2E_PGSQL_PASSWORD'), $seen);
-    }
-
-    /**
-     * A separate PHP process that records the command line of every process, every millisecond.
-     *
-     * @return resource
-     */
-    private static function startSampler(string $output)
-    {
-        $code = <<<'PHP'
-            $out = fopen($argv[1], 'w');
-            $seen = [];
-            while (!file_exists($argv[1] . '.stop')) {
-                foreach (glob('/proc/[0-9]*/cmdline') ?: [] as $file) {
-                    $cmdline = @file_get_contents($file);
-                    if (is_string($cmdline) && $cmdline !== '' && !isset($seen[$cmdline])) {
-                        $seen[$cmdline] = true;
-                        fwrite($out, str_replace("\0", ' ', $cmdline) . "\n");
-                    }
-                }
-                usleep(1000);
-            }
-            PHP;
-        $process = proc_open([PHP_BINARY, '-r', $code, $output], [0 => ['file', '/dev/null', 'r'], 1 => ['file', '/dev/null', 'w'], 2 => ['file', '/dev/null', 'w']], $pipes);
-        self::assertIsResource($process);
-        for ($i = 0; $i < 200 && !file_exists($output); $i++) {
-            usleep(10000);
-        }
-
-        return $process;
-    }
-
-    /**
-     * @param resource $process
-     */
-    private static function stopSampler($process, string $output): string
-    {
-        touch($output . '.stop');
-        proc_close($process);
-
-        return (string) file_get_contents($output);
     }
 }

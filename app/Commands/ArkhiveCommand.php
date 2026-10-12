@@ -31,6 +31,8 @@ abstract class ArkhiveCommand extends Command
     protected Logger $log;
     protected Signals $interrupts;
     protected Cleanup $cleanup;
+    protected Terminal $terminal;
+    protected Clock $clock;
 
     public function __construct()
     {
@@ -45,6 +47,8 @@ abstract class ArkhiveCommand extends Command
     {
         $this->interrupts = $signals;
         $this->cleanup = $cleanup;
+        $this->terminal = $terminal;
+        $this->clock = $clock;
         try {
             $this->context = ContextDetector::detect(
                 $terminal->environment(),
