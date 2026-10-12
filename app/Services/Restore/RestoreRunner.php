@@ -197,7 +197,7 @@ final class RestoreRunner
                 });
             }
 
-            $directory = $this->privateDirectory($this->importDirectory($config));
+            $directory = TargetDirectory::createPrivate($this->importDirectory($config), 'arkhive-import-', 'the dump to import');
             $this->cleanup->add('remove the restored dump file', static function () use ($directory): void {
                 TargetDirectory::removeTree($directory);
             });
@@ -405,17 +405,5 @@ final class RestoreRunner
         $dir = $config?->dumpDirectory;
 
         return $dir !== null && is_dir($dir) ? $dir : sys_get_temp_dir();
-    }
-
-    private function privateDirectory(string $parent): string
-    {
-        for ($i = 0; $i < 10; $i++) {
-            $dir = rtrim($parent, '/') . '/arkhive-import-' . bin2hex(random_bytes(6));
-            if (@mkdir($dir, 0700)) {
-                return $dir;
-            }
-        }
-
-        throw new ArkhiveException("Cannot create a private directory in {$parent} for the dump to import");
     }
 }

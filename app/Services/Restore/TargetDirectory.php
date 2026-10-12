@@ -136,6 +136,21 @@ final class TargetDirectory
     }
 
     /**
+     * A new directory only this user can enter (0700), with a random name under $parent.
+     */
+    public static function createPrivate(string $parent, string $prefix, string $purpose): string
+    {
+        for ($i = 0; $i < 10; $i++) {
+            $dir = rtrim($parent, '/') . '/' . $prefix . bin2hex(random_bytes(6));
+            if (@mkdir($dir, 0700)) {
+                return $dir;
+            }
+        }
+
+        throw new ArkhiveException("Cannot create a private directory in {$parent} for {$purpose}");
+    }
+
+    /**
      * Removes the tree without following symlinks; used only on a target this run created.
      */
     public static function removeTree(string $path): void

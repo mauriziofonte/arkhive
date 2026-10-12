@@ -18,6 +18,7 @@ use Mfonte\Arkhive\Services\System\BinaryFinder;
 use Mfonte\Arkhive\Services\System\Distro;
 use Mfonte\Arkhive\Support\Clock;
 use Mfonte\Arkhive\Support\SystemClock;
+use Random\Randomizer;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -31,6 +32,8 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(ProcessRunner::class, SystemProcessRunner::class);
         $this->app->singleton(BinaryFinder::class, static fn (): BinaryFinder => BinaryFinder::fromEnvironment());
         $this->app->singleton(Distro::class, static fn (): Distro => Distro::detect());
+        // the CSPRNG engine: drill samples and throw-away database names
+        $this->app->bind(Randomizer::class, static fn (): Randomizer => new Randomizer());
         // questions on stderr next to the log, answers from stdin: stdout stays for results
         $this->app->bind(Prompter::class, static fn ($app): Prompter => new StreamPrompter(STDIN, $app->make(LogStream::class)->resource(), $app->make(Signals::class), getenv('NO_COLOR') === false));
     }
