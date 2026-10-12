@@ -1,0 +1,144 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Coding standard and static analysis
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2.37.2
+        with:
+          php-version: '8.4'
+          coverage: none
+      - run: composer validate --strict
+      - run: composer install --no-interaction --no-progress --prefer-dist
+      - name: PHP-CS-Fixer (PSR-12)
+        run: vendor/bin/php-cs-fixer check --diff
+      - name: PHPStan (level 8)
+        run: vendor/bin/phpstan analyse --memory-limit=1G --no-progress
+
+  tests:
+    name: PHPUnit (PHP ${{ matrix.php }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.3', '8.4']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2.37.2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: pcntl, posix, mbstring, curl, zlib
+          coverage: ${{ matrix.php == '8.4' && 'pcov' || 'none' }}
+      - run: composer install --no-interaction --no-progress --prefer-dist
+      - name: Install the pinned restic release
+        run: sudo tests/bin/install-restic.sh /usr/local/bin/restic
+      - name: PHPUnit
+        if: matrix.php != '8.4'
+        run: vendor/bin/phpunit
+        env:
+          ARKHIVE_REQUIRE_RESTIC: '1'
+      - name: PHPUnit with coverage
+        if: matrix.php == '8.4'
+        run: vendor/bin/phpunit --coverage-clover build/coverage/clover.xml --coverage-text=build/coverage/coverage.txt --log-junit build/coverage/junit.xml
+        env:
+          ARKHIVE_REQUIRE_RESTIC: '1'
+      - name: Coverage gate (>= 90% of app/)
+        if: matrix.php == '8.4'
+        run: php tests/bin/coverage-gate.php build/coverage/clover.xml 90
+      - uses: actions/upload-artifact@v4
+        if: always() && matrix.php == '8.4'
+        with:
+          name: coverage
+          path: build/coverage
+
+  mutation:
+    name: Mutation testing (Infection)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2.37.2
+        with:
+          php-version: '8.4'
+          extensions: pcntl, posix, mbstring, curl, zlib
+          coverage: pcov
+      - run: composer install --no-interaction --no-progress --prefer-dist
+      - name: Install the pinned restic release
+        run: sudo tests/bin/install-restic.sh /usr/local/bin/restic
+      - name: Infection (MSI >= 80%)
+        run: vendor/bin/infection --threads=max --show-mutations=0 --no-progress
+        env:
+          ARKHIVE_REQUIRE_RESTIC: '1'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: infection
+          path: build/infection/*.log
+
+  phar:
+    name: PHAR build and smoke test
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2.37.2
+        with:
+          php-version: '8.3'
+          coverage: none
+          ini-values: phar.readonly=0
+      - run: composer install --no-interaction --no-progress --prefer-dist --no-dev
+      - name: Build
+        run: |
+          mkdir -p build
+          tests/bin/build-phar.sh build/arkhive.phar
+      - name: Smoke test
+        run: |
+          version="$(php -r 'echo (require "config/app.php")["version"];')"
+          test "$(php build/arkhive.phar --version)" = "ArkHive ${version}"
+          php build/arkhive.phar list --raw
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arkhive-phar
+          path: build/arkhive.phar
+
+  e2e:
+    name: End-to-end (Docker)
+    needs: phar
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2.37.2
+        with:
+          php-version: '8.4'
+          extensions: pcntl, posix, mbstring, curl, zlib
+          coverage: none
+      - run: composer install --no-interaction --no-progress --prefer-dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: arkhive-phar
+          path: build
+      - name: Run tests/e2e/run.sh
+        run: tests/e2e/run.sh
+        env:
+          E2E_PHAR: build/arkhive.phar
+      - name: Summary
+        if: always()
+        run: cat tests/e2e/work/e2e-summary.txt >> "$GITHUB_STEP_SUMMARY" || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e
+          path: |
+            tests/e2e/work/junit.xml
+            tests/e2e/work/e2e-summary.txt
