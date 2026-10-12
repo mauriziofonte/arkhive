@@ -4,8 +4,21 @@
     "directories": [
         "app",
         "bootstrap",
-        "config",
-        "vendor"
+        "config"
+    ],
+    "finder": [
+        {
+            "in": "vendor",
+            "exclude": [
+                "laravel-zero/framework/bin",
+                "jolicode/jolinotif/bin",
+                "jolicode/jolinotif/doc",
+                "nunomaduro/termwind/art",
+                "nunomaduro/collision/docs",
+                "nunomaduro/laravel-console-summary/docs",
+                "nunomaduro/laravel-console-task/docs"
+            ]
+        }
     ],
     "files": [
         "composer.json"
