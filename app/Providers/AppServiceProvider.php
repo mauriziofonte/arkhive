@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Mfonte\Arkhive\Providers;
 
 use Illuminate\Support\ServiceProvider;

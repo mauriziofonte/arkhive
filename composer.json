@@ -26,6 +26,12 @@
         "symfony/mailer": "^7.4",
         "vlucas/phpdotenv": "^5.6"
     },
+    "require-dev": {
+        "friendsofphp/php-cs-fixer": "^3.95",
+        "infection/infection": "^0.35",
+        "phpstan/phpstan": "^2.3",
+        "phpunit/phpunit": "^12"
+    },
     "autoload": {
         "psr-4": {
             "Mfonte\\Arkhive\\": "app/"
@@ -34,13 +40,29 @@
             "app/helpers.php"
         ]
     },
+    "autoload-dev": {
+        "psr-4": {
+            "Tests\\": "tests/"
+        }
+    },
     "config": {
         "preferred-install": "dist",
         "sort-packages": true,
         "optimize-autoloader": true,
         "platform": {
             "php": "8.3.0"
-        }
+        },
+        "allow-plugins": {
+            "infection/extension-installer": true
+        },
+        "platform-check": false
+    },
+    "scripts": {
+        "test": "phpunit",
+        "analyse": "phpstan analyse --memory-limit=1G",
+        "cs": "php-cs-fixer check --diff",
+        "cs:fix": "php-cs-fixer fix",
+        "mutation": "infection --threads=max --show-mutations=0"
     },
     "minimum-stability": "stable",
     "prefer-stable": true,

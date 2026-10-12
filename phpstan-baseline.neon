@@ -1,0 +1,247 @@
+parameters:
+	ignoreErrors:
+		-
+			message: '#^Cannot access offset ''name'' on array\{name\: string, passwd\: string, gid\: int, members\: list\<string\>\}\|false\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: app/BaseCommand.php
+
+		-
+			message: '#^Method Mfonte\\Arkhive\\BaseCommand\:\:hydrateConfig\(\) has parameter \$dotenv with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: app/BaseCommand.php
+
+		-
+			message: '#^Method Mfonte\\Arkhive\\BaseCommand\:\:validateDotenv\(\) has parameter \$dotenv with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: app/BaseCommand.php
+
+		-
+			message: '#^Parameter \#1 \$content of static method Dotenv\\Dotenv\:\:parse\(\) expects string, string\|false given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/BaseCommand.php
+
+		-
+			message: '#^Parameter \#1 \$path of function basename expects string, string\|false given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/BaseCommand.php
+
+		-
+			message: '#^Parameter \#1 \$path of function dirname expects string, string\|false given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/BaseCommand.php
+
+		-
+			message: '#^Parameter \#1 \$string of function trim expects string, string\|false\|null given\.$#'
+			identifier: argument.type
+			count: 2
+			path: app/BaseCommand.php
+
+		-
+			message: '#^Property Mfonte\\Arkhive\\BaseCommand\:\:\$config with generic class Illuminate\\Support\\Collection does not specify its types\: TKey, TValue$#'
+			identifier: missingType.generics
+			count: 1
+			path: app/BaseCommand.php
+
+		-
+			message: '#^Property Mfonte\\Arkhive\\BaseCommand\:\:\$fullExecutablePath \(string\) does not accept string\|false\.$#'
+			identifier: assign.propertyType
+			count: 1
+			path: app/BaseCommand.php
+
+		-
+			message: '#^Property Mfonte\\Arkhive\\Commands\\BackupCommand\:\:\$checkAvailableDiskSpace has no type specified\.$#'
+			identifier: missingType.property
+			count: 1
+			path: app/Commands/BackupCommand.php
+
+		-
+			message: '#^Property Mfonte\\Arkhive\\Commands\\BackupCommand\:\:\$showProgress has no type specified\.$#'
+			identifier: missingType.property
+			count: 1
+			path: app/Commands/BackupCommand.php
+
+		-
+			message: '#^Unreachable statement \- code above always terminates\.$#'
+			identifier: deadCode.unreachable
+			count: 1
+			path: app/Commands/BackupCommand.php
+
+		-
+			message: '#^Binary operation "\." between non\-falsy\-string and array\|string results in an error\.$#'
+			identifier: binaryOp.invalid
+			count: 1
+			path: app/Commands/RestoreCommand.php
+
+		-
+			message: '#^Parameter \#1 \$date of method Mfonte\\Arkhive\\Services\\BackupService\:\:doRestore\(\) expects string, array\|string given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Commands/RestoreCommand.php
+
+		-
+			message: '#^Parameter \#1 \$string of function rtrim expects string, string\|false given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Commands/RestoreCommand.php
+
+		-
+			message: '#^Part \$date \(array\|string\) of encapsed string cannot be cast to string\.$#'
+			identifier: encapsedStringPart.nonString
+			count: 2
+			path: app/Commands/RestoreCommand.php
+
+		-
+			message: '#^Cannot access offset 0\|1\|2\|3\|4\|5 on list\<string\>\|false\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: app/Services/BackupService.php
+
+		-
+			message: '#^Match arm comparison between ''none'' and ''none'' is always true\.$#'
+			identifier: match.alwaysTrue
+			count: 1
+			path: app/Services/BackupService.php
+
+		-
+			message: '#^Method Mfonte\\Arkhive\\Services\\BackupService\:\:__construct\(\) has parameter \$config with generic class Illuminate\\Support\\Collection but does not specify its types\: TKey, TValue$#'
+			identifier: missingType.generics
+			count: 1
+			path: app/Services/BackupService.php
+
+		-
+			message: '#^Method Mfonte\\Arkhive\\Services\\BackupService\:\:estimateMysqlDatabaseSize\(\) has parameter \$databases with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: app/Services/BackupService.php
+
+		-
+			message: '#^Method Mfonte\\Arkhive\\Services\\BackupService\:\:mysqlDump\(\) has parameter \$dbList with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: app/Services/BackupService.php
+
+		-
+			message: '#^Parameter \#1 \$string of function trim expects string, string\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/BackupService.php
+
+		-
+			message: '#^Parameter \#1 \$value of function count expects array\|Countable, list\<string\>\|false given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/BackupService.php
+
+		-
+			message: '#^Parameter \#2 \$array of function implode expects array, list\<string\>\|false given\.$#'
+			identifier: argument.type
+			count: 2
+			path: app/Services/BackupService.php
+
+		-
+			message: '#^Property Mfonte\\Arkhive\\Services\\BackupService\:\:\$config with generic class Illuminate\\Support\\Collection does not specify its types\: TKey, TValue$#'
+			identifier: missingType.generics
+			count: 1
+			path: app/Services/BackupService.php
+
+		-
+			message: '#^Method Mfonte\\Arkhive\\Services\\FileEnumeratorService\:\:compileExclusionPatterns\(\) has parameter \$patterns with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: app/Services/FileEnumeratorService.php
+
+		-
+			message: '#^Method Mfonte\\Arkhive\\Services\\FileEnumeratorService\:\:compileExclusionPatterns\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: app/Services/FileEnumeratorService.php
+
+		-
+			message: '#^Method Mfonte\\Arkhive\\Services\\FileEnumeratorService\:\:enumerateDirectory\(\) has parameter \$exclusionPatterns with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: app/Services/FileEnumeratorService.php
+
+		-
+			message: '#^Method Mfonte\\Arkhive\\Services\\FileEnumeratorService\:\:enumerateDirectory\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: app/Services/FileEnumeratorService.php
+
+		-
+			message: '#^PHPDoc tag @param references unknown parameter\: \$directory$#'
+			identifier: parameter.notFound
+			count: 1
+			path: app/Services/FileEnumeratorService.php
+
+		-
+			message: '#^PHPDoc tag @param references unknown parameter\: \$exclusionPatterns$#'
+			identifier: parameter.notFound
+			count: 1
+			path: app/Services/FileEnumeratorService.php
+
+		-
+			message: '#^Argument of an invalid type list\<string\>\|false supplied for foreach, only iterables are supported\.$#'
+			identifier: foreach.nonIterable
+			count: 1
+			path: app/helpers.php
+
+		-
+			message: '#^Function multi_explode\(\) has parameter \$delimiters with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: app/helpers.php
+
+		-
+			message: '#^Function multi_explode\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: app/helpers.php
+
+		-
+			message: '#^Function self_spawn\(\) has parameter \$arguments with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: app/helpers.php
+
+		-
+			message: '#^Parameter \#1 \$array of function array_pop expects array, list\<string\>\|false given\.$#'
+			identifier: argument.type
+			count: 2
+			path: app/helpers.php
+
+		-
+			message: '#^Parameter \#1 \$num of function round expects float\|int, float\|int\|string\|false given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/helpers.php
+
+		-
+			message: '#^Parameter \#1 \$separator of function explode expects non\-empty\-string, string given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/helpers.php
+
+		-
+			message: '#^Parameter \#1 \$string of function rtrim expects string, string\|false given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/helpers.php
+
+		-
+			message: '#^Parameter \#1 \$string of function trim expects string, string\|false\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/helpers.php
+
+		-
+			message: '#^Strict comparison using \!\=\= between int and null will always evaluate to true\.$#'
+			identifier: notIdentical.alwaysTrue
+			count: 1
+			path: app/helpers.php

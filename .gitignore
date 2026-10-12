@@ -5,3 +5,7 @@
 .phpunit.result.cache
 .arkhive-config
 reference.sh
+/.phpunit.cache
+/build
+/.php-cs-fixer.cache
+/tests/e2e/work
