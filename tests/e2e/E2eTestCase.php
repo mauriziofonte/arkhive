@@ -57,6 +57,22 @@ abstract class E2eTestCase extends TestCase
     }
 
     /**
+     * Creates the repository with `arkhive init` (spec §13.2 step 2), from a minimal configuration.
+     */
+    protected function arkhiveInit(string $dir, string $repository, ?string $sftpCommand): void
+    {
+        $values = ['BACKUP_PATHS' => $dir, 'RESTIC_REPOSITORY' => $repository, 'RESTIC_PASSWORD_FILE' => self::env('E2E_PASSWORD_FILE')];
+        if ($sftpCommand !== null) {
+            $values['RESTIC_SFTP_COMMAND'] = $sftpCommand;
+        }
+        $config = $this->writeConfig("{$dir}/init-config", $values);
+        $init = self::arkhive(['init', '--config', $config]);
+        self::assertSame(0, $init->exitCode, $init->output());
+        self::assertStringContainsString("success Created the restic repository {$repository}", $init->stderr);
+        unlink($config);
+    }
+
+    /**
      * Runs restic directly (for setup and for checking what ArkHive did).
      *
      * @param list<string>          $args

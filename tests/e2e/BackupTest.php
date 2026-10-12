@@ -23,8 +23,7 @@ final class BackupTest extends E2eTestCase
         $this->dir = $this->tempDir();
         $this->tree = "{$this->dir}/site";
         [$this->repository, $this->sftpCommand] = self::sftpRepository();
-        $init = self::restic(['init'], $this->repository, $this->sftpCommand);
-        self::assertSame(0, $init->exitCode, $init->stderr);
+        $this->arkhiveInit($this->dir, $this->repository, $this->sftpCommand);
         mkdir("{$this->dir}/locks");
     }
 
