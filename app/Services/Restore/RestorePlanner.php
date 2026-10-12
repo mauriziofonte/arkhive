@@ -7,6 +7,7 @@ namespace Mfonte\Arkhive\Services\Restore;
 use Mfonte\Arkhive\Exceptions\RefusedException;
 use Mfonte\Arkhive\Exceptions\UsageException;
 use Mfonte\Arkhive\Services\Config\Config;
+use Mfonte\Arkhive\Services\Exclusion\ExclusionConverter;
 use Mfonte\Arkhive\Services\Restic\Node;
 use Mfonte\Arkhive\Services\Restic\Restic;
 use Mfonte\Arkhive\Services\Restic\Snapshot;
@@ -208,7 +209,8 @@ final class RestorePlanner
         $choice = $this->prompter->choose('What do you want to restore?', $options, 'everything');
 
         return match ($choice) {
-            'paths' => Selection::paths((new SnapshotBrowser($this->restic, $this->prompter, $snapshot))->pick()),
+            // picked entries are paths, not patterns: a name like "a[1].txt" must match only itself
+            'paths' => Selection::paths(array_map(ExclusionConverter::literal(...), (new SnapshotBrowser($this->restic, $this->prompter, $snapshot))->pick())),
             'database' => $this->chooseDump($dumps),
             'stdout' => Selection::stdout($this->chooseFile($snapshot)),
             default => Selection::everything(),

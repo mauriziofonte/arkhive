@@ -8,6 +8,7 @@ use Mfonte\Arkhive\Exceptions\ArkhiveException;
 use Mfonte\Arkhive\Exceptions\UsageException;
 use Mfonte\Arkhive\Services\Config\Config;
 use Mfonte\Arkhive\Services\Dump\DumpStaging;
+use Mfonte\Arkhive\Services\Exclusion\ExclusionConverter;
 use Mfonte\Arkhive\Services\Output\Logger;
 use Mfonte\Arkhive\Services\Process\Cleanup;
 use Mfonte\Arkhive\Services\Process\ProcessRunner;
@@ -270,12 +271,17 @@ final class RestoreRunner
      */
     private function roots(RestorePlan $plan): array
     {
-        $includes = $plan->selection->includes;
-        if ($includes !== [] && array_filter($includes, static fn (string $i): bool => !str_starts_with($i, '/') || strpbrk($i, '*?[') !== false) === []) {
-            return array_values(array_map(static fn (string $i): string => rtrim($i, '/') === '' ? '/' : rtrim($i, '/'), $includes));
+        $roots = [];
+        foreach ($plan->selection->includes as $include) {
+            $path = ExclusionConverter::unliteral($include);
+            if ($path === null || !str_starts_with($path, '/')) {
+                // a wildcard pattern: the safety snapshot covers the whole snapshot paths
+                return $plan->snapshot->paths;
+            }
+            $roots[] = rtrim($path, '/') === '' ? '/' : rtrim($path, '/');
         }
 
-        return $plan->snapshot->paths;
+        return $roots === [] ? $plan->snapshot->paths : $roots;
     }
 
     /**

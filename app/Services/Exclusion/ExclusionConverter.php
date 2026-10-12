@@ -88,9 +88,40 @@ final class ExclusionConverter
      */
     private static function root(string $path): string
     {
-        $path = rtrim($path, '/');
+        return self::literal(rtrim($path, '/'));
+    }
 
+    /**
+     * A path as a restic pattern that matches only itself: "*", "?", "[", "]" and "\" escaped.
+     */
+    public static function literal(string $path): string
+    {
         return (string) preg_replace('/([*?\[\]\\\\])/', '\\\\$1', $path);
+    }
+
+    /**
+     * The path a pattern matches when it is a literal (see literal()), or null when it has wildcards.
+     */
+    public static function unliteral(string $pattern): ?string
+    {
+        $path = '';
+        $length = strlen($pattern);
+        for ($i = 0; $i < $length; $i++) {
+            $char = $pattern[$i];
+            if ($char === '\\') {
+                $i++;
+                if ($i === $length) {
+                    return null;
+                }
+                $path .= $pattern[$i];
+            } elseif (str_contains('*?[]', $char)) {
+                return null;
+            } else {
+                $path .= $char;
+            }
+        }
+
+        return $path;
     }
 
     /**

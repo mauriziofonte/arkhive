@@ -148,11 +148,11 @@ final class RestorePlannerTest extends TestCase
             '', // done
             '', // target
         ]);
-        $this->fake->on['find'] = static fn (): array => [0, '[{"matches":[{"path":"/srv/www/site/css/app.css","type":"file","size":7,"permissions":"-rw-r--r--","mtime":"2026-10-12T14:14:34Z"}],"hits":1,"snapshot":"6118b3c5b2b1ffc9e12d6022dfcab6275e9621122cb2b8d5b66d11a67fdc5c59"}]', ''];
+        $this->fake->on['find'] = static fn (): array => [0, '[{"matches":[{"path":"/srv/www/site/css/app[1].css","type":"file","size":7,"permissions":"-rw-r--r--","mtime":"2026-10-12T14:14:34Z"}],"hits":1,"snapshot":"6118b3c5b2b1ffc9e12d6022dfcab6275e9621122cb2b8d5b66d11a67fdc5c59"}]', ''];
         $plan = $this->planner($prompter)->plan(new RestoreOptions(), $this->snapshots);
 
         self::assertSame(SelectionKind::Paths, $plan->selection->kind);
-        self::assertSame(['/srv/www/site', '/srv/www/with space/naïve file.txt', '/srv/www/site/css/app.css'], $plan->selection->includes);
+        self::assertSame(['/srv/www/site', '/srv/www/with space/naïve file.txt', '/srv/www/site/css/app\\[1\\].css'], $plan->selection->includes, 'picked paths are literal patterns');
         self::assertStringContainsString('Nothing is selected yet.', $prompter->transcript);
         self::assertStringContainsString('[x]   2) site/', $prompter->transcript);
     }

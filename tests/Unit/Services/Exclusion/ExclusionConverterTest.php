@@ -85,6 +85,25 @@ final class ExclusionConverterTest extends TestCase
         self::assertSame(array_keys(self::examplePatterns()), ExclusionConverter::split($values['EXCLUSION_PATTERNS']));
     }
 
+    public function testLiteralPatternsMatchOnlyTheirPathAndRoundTrip(): void
+    {
+        $names = ['/srv/www/plain.txt', '/srv/a[1].txt', '/srv/st*r?', '/srv/back\\slash', '/srv/]odd[', '/srv/ünï cödé'];
+        foreach ($names as $name) {
+            $pattern = ExclusionConverter::literal($name);
+            self::assertTrue(ResticPatternMatcher::excludes([$pattern], $name), $name);
+            self::assertSame($name, ExclusionConverter::unliteral($pattern), $name);
+        }
+        self::assertSame('/srv/a\\[1\\].txt', ExclusionConverter::literal('/srv/a[1].txt'));
+        self::assertFalse(ResticPatternMatcher::excludes([ExclusionConverter::literal('/srv/a[1].txt')], '/srv/a1.txt'));
+    }
+
+    public function testUnliteralRejectsWildcards(): void
+    {
+        foreach (['*.php', '/srv/a?', '/srv/[ab]', '/srv/trailing\\', '/srv/x]'] as $pattern) {
+            self::assertNull(ExclusionConverter::unliteral($pattern), $pattern);
+        }
+    }
+
     public function testSplitTrimsAndDropsEmptyEntries(): void
     {
         self::assertSame(['*.log', '/tmp/*', 'a b'], ExclusionConverter::split(' *.log, ,/tmp/* ,,a b,'));

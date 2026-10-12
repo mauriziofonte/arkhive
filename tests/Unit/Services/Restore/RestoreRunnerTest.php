@@ -12,6 +12,7 @@ use Mfonte\Arkhive\Services\Config\Config;
 use Mfonte\Arkhive\Services\Config\ResticSettings;
 use Mfonte\Arkhive\Services\Context\ExecutionContext;
 use Mfonte\Arkhive\Services\Context\LogFormat;
+use Mfonte\Arkhive\Services\Exclusion\ExclusionConverter;
 use Mfonte\Arkhive\Services\Output\Logger;
 use Mfonte\Arkhive\Services\Output\LogStream;
 use Mfonte\Arkhive\Services\Process\Cleanup;
@@ -241,6 +242,18 @@ final class RestoreRunnerTest extends TestCase
         $this->runner()->run($this->restic, $this->plan(Selection::paths(["{$this->root}/srv/www/site/"]), '/', inPlace: true, force: true, snapshot: $snapshot), null, 'h', $this->log(), self::sink());
 
         self::assertSame(['backup', '--json', '--tag', 'pre-restore', '--host', 'h', '--', "{$this->root}/srv/www/site"], $this->fake->callsOf('backup')[0]);
+    }
+
+    public function testInPlaceOfAPickedPathWithGlobCharactersProtectsThatPath(): void
+    {
+        mkdir("{$this->root}/srv/www/a[1]*", 0755, true);
+        $snapshot = new Snapshot('aaaa1111', new DateTimeImmutable(), 'h', ["{$this->root}/srv/www"]);
+        $this->fake->on['restore'] = static fn (): array => [0, '', ''];
+
+        $this->runner()->run($this->restic, $this->plan(Selection::paths([ExclusionConverter::literal("{$this->root}/srv/www/a[1]*")]), '/', inPlace: true, force: true, snapshot: $snapshot), null, 'h', $this->log(), self::sink());
+
+        self::assertSame("{$this->root}/srv/www/a[1]*", self::last($this->fake->callsOf('backup')[0]));
+        self::assertContains(ExclusionConverter::literal("{$this->root}/srv/www/a[1]*"), $this->fake->callsOf('restore')[0], 'restic gets the escaped pattern');
     }
 
     public function testInPlaceWithPatternsProtectsTheWholeSnapshotPaths(): void
