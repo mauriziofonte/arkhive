@@ -13,8 +13,8 @@ final class ApplicationTest extends TestCase
     {
         $commands = array_keys(Artisan::all());
 
-        self::assertContains('backup', $commands);
-        self::assertContains('restore', $commands);
-        self::assertContains('self-upgrade', $commands);
+        foreach (['backup', 'restore', 'ls', 'find', 'mount', 'maintain', 'status', 'init', 'drill', 'doctor'] as $command) {
+            self::assertContains($command, $commands);
+        }
     }
 }
