@@ -9,9 +9,7 @@ use Mfonte\Arkhive\Services\Config\PgsqlConfig;
 use Mfonte\Arkhive\Services\Dump\DumpStaging;
 use Mfonte\Arkhive\Services\Dump\MysqlDumper;
 use Mfonte\Arkhive\Services\Dump\PgsqlDumper;
-use Mfonte\Arkhive\Services\Dump\SecretFile;
 use Mfonte\Arkhive\Services\Process\Cleanup;
-use Mfonte\Arkhive\Services\Process\Command;
 use Mfonte\Arkhive\Services\Process\Signals;
 use Mfonte\Arkhive\Services\Process\SystemProcessRunner;
 use Mfonte\Arkhive\Services\System\BinaryFinder;
@@ -25,6 +23,8 @@ use Mfonte\Arkhive\Services\System\Distro;
  */
 final class DumpRoundTripTest extends E2eTestCase
 {
+    use DatabaseClients;
+
     /** characters that break naive option files, pgpass files and URLs */
     private const TRICKY_PASSWORD = 'p"a\\ss\'#w:r d$x;@/';
 
@@ -44,65 +44,6 @@ final class DumpRoundTripTest extends E2eTestCase
     protected function tearDown(): void
     {
         $this->cleanup->runAll();
-    }
-
-    private function mysqlRoot(): MysqlConfig
-    {
-        return new MysqlConfig(self::env('E2E_MYSQL_HOST'), (int) self::env('E2E_MYSQL_PORT'), self::env('E2E_MYSQL_USER'), self::env('E2E_MYSQL_PASSWORD'), ['*']);
-    }
-
-    private function pgsqlRoot(): PgsqlConfig
-    {
-        return new PgsqlConfig(self::env('E2E_PGSQL_HOST'), (int) self::env('E2E_PGSQL_PORT'), self::env('E2E_PGSQL_USER'), self::env('E2E_PGSQL_PASSWORD'), ['inventory', 'crm'], ['--no-owner', '--no-privileges']);
-    }
-
-    private function mysql(string $sql, ?string $database = null, ?string $inputFile = null): string
-    {
-        $credentials = SecretFile::create('e2e-mysql-', MysqlDumper::optionFile($this->mysqlRoot()));
-        try {
-            $argv = [(string) $this->finder->first(['mariadb', 'mysql']), '--defaults-extra-file=' . $credentials->path, '--batch', '--skip-column-names'];
-            if ($inputFile === null) {
-                $argv[] = '--execute=' . $sql;
-            }
-            if ($database !== null) {
-                $argv[] = $database;
-            }
-            $result = $this->runner->run(new Command($argv, input: $inputFile === null ? null : (string) file_get_contents($inputFile)));
-            self::assertSame(0, $result->exitCode, $result->stderr);
-
-            return trim($result->stdout);
-        } finally {
-            $credentials->remove();
-        }
-    }
-
-    /**
-     * CHECKSUM TABLE value (the table name column dropped).
-     */
-    private function checksum(string $table): string
-    {
-        $row = explode("\t", $this->mysql("CHECKSUM TABLE {$table}"));
-
-        return $row[1] ?? '';
-    }
-
-    private function psql(string $sql, string $database = 'postgres', ?string $file = null): string
-    {
-        $config = $this->pgsqlRoot();
-        $passfile = SecretFile::create('e2e-pgpass-', PgsqlDumper::passfileLine($config));
-        try {
-            $result = $this->runner->run(new Command([
-                (string) $this->finder->find('psql'),
-                "--host={$config->host}", "--port={$config->port}", "--username={$config->user}", '--no-password',
-                "--dbname={$database}", '--no-psqlrc', '--tuples-only', '--no-align', '--set=ON_ERROR_STOP=1', '--quiet',
-                ...($file === null ? ["--command={$sql}"] : ["--file={$file}"]),
-            ], ['PGPASSFILE' => $passfile->path]));
-            self::assertSame(0, $result->exitCode, $result->stderr);
-
-            return trim($result->stdout);
-        } finally {
-            $passfile->remove();
-        }
     }
 
     public function testMysqlDumpsImportIntoFreshDatabasesWithIdenticalData(): void
