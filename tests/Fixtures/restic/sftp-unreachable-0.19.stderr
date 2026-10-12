@@ -1,0 +1,2 @@
+subprocess ssh: ssh: connect to host backup.example.com port 2299: Connection refused
+Fatal: unable to open repository at sftp:e2e@backup.example.com:/nothere: unable to start the sftp session, error: error receiving version packet from server: server unexpectedly closed connection: unexpected EOF
