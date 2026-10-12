@@ -12,7 +12,6 @@ use Mfonte\Arkhive\Services\Backup\BackupRunner;
 use Mfonte\Arkhive\Services\Config\Config;
 use Mfonte\Arkhive\Services\Dump\DatabaseDumps;
 use Mfonte\Arkhive\Services\Notify\Notification;
-use Mfonte\Arkhive\Services\Notify\Notifier;
 use Mfonte\Arkhive\Services\Restic\ResticFactory;
 use Mfonte\Arkhive\Support\Bytes;
 
@@ -25,8 +24,6 @@ final class BackupCommand extends ConfiguredCommand
 
     protected $description = 'Dump the databases and back up the configured paths to the restic repository';
 
-    private Notifier $notifier;
-
     protected function perform(): int
     {
         foreach (['with-progress' => 'progress is shown automatically in interactive mode', 'with-disk-space-check' => 'free space for the dumps is always checked'] as $flag => $why) {
@@ -36,8 +33,6 @@ final class BackupCommand extends ConfiguredCommand
         }
         $config = $this->loadConfig();
 
-        // resolved here, not in the constructor: commands are built when the application boots
-        $this->notifier = $this->laravel->make(Notifier::class);
         $runner = new BackupRunner(
             $this->laravel->make(ResticFactory::class),
             $this->laravel->make(DatabaseDumps::class),
@@ -51,7 +46,7 @@ final class BackupCommand extends ConfiguredCommand
         } catch (InterruptedException $e) {
             throw $e;
         } catch (ArkhiveException $e) {
-            $this->notify($config, $this->failure($config, $e));
+            $this->sendNotification($config, $this->failure($config, $e));
 
             throw $e;
         }
@@ -66,34 +61,11 @@ final class BackupCommand extends ConfiguredCommand
         }
 
         $exit = $report->hasWarnings() ? ExitCode::WARNING : ExitCode::SUCCESS;
-        if (!$this->notify($config, $this->success($config, $report))) {
+        if (!$this->sendNotification($config, $this->success($config, $report))) {
             $exit = ExitCode::WARNING;
         }
 
         return $exit;
-    }
-
-    /**
-     * Sends the notification if configured. A failure is logged, never fatal: returns false.
-     */
-    private function notify(Config $config, Notification $notification): bool
-    {
-        if ($config->notify === null || !Notifier::shouldSend($config->notify, $notification)) {
-            return true;
-        }
-        try {
-            $this->notifier->send($config->notify, $notification);
-            $this->log->debug('Notification sent to ' . implode(', ', $config->notify->to));
-
-            return true;
-        } catch (ArkhiveException $e) {
-            $this->log->warning($e->getMessage());
-            if ($e->hint() !== null) {
-                $this->log->notice($e->hint());
-            }
-
-            return false;
-        }
     }
 
     private function success(Config $config, BackupReport $report): Notification
@@ -127,22 +99,5 @@ final class BackupCommand extends ConfiguredCommand
             'The backup failed: ' . $e->getMessage() . ($e->hint() === null ? '' : "\nHint: " . $e->hint()),
             $this->commonFacts($config),
         );
-    }
-
-    /**
-     * @return array<string, string>
-     */
-    private function commonFacts(Config $config): array
-    {
-        $version = config('app.version');
-
-        return [
-            'Host' => $config->restic->host,
-            'Configuration' => $config->source,
-            'Repository' => $config->restic->repository,
-            'Paths' => implode(' ', $config->backupPaths),
-            'Time' => $this->clock->now()->format(DATE_ATOM),
-            'ArkHive' => is_string($version) ? $version : 'unknown',
-        ];
     }
 }

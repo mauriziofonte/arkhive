@@ -302,4 +302,58 @@ final class Restic
     {
         $this->run(['dump', '--', $snapshotId, $path], "Reading {$path} from snapshot {$snapshotId}", output: $output);
     }
+
+    /**
+     * Applies the retention policy to this host's ArkHive snapshots and prunes the data no snapshot
+     * uses any more. Snapshots are grouped by host only, so a change of BACKUP_PATHS does not leave
+     * the old snapshots outside the policy.
+     */
+    public function forget(string $host, string $tag, int $daily, int $weekly, int $monthly): ForgetResult
+    {
+        $result = $this->run([
+            'forget', '--json', '--prune',
+            '--host', $host,
+            '--tag', $tag,
+            '--group-by', 'host',
+            '--keep-daily', (string) $daily,
+            '--keep-weekly', (string) $weekly,
+            '--keep-monthly', (string) $monthly,
+        ], 'Applying the retention policy (restic forget --prune)');
+
+        return ForgetResult::fromJson($result->stdout);
+    }
+
+    /**
+     * `restic check`, optionally reading back a subset of the data (5%, 1/10, 500M).
+     */
+    public function check(?string $readDataSubset = null): CheckResult
+    {
+        $args = ['check', '--json'];
+        if ($readDataSubset !== null) {
+            $args[] = '--read-data-subset=' . $readDataSubset;
+        }
+        $what = $readDataSubset === null ? 'Checking the repository structure' : "Reading back {$readDataSubset} of the repository data";
+        $result = $this->run($args, $what, acceptedExitCodes: [0, 1]);
+        $check = CheckResult::fromOutput($result->exitCode, $result->stdout, $result->stderr);
+        if ($result->exitCode !== 0 && $check->errors === []) {
+            // exit 1 without anything recognisable: report restic's own words
+            return new CheckResult(false, [$result->stderrTail() === '' ? 'restic check failed without a message' : $result->stderrTail()], []);
+        }
+
+        return $check;
+    }
+
+    /**
+     * Size of the stored data after deduplication and compression (read without a lock).
+     */
+    public function stats(): RepositoryStats
+    {
+        $result = $this->run(['stats', '--json', '--no-lock', '--mode', 'raw-data'], 'Measuring the repository', timeout: self::REACH_TIMEOUT);
+        $data = ResticJson::decode($result->stdout);
+        if ($data === null || !array_key_exists('total_size', $data)) {
+            throw new ArkhiveException('restic stats did not report a size: ' . substr(trim($result->stdout), 0, 200));
+        }
+
+        return RepositoryStats::fromJson($data);
+    }
 }

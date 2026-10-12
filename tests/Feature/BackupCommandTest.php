@@ -14,11 +14,13 @@ use Tests\Support\FakeBinaries;
 use Tests\Support\FakeProcessRunner;
 use Tests\Support\FakeRestic;
 use Tests\Support\TempDir;
+use Tests\Support\WritesConfig;
 use Tests\TestCase;
 
 final class BackupCommandTest extends TestCase
 {
     use TempDir;
+    use WritesConfig;
 
     private FakeProcessRunner $runner;
     private FakeRestic $restic;
@@ -37,37 +39,6 @@ final class BackupCommandTest extends TestCase
         $this->app->instance(ProcessRunner::class, $this->runner);
         $this->app->instance(Dependencies::class, FakeBinaries::dependencies("{$this->dir}/bin", ['restic']));
         $this->app->instance(Notifier::class, new Notifier($this->mail->factory()));
-    }
-
-    /**
-     * @param array<string, string> $extra
-     */
-    private function writeConfig(array $extra = []): string
-    {
-        file_put_contents("{$this->dir}/password", "repo-password-placeholder\n");
-        chmod("{$this->dir}/password", 0600);
-        $values = [
-            'BACKUP_PATHS' => '/srv/www',
-            'RESTIC_REPOSITORY' => '/srv/restic-repo',
-            'RESTIC_PASSWORD_FILE' => "{$this->dir}/password",
-            'RESTIC_HOST' => 'web1.example.com',
-            ...$extra,
-        ];
-        $lines = '';
-        foreach ($values as $key => $value) {
-            $lines .= "{$key}=\"{$value}\"\n";
-        }
-        file_put_contents("{$this->dir}/config", $lines);
-
-        return "{$this->dir}/config";
-    }
-
-    /**
-     * @return array<string, string>
-     */
-    private static function notify(string $on = 'always'): array
-    {
-        return ['NOTIFY' => 'true', 'NOTIFY_ON' => $on, 'SMTP_HOST' => 'smtp.example.com', 'SMTP_ENCRYPTION' => 'none', 'SMTP_FROM' => 'arkhive@example.com', 'SMTP_TO' => 'admin@example.com'];
     }
 
     public function testASuccessfulBackupIsExit0WithASummaryAndANotification(): void

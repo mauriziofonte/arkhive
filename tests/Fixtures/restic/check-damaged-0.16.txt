@@ -1,0 +1,10 @@
+using temporary cache in /tmp/restic-check-cache-1234
+create exclusive lock for repository
+load indexes
+check all packs
+check snapshots, trees and blobs
+
+read 100.0% of data packs
+Pack ID does not match, want 9c44581e683bf99da4d31da1311e76e37c381784a311c637c56a2bd887b84af7, got 830bf7b2550d5746cd46e6c92e19c3ed720eb0626b74e058969cac91fcf52009
+
+Fatal: repository contains errors

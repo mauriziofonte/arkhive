@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace Mfonte\Arkhive\Commands;
 
+use Mfonte\Arkhive\Exceptions\ArkhiveException;
 use Mfonte\Arkhive\Services\Config\Config;
 use Mfonte\Arkhive\Services\Config\ConfigLoader;
 use Mfonte\Arkhive\Services\Config\ConfigLocator;
+use Mfonte\Arkhive\Services\Notify\Notification;
+use Mfonte\Arkhive\Services\Notify\Notifier;
 use Symfony\Component\Console\Input\InputOption;
 
 /**
@@ -39,5 +42,48 @@ abstract class ConfiguredCommand extends ArkhiveCommand
         $hostname = gethostname();
 
         return is_string($hostname) && $hostname !== '' ? $hostname : 'localhost';
+    }
+
+    /**
+     * Sends the notification if configured. A failure is logged, never fatal: returns false (exit 3).
+     */
+    protected function sendNotification(Config $config, Notification $notification): bool
+    {
+        if ($config->notify === null || !Notifier::shouldSend($config->notify, $notification)) {
+            return true;
+        }
+        try {
+            // resolved here, not in the constructor: commands are built when the application boots
+            $this->laravel->make(Notifier::class)->send($config->notify, $notification);
+            $this->log->debug('Notification sent to ' . implode(', ', $config->notify->to));
+
+            return true;
+        } catch (ArkhiveException $e) {
+            $this->log->warning($e->getMessage());
+            if ($e->hint() !== null) {
+                $this->log->notice($e->hint());
+            }
+
+            return false;
+        }
+    }
+
+    /**
+     * The facts every notification starts with.
+     *
+     * @return array<string, string>
+     */
+    protected function commonFacts(Config $config): array
+    {
+        $version = config('app.version');
+
+        return [
+            'Host' => $config->restic->host,
+            'Configuration' => $config->source,
+            'Repository' => $config->restic->repository,
+            'Paths' => implode(' ', $config->backupPaths),
+            'Time' => $this->clock->now()->format(DATE_ATOM),
+            'ArkHive' => is_string($version) ? $version : 'unknown',
+        ];
     }
 }
