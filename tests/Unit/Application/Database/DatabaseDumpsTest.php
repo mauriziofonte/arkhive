@@ -139,7 +139,63 @@ final class DatabaseDumpsTest extends TestCase
         self::assertDirectoryDoesNotExist($this->dumpDir);
     }
 
-    public function testADumpFailureRemovesTheDumpsAlreadyWritten(): void
+    public function testAFailedDatabaseIsRecordedAndTheOthersAreStillDumped(): void
+    {
+        $this->servers();
+        $this->runner->on('pg_dump', static function (Command $c): array|int {
+            if ($c->argv[1] === '--version') {
+                return [0, "pg_dump (PostgreSQL) 16.4\n", ''];
+            }
+            if (str_contains($c->argv[8], 'inventory')) {
+                file_put_contents(substr($c->argv[8], strlen('--file=')), 'half a dump');
+
+                return [1, '', "pg_dump: error: database \"inventory\" does not exist\n"];
+            }
+            file_put_contents(substr($c->argv[8], strlen('--file=')), str_repeat('p', 200));
+
+            return 0;
+        });
+
+        $run = $this->dumps->run($this->config(), $this->log);
+
+        self::assertNotNull($run);
+        self::assertSame(['shop', 'blog', 'crm'], array_map(static fn ($r): string => $r->database, $run->results));
+        self::assertCount(1, $run->failures);
+        $failure = $run->failures[0];
+        self::assertSame(['PostgreSQL', 'inventory', ExitCode::NO_INPUT], [$failure->engine, $failure->database, $failure->exitCode]);
+        self::assertSame('PostgreSQL dump of database inventory failed (pg_dump exit 1): pg_dump: error: database "inventory" does not exist', $failure->error);
+        self::assertNotNull($failure->hint);
+        self::assertSame('the PostgreSQL dump of inventory', $failure->describe());
+        self::assertSame(['engine' => 'PostgreSQL', 'database' => 'inventory', 'error' => $failure->error, 'exit_code' => 66], $failure->toArray());
+        $onDisk = glob("{$this->dumpDir}/*/*") ?: [];
+        $kept = array_map(static fn ($r): string => $r->path, $run->results);
+        sort($onDisk);
+        sort($kept);
+        self::assertSame($kept, $onDisk, 'no partial file of the failed dump');
+        self::assertStringContainsString('warning The PostgreSQL dump of inventory failed, the backup goes on without it: PostgreSQL dump of database inventory failed', $this->stream->contents());
+        self::assertStringContainsString('notice Check the database names', $this->stream->contents());
+        self::assertSame(1, $this->cleanup->pending());
+        $this->dumps->clear($run);
+    }
+
+    public function testAServerThatCannotListItsDatabasesFailsOnlyItsEngine(): void
+    {
+        $this->servers();
+        $this->runner->on('mariadb', static fn (): array => [1, '', "ERROR 2002 (HY000): Can't connect to MySQL server on 'localhost' (111)\n"]);
+
+        $run = $this->dumps->run($this->config(), $this->log);
+
+        self::assertNotNull($run);
+        self::assertSame(['inventory', 'crm'], array_map(static fn ($r): string => $r->database, $run->results));
+        self::assertCount(1, $run->failures);
+        self::assertSame(['MySQL', null, ExitCode::UNAVAILABLE], [$run->failures[0]->engine, $run->failures[0]->database, $run->failures[0]->exitCode]);
+        self::assertSame('the MySQL dumps', $run->failures[0]->describe());
+        self::assertSame([], $this->runner->commandsOf('mariadb-dump'));
+        self::assertStringContainsString('warning The MySQL dumps failed, the backup goes on without it: Listing the MySQL databases failed', $this->stream->contents());
+        $this->dumps->clear($run);
+    }
+
+    public function testAFullDumpFilesystemStopsEveryDumpAndRemovesThem(): void
     {
         $this->servers();
         $this->runner->on('pg_dump', static function (Command $c): array {
@@ -147,16 +203,16 @@ final class DatabaseDumpsTest extends TestCase
                 return [0, "pg_dump (PostgreSQL) 16.4\n", ''];
             }
 
-            return [1, '', "pg_dump: error: database \"inventory\" does not exist\n"];
+            return [1, '', "pg_dump: error: could not write to output file: No space left on device\n"];
         });
 
         try {
             $this->dumps->run($this->config(), $this->log);
             self::fail('expected a failure');
         } catch (ArkhiveException $e) {
-            self::assertSame('PostgreSQL dump of database inventory failed (pg_dump exit 1): pg_dump: error: database "inventory" does not exist', $e->getMessage());
+            self::assertSame(ExitCode::IO_ERROR, $e->exitCode());
         }
-        self::assertSame([], glob("{$this->dumpDir}/*/*") ?: [], 'the MySQL dumps written before the failure are gone');
+        self::assertSame([], glob("{$this->dumpDir}/*/*") ?: [], 'the MySQL dumps written before are gone');
         self::assertSame(0, $this->cleanup->pending());
     }
 

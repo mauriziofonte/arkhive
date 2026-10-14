@@ -16,6 +16,7 @@ use Mfonte\Arkhive\Domain\Configuration\Config;
 use Mfonte\Arkhive\Domain\Execution\ExecutionContext;
 use Mfonte\Arkhive\Domain\Execution\LogFormat;
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
+use Mfonte\Arkhive\ExitCode;
 use Mfonte\Arkhive\Infrastructure\Logging\LogStream;
 use Mfonte\Arkhive\Infrastructure\Restic\ResticFactory;
 use PHPUnit\Framework\TestCase;
@@ -279,6 +280,68 @@ final class BackupRunnerTest extends TestCase
         } catch (ArkhiveException) {
             self::assertSame([], glob("{$dumpDir}/mysql/*") ?: []);
         }
+        $this->cleanup->runAll();
+    }
+
+    private function oneDumpFails(string $dumpDir): void
+    {
+        $this->runner
+            ->on('mariadb', static fn (): array => [0, "100\n", ''])
+            ->on('mariadb-dump', static function (Command $c): array|int {
+                if (in_array('blog', $c->argv, true)) {
+                    return [2, '', "mariadb-dump: Got error: 1049: \"Unknown database 'blog'\" when selecting the database\n"];
+                }
+                file_put_contents(substr($c->argv[8], strlen('--result-file=')), 'CREATE TABLE t (id INT);');
+
+                return 0;
+            });
+    }
+
+    public function testAFailedDumpIsAWarningAndTheOtherDumpsAndFilesAreBackedUp(): void
+    {
+        $dumpDir = "{$this->root}/dumps";
+        $this->oneDumpFails($dumpDir);
+        $inSnapshot = null;
+        $this->restic->duringBackup = static function () use (&$inSnapshot, $dumpDir): void {
+            $inSnapshot = glob("{$dumpDir}/mysql/*") ?: [];
+        };
+
+        $report = $this->backupRunner()->run($this->config(['WITH_MYSQL' => 'true', 'MYSQL_USER' => 'backup', 'MYSQL_DATABASES' => 'shop blog', 'DUMP_DIRECTORY' => $dumpDir]), $this->logger());
+
+        self::assertSame(["{$dumpDir}/mysql/shop.sql"], $inSnapshot);
+        self::assertCount(1, $this->restic->backups);
+        self::assertCount(1, $report->dumps);
+        self::assertCount(1, $report->dumpFailures);
+        self::assertSame(["the MySQL dump of blog failed: MySQL dump of database blog failed (mariadb-dump exit 2): mariadb-dump: Got error: 1049: \"Unknown database 'blog'\" when selecting the database"], $report->warnings);
+        self::assertFalse($report->failed());
+        self::assertSame(ExitCode::WARNING, $report->exitCode());
+        self::assertStringNotContainsString('DUMP_REQUIRED', $this->stream->contents());
+        $this->cleanup->runAll();
+    }
+
+    public function testWithDumpRequiredAFailedDumpFailsTheRunAfterTheFilesAreSaved(): void
+    {
+        $dumpDir = "{$this->root}/dumps";
+        $this->oneDumpFails($dumpDir);
+
+        $report = $this->backupRunner()->run($this->config(['WITH_MYSQL' => 'true', 'MYSQL_USER' => 'backup', 'MYSQL_DATABASES' => 'shop blog', 'DUMP_DIRECTORY' => $dumpDir, 'DUMP_REQUIRED' => 'true']), $this->logger());
+
+        self::assertCount(1, $this->restic->backups, 'the files are backed up all the same');
+        self::assertTrue($report->failed());
+        self::assertSame(ExitCode::NO_INPUT, $report->exitCode());
+        self::assertStringContainsString('error 1 database dump(s) failed and DUMP_REQUIRED is true: the files are in snapshot e8ecb7f4, those databases are not', $this->stream->contents());
+        $this->cleanup->runAll();
+    }
+
+    public function testWithoutFailuresDumpRequiredChangesNothing(): void
+    {
+        $dumpDir = "{$this->root}/dumps";
+        $this->oneDumpFails($dumpDir);
+
+        $report = $this->backupRunner()->run($this->config(['WITH_MYSQL' => 'true', 'MYSQL_USER' => 'backup', 'MYSQL_DATABASES' => 'shop', 'DUMP_DIRECTORY' => $dumpDir, 'DUMP_REQUIRED' => 'true']), $this->logger());
+
+        self::assertFalse($report->failed());
+        self::assertSame(ExitCode::SUCCESS, $report->exitCode());
         $this->cleanup->runAll();
     }
 }

@@ -8,16 +8,19 @@ use Mfonte\Arkhive\Application\Output\Logger;
 use Mfonte\Arkhive\Application\Port\ProcessRunner;
 use Mfonte\Arkhive\Application\Process\Cleanup;
 use Mfonte\Arkhive\Application\System\Dependencies;
+use Mfonte\Arkhive\Domain\Backup\DumpFailure;
 use Mfonte\Arkhive\Domain\Configuration\Config;
 use Mfonte\Arkhive\Domain\Shared\Bytes;
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
 use Mfonte\Arkhive\Exceptions\InterruptedException;
+use Mfonte\Arkhive\Exceptions\IoException;
 use Mfonte\Arkhive\Exceptions\RefusedException;
 use Throwable;
 
 /**
- * Runs every configured dump into DUMP_DIRECTORY before restic backup. Any failure removes the dumps
- * already written and aborts, so no snapshot is ever taken with partial or missing dumps.
+ * Runs every configured dump into DUMP_DIRECTORY before restic backup. A database (or a server) that
+ * fails is recorded and the other dumps go on, so one broken database never costs the backup of the
+ * rest; a failed dump leaves no partial file. Running out of space (73, 74) aborts every dump.
  */
 final class DatabaseDumps
 {
@@ -29,8 +32,8 @@ final class DatabaseDumps
     }
 
     /**
-     * @throws ArkhiveException     a dump or connection failed (dump directory emptied)
      * @throws RefusedException     not enough free space for the dumps (exit 73)
+     * @throws IoException          the dump filesystem filled up (exit 74)
      * @throws InterruptedException SIGINT/SIGTERM (dump directory emptied by the cleanup registry)
      */
     public function run(Config $config, Logger $log): ?DumpRun
@@ -49,19 +52,30 @@ final class DatabaseDumps
 
         /** @var list<array{string, MysqlDumper|PgsqlDumper, list<string>}> $plan */
         $plan = [];
+        $dumpers = [];
         $results = [];
+        $failures = [];
         try {
             if ($config->mysql !== null) {
-                $mysql = new MysqlDumper($config->mysql, $this->runner, $this->dependencies, $this->cleanup);
-                $plan[] = ['MySQL', $mysql, $mysql->databases()];
+                $mysql = $dumpers[] = new MysqlDumper($config->mysql, $this->runner, $this->dependencies, $this->cleanup);
+                $databases = $this->attempt('MySQL', null, $mysql->databases(...), $failures, $log);
+                if ($databases !== null) {
+                    $plan[] = ['MySQL', $mysql, $databases];
+                }
             }
             if ($config->pgsql !== null) {
-                $pgsql = new PgsqlDumper($config->pgsql, $this->runner, $this->dependencies, $this->cleanup);
-                $warning = $pgsql->versionWarning();
-                if ($warning !== null) {
-                    $log->warning($warning);
+                $pgsql = $dumpers[] = new PgsqlDumper($config->pgsql, $this->runner, $this->dependencies, $this->cleanup);
+                $databases = $this->attempt('PostgreSQL', null, static function () use ($pgsql, $log): array {
+                    $warning = $pgsql->versionWarning();
+                    if ($warning !== null) {
+                        $log->warning($warning);
+                    }
+
+                    return $pgsql->databases();
+                }, $failures, $log);
+                if ($databases !== null) {
+                    $plan[] = ['PostgreSQL', $pgsql, $databases];
                 }
-                $plan[] = ['PostgreSQL', $pgsql, $pgsql->databases()];
             }
             $this->checkSpace($plan, $staging, $log);
 
@@ -71,7 +85,10 @@ final class DatabaseDumps
                 }
                 foreach ($databases as $database) {
                     $log->info("Dumping {$engine} database {$database}");
-                    $result = $dumper->dump($database, $staging);
+                    $result = $this->attempt($engine, $database, static fn () => $dumper->dump($database, $staging), $failures, $log);
+                    if ($result === null) {
+                        continue;
+                    }
                     $results[] = $result;
                     $log->success(
                         sprintf('Dumped %s database %s: %s in %.1fs', $engine, $database, Bytes::format($result->bytes), $result->duration),
@@ -84,12 +101,41 @@ final class DatabaseDumps
 
             throw $e;
         } finally {
-            foreach ($plan as [, $dumper]) {
+            foreach ($dumpers as $dumper) {
                 $dumper->close();
             }
         }
 
-        return new DumpRun($staging, $results, $cleanupId);
+        return new DumpRun($staging, $results, $cleanupId, $failures);
+    }
+
+    /**
+     * Runs one step of the dumps; a failure that concerns only this database or server is recorded
+     * (and logged) instead of thrown. Interruptions and a full filesystem still stop everything.
+     *
+     * @template T
+     *
+     * @param \Closure(): T     $step
+     * @param list<DumpFailure> $failures
+     *
+     * @return T|null null when the step failed
+     */
+    private function attempt(string $engine, ?string $database, \Closure $step, array &$failures, Logger $log): mixed
+    {
+        try {
+            return $step();
+        } catch (InterruptedException | IoException | RefusedException $e) {
+            throw $e;
+        } catch (ArkhiveException $e) {
+            $failure = new DumpFailure($engine, $database, $e->getMessage(), $e->exitCode(), $e->hint());
+            $failures[] = $failure;
+            $log->warning(ucfirst($failure->describe()) . ' failed, the backup goes on without it: ' . $e->getMessage(), ['engine' => $engine, 'database' => $database, 'exit_code' => $e->exitCode()]);
+            if ($e->hint() !== null) {
+                $log->notice($e->hint());
+            }
+
+            return null;
+        }
     }
 
     /**

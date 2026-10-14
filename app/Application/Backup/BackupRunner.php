@@ -25,7 +25,8 @@ use Mfonte\Arkhive\Exceptions\SoftwareException;
 
 /**
  * spec §6 backup: preflight (restic and its version, lock, repository reachable, dump space) →
- * dumps → restic backup --json → summary. restic exit 3 (snapshot saved, some files unreadable) is a
+ * dumps → restic backup --json → summary. A failed dump does not stop the others nor the backup of
+ * the files: it is a warning, or the run's failure with DUMP_REQUIRED=true. restic exit 3 (snapshot saved, some files unreadable) is a
  * warning. The dump directory is emptied and the lock released however the run ends. A repository
  * locked by another run is waited for (LOCK_WAIT); network errors while opening it are retried.
  */
@@ -76,7 +77,16 @@ final class BackupRunner
             }
         }
 
-        return new BackupReport($summary, $dumps->results ?? [], $version, $warnings, (hrtime(true) - $started) / 1e9);
+        $failures = $dumps->failures ?? [];
+        foreach ($failures as $failure) {
+            $warnings[] = $failure->describe() . ' failed: ' . $failure->error;
+        }
+        $report = new BackupReport($summary, $dumps->results ?? [], $version, $warnings, (hrtime(true) - $started) / 1e9, $failures, $config->dumpRequired);
+        if ($report->failed()) {
+            $log->error(sprintf('%d database dump(s) failed and DUMP_REQUIRED is true: the files are in snapshot %s, those databases are not', count($failures), $summary->shortId()));
+        }
+
+        return $report;
     }
 
     /**

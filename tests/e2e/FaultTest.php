@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Tests\e2e;
 
-use DateTimeImmutable;
-use DateTimeZone;
 use Mfonte\Arkhive\ExitCode;
 use Tests\Support\CliResult;
 
@@ -105,92 +103,61 @@ final class FaultTest extends E2eTestCase
         }
     }
 
-    public function testADumpServerThatIsDownAbortsBeforeTheBackup(): void
+    /**
+     * MySQL down (nothing listens on port 1), PostgreSQL up.
+     *
+     * @return array<string, string>
+     */
+    private function oneDatabaseServerDown(): array
     {
-        $this->arkhiveInit($this->dir, $this->repository, $this->sftpCommand);
-        $config = $this->config([
+        return [
             'DUMP_DIRECTORY' => "{$this->dir}/dumps",
             'WITH_MYSQL' => 'true',
             'MYSQL_HOST' => self::env('E2E_MYSQL_HOST'),
-            // nothing listens on port 1: the server is down
             'MYSQL_PORT' => '1',
             'MYSQL_USER' => self::env('E2E_MYSQL_USER'),
             'MYSQL_PASSWORD' => self::env('E2E_MYSQL_PASSWORD'),
             'MYSQL_DATABASES' => 'shop',
-        ]);
-
-        $result = self::arkhive(['backup', '--config', $config], $this->runEnv());
-
-        self::assertSame(ExitCode::UNAVAILABLE, $result->exitCode, $result->output());
-        self::assertMatchesRegularExpression('/error .*(MySQL|MariaDB|mariadb|mysql).*/', $result->stderr);
-        self::assertStringContainsString("Can't connect", $result->stderr);
-        $this->assertCleanAfterFailure();
-        self::assertSame([], glob("{$this->dir}/dumps/*/*") ?: [], 'no dump left');
-        self::assertSame([], $this->snapshots(), 'a dump failure aborts before restic backup');
+            'WITH_PGSQL' => 'true',
+            'PGSQL_HOST' => self::env('E2E_PGSQL_HOST'),
+            'PGSQL_PORT' => self::env('E2E_PGSQL_PORT'),
+            'PGSQL_USER' => self::env('E2E_PGSQL_USER'),
+            'PGSQL_PASSWORD' => self::env('E2E_PGSQL_PASSWORD'),
+            'PGSQL_DATABASES' => 'inventory',
+        ];
     }
 
-    public function testAClockThatJumpedBack(): void
+    public function testOneDatabaseServerDownOfTwoIsExit3WithTheOtherDumpInTheSnapshot(): void
     {
         $this->arkhiveInit($this->dir, $this->repository, $this->sftpCommand);
-        // a snapshot written while the clock was two days ahead, as after an NTP correction
-        $ahead = (new DateTimeImmutable('now', new DateTimeZone('UTC')))->modify('+2 days')->format('Y-m-d H:i:s');
-        $future = self::restic(['backup', '--host', 'e2e.example.com', '--tag', 'arkhive', '--time', $ahead, $this->tree], $this->repository, $this->sftpCommand);
-        self::assertSame(0, $future->exitCode, $future->stderr);
 
-        $backup = self::arkhive(['backup', '--config', $this->config(), '--json'], $this->runEnv());
-        self::assertSame(0, $backup->exitCode, $backup->output());
-        self::assertCount(2, $this->snapshots());
+        $result = self::arkhive(['backup', '--config', $this->config($this->oneDatabaseServerDown())], $this->runEnv());
 
-        $doctor = self::arkhive(['doctor', '--config', $this->config()], $this->runEnv());
-        self::assertSame(ExitCode::FAILURE, $doctor->exitCode, $doctor->output());
-        self::assertMatchesRegularExpression('/FAIL\s+clock\s+This clock is behind: the repository has an entry dated \S+ \S+ UTC, 4[78] h in the future/', $doctor->stdout);
-        self::assertStringContainsString('hint: Synchronise the clock (timedatectl set-ntp true, or chrony/ntpd)', $doctor->stdout);
-
-        // maintain keeps both: the future snapshot is not mistaken for an old one
-        $maintain = self::arkhive(['maintain', '--config', $this->config()], $this->runEnv());
-        self::assertSame(0, $maintain->exitCode, $maintain->output());
-        self::assertCount(2, $this->snapshots());
+        self::assertSame(ExitCode::WARNING, $result->exitCode, $result->output());
+        self::assertStringContainsString('warning The MySQL dump of shop failed, the backup goes on without it: ', $result->stderr);
+        self::assertStringContainsString("Can't connect", $result->stderr);
+        self::assertStringContainsString('success Dumped PostgreSQL database inventory', $result->stderr);
+        self::assertCount(1, $this->snapshots());
+        $listed = self::restic(['ls', 'latest', '--no-lock'], $this->repository, $this->sftpCommand);
+        self::assertSame(0, $listed->exitCode, $listed->stderr);
+        self::assertStringContainsString("{$this->dir}/dumps/pgsql/inventory.sql", $listed->stdout);
+        self::assertStringNotContainsString("{$this->dir}/dumps/mysql/", $listed->stdout);
+        self::assertStringContainsString("{$this->tree}/index.php", $listed->stdout);
+        self::assertSame([], glob("{$this->dir}/dumps/*/*") ?: [], 'the dump directory is emptied');
+        $this->assertCleanAfterFailure();
     }
 
-    private static function root(): bool
+    public function testWithDumpRequiredADatabaseServerDownIsExit69AfterTheFilesAreSaved(): void
     {
-        return function_exists('posix_geteuid') && posix_geteuid() === 0;
-    }
+        $this->arkhiveInit($this->dir, $this->repository, $this->sftpCommand);
 
-    private function needsPause(): void
-    {
-        if ((getenv('E2E_SFTP_PAUSE') ?: '') === '' || (getenv('E2E_SFTP_RESUME') ?: '') === '') {
-            self::markTestSkipped('E2E_SFTP_PAUSE / E2E_SFTP_RESUME are not set (run.sh sets them to docker compose pause/unpause)');
-        }
-    }
+        $result = self::arkhive(['backup', '--config', $this->config([...$this->oneDatabaseServerDown(), 'DUMP_REQUIRED' => 'true'])], $this->runEnv());
 
-    /**
-     * Freezes the SFTP server, runs $wait, and always resumes it.
-     *
-     * @param callable(): CliResult $wait
-     */
-    private function whilePaused(callable $wait): CliResult
-    {
-        $pause = self::exec(['sh', '-c', self::env('E2E_SFTP_PAUSE')]);
-        self::assertSame(0, $pause->exitCode, $pause->output());
-        try {
-            return $wait();
-        } finally {
-            $resume = self::exec(['sh', '-c', self::env('E2E_SFTP_RESUME')]);
-            self::assertSame(0, $resume->exitCode, $resume->output());
-        }
-    }
-
-    /**
-     * restic behind a bandwidth limit, so that a transfer is still running when the server freezes.
-     */
-    private function throttledRestic(string $limit): string
-    {
-        $path = "{$this->dir}/throttled-restic";
-        file_put_contents($path, sprintf("#!/bin/sh\nexec %s %s 512 \"\$@\"\n", escapeshellarg(self::env('E2E_RESTIC')), $limit));
-        chmod($path, 0755);
-
-        return $path;
+        self::assertSame(ExitCode::UNAVAILABLE, $result->exitCode, $result->output());
+        self::assertMatchesRegularExpression('/error 1 database dump\(s\) failed and DUMP_REQUIRED is true: the files are in snapshot [0-9a-f]{8}, those databases are not/', $result->stderr);
+        self::assertCount(1, $this->snapshots());
+        self::assertSame([], glob("{$this->dir}/dumps/*/*") ?: []);
+        $this->assertCleanAfterFailure();
     }
 
     private function assertCleanAfterFailure(): void

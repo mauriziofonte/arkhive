@@ -170,6 +170,7 @@ arkhive self-update --allow-major    # needed to cross a major version (read the
    # Database dumps: one plain .sql file per database, staged here, included in the snapshot,
    # removed after each successful backup. A dedicated directory.
    DUMP_DIRECTORY=/var/backups/arkhive-dumps
+   #DUMP_REQUIRED=false
 
    WITH_MYSQL=false
    MYSQL_HOST=localhost
@@ -248,6 +249,7 @@ Syntax: one `KEY=value` per line, optionally prefixed by `export`. `'single quot
 | `LOCK_WAIT` | no | `300` | Seconds to wait for a repository locked by another ArkHive run or another restic client before giving up with exit 75; `0` gives up at once. See [Retries](#retries) |
 | `EXCLUSION_PATTERNS` | no | none | Comma-separated 1.x patterns, see below |
 | `DUMP_DIRECTORY` | when dumps are enabled | | Absolute path of a dedicated staging directory for the dumps (`mysql/<db>.sql`, `pgsql/<db>.sql`), backed up as a path of its own and emptied after each successful backup. It cannot be `/`, cannot be or contain a backup path, and must not be excluded by `EXCLUSION_PATTERNS` |
+| `DUMP_REQUIRED` | no | `false` | A database dump that fails never stops the other dumps nor the backup of the files. `false`: the run ends with exit 3 and names the failed dumps; `true`: the run fails with that dump's exit code (69 server down, 77 credentials, 66 unknown database) and a failure notification |
 | `WITH_MYSQL` | no | `false` | Dump MySQL/MariaDB databases |
 | `MYSQL_HOST` | no | `localhost` | |
 | `MYSQL_PORT` | no | `3306` | |
@@ -319,7 +321,7 @@ Log events go to stderr; command results (tables, `--json` output, a file restor
 arkhive backup [--json]
 ```
 
-Preflight (restic binary and version, password file, repository reachable, free space for the dumps), the repository lock, the database dumps (a dump failure stops the backup before any snapshot is made), `restic backup` of `BACKUP_PATHS` and `DUMP_DIRECTORY` with tag `arkhive`, the summary (snapshot id, data added, new/changed/unmodified files, duration), the notification, then the dump directory is emptied. If restic could not read some files the snapshot is still saved, the unreadable files are listed and the exit code is 3. A second backup of the same repository while one is running waits for it, up to `LOCK_WAIT` seconds (5 minutes by default), then exits 75. `--json` prints the summary, the dumps and the warnings. The 1.x options `--with-progress` and `--with-disk-space-check` are accepted and ignored with a notice: progress is automatic in a terminal and the dump space is always checked.
+Preflight (restic binary and version, password file, repository reachable, free space for the dumps), the repository lock, the database dumps (a database that fails is named and skipped, the others and the files are backed up: see `DUMP_REQUIRED`; only a full dump filesystem stops the run before any snapshot), `restic backup` of `BACKUP_PATHS` and `DUMP_DIRECTORY` with tag `arkhive`, the summary (snapshot id, data added, new/changed/unmodified files, duration), the notification, then the dump directory is emptied. If restic could not read some files the snapshot is still saved, the unreadable files are listed and the exit code is 3. A second backup of the same repository while one is running waits for it, up to `LOCK_WAIT` seconds (5 minutes by default), then exits 75. `--json` prints the summary, the dumps, the failed dumps and the warnings. The 1.x options `--with-progress` and `--with-disk-space-check` are accepted and ignored with a notice: progress is automatic in a terminal and the dump space is always checked.
 
 ### restore
 

@@ -32,6 +32,9 @@ RESTIC_PASSWORD_FILE=/etc/arkhive/restic-password
 # Database dumps: one plain .sql file per database, written to DUMP_DIRECTORY (a dedicated directory,
 # emptied after each successful backup) and included in the snapshot.
 DUMP_DIRECTORY=/var/backups/arkhive-dumps
+# A database whose dump fails is a warning (exit 3): the other dumps and the files are backed up.
+# true makes it a failure of the run (with the dump's exit code), still after backing up the rest.
+#DUMP_REQUIRED=false
 
 WITH_MYSQL=true
 MYSQL_HOST=localhost

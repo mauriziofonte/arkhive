@@ -14,6 +14,7 @@ final readonly class Config
      * @param list<string> $exclusionPatterns 1.x syntax, as written in the file
      * @param list<string> $resticExcludes    converted restic patterns
      * @param list<string> $unknownKeys
+     * @param bool         $dumpRequired a failed dump fails the run (DUMP_REQUIRED), instead of a warning
      */
     public function __construct(
         public string $source,
@@ -30,6 +31,7 @@ final readonly class Config
         public ?PgsqlConfig $pgsql,
         public ?NotifyConfig $notify,
         public array $unknownKeys,
+        public bool $dumpRequired = false,
     ) {
     }
 

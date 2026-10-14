@@ -58,12 +58,13 @@ final class BackupCommand extends ConfiguredCommand
             $this->result(json_encode([
                 ...$report->summary->toArray(),
                 'dumps' => array_map(static fn ($dump): array => ['engine' => $dump->engine, 'database' => $dump->database, 'bytes' => $dump->bytes], $report->dumps),
+                'dump_failures' => array_map(static fn ($failure): array => $failure->toArray(), $report->dumpFailures),
                 'warnings' => $report->warnings,
             ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
         }
 
-        $exit = $report->hasWarnings() ? ExitCode::WARNING : ExitCode::SUCCESS;
-        if (!$this->sendNotification($config, $this->success($config, $report))) {
+        $exit = $report->exitCode();
+        if (!$this->sendNotification($config, $this->success($config, $report)) && $exit === ExitCode::SUCCESS) {
             $exit = ExitCode::WARNING;
         }
 
@@ -74,12 +75,17 @@ final class BackupCommand extends ConfiguredCommand
     {
         $summary = $report->summary;
         $dumps = array_map(static fn ($dump): string => "{$dump->engine}/{$dump->database} (" . Bytes::format($dump->bytes) . ')', $report->dumps);
-        $state = $report->hasWarnings() ? 'completed with warnings' : 'OK';
+        $failures = array_map(static fn ($failure): string => "{$failure->engine}/" . ($failure->database ?? '*'), $report->dumpFailures);
+        [$state, $headline] = match (true) {
+            $report->failed() => ['FAILED', "The backup saved the files in snapshot {$summary->shortId()}, but database dumps required by DUMP_REQUIRED failed: " . implode('; ', $report->warnings) . '.'],
+            $report->hasWarnings() => ['completed with warnings', 'The backup completed with warnings: ' . implode('; ', $report->warnings) . '.'],
+            default => ['OK', 'The backup completed successfully.'],
+        };
 
         return new Notification(
             !$report->hasWarnings(),
             "[ArkHive] backup {$state} on {$config->restic->host}",
-            $report->hasWarnings() ? 'The backup completed with warnings: ' . implode('; ', $report->warnings) . '.' : 'The backup completed successfully.',
+            $headline,
             [
                 ...$this->commonFacts($config),
                 'Snapshot' => $summary->snapshotId,
@@ -87,6 +93,7 @@ final class BackupCommand extends ConfiguredCommand
                 'Processed' => sprintf('%s in %d files', Bytes::format($summary->totalBytesProcessed), $summary->totalFilesProcessed),
                 'Files' => sprintf('%d new, %d changed, %d unmodified', $summary->filesNew, $summary->filesChanged, $summary->filesUnmodified),
                 'Dumps' => $dumps === [] ? 'none' : implode(', ', $dumps),
+                ...($failures === [] ? [] : ['Failed dumps' => implode(', ', $failures)]),
                 'Duration' => sprintf('%.1fs', $report->duration),
                 'restic' => $report->resticVersion,
             ],

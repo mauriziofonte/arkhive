@@ -7,6 +7,7 @@ namespace Tests\Feature;
 use Illuminate\Support\Facades\Artisan;
 use Mfonte\Arkhive\Application\Port\Notifier;
 use Mfonte\Arkhive\Application\Port\ProcessRunner;
+use Mfonte\Arkhive\Application\Process\Command;
 use Mfonte\Arkhive\Application\System\Dependencies;
 use Mfonte\Arkhive\Application\System\Lock;
 use Mfonte\Arkhive\ExitCode;
@@ -171,6 +172,59 @@ final class BackupCommandTest extends TestCase
         self::assertCount(2, $this->pause->waits);
         self::assertStringContainsString('warning Waiting for the repository: Another ArkHive run holds the lock for this repository', $this->logOutput());
         self::assertCount(1, $this->restic->backups);
+    }
+
+    /**
+     * MySQL with two databases, blog missing on the server.
+     *
+     * @return array<string, string>
+     */
+    private function dumpsWithAMissingDatabase(): array
+    {
+        $this->app->instance(Dependencies::class, FakeBinaries::dependencies("{$this->dir}/bin", ['restic', 'mariadb', 'mariadb-dump']));
+        $this->runner
+            ->on('mariadb', static fn (): array => [0, "100\n", ''])
+            ->on('mariadb-dump', static function (Command $c): array|int {
+                if (in_array('blog', $c->argv, true)) {
+                    return [2, '', "mariadb-dump: Got error: 1049: \"Unknown database 'blog'\" when selecting the database\n"];
+                }
+                file_put_contents(substr($c->argv[8], strlen('--result-file=')), 'CREATE TABLE t (id INT);');
+
+                return 0;
+            });
+
+        return ['WITH_MYSQL' => 'true', 'MYSQL_USER' => 'backup', 'MYSQL_DATABASES' => 'shop blog', 'DUMP_DIRECTORY' => "{$this->dir}/dumps"];
+    }
+
+    public function testAFailedDumpIsExit3WithTheOtherDumpsAndTheFilesSaved(): void
+    {
+        $config = $this->writeConfig([...self::notify(), ...$this->dumpsWithAMissingDatabase()]);
+
+        self::assertSame(ExitCode::WARNING, Artisan::call('backup', ['--config' => $config, '--json' => true]));
+
+        $json = json_decode(Artisan::output(), true);
+        self::assertIsArray($json);
+        self::assertSame([['engine' => 'mysql', 'database' => 'shop', 'bytes' => 24]], $json['dumps']);
+        self::assertSame('MySQL', $json['dump_failures'][0]['engine']);
+        self::assertSame('blog', $json['dump_failures'][0]['database']);
+        self::assertSame(ExitCode::NO_INPUT, $json['dump_failures'][0]['exit_code']);
+        self::assertStringContainsString('warning The MySQL dump of blog failed, the backup goes on without it', $this->logOutput());
+        self::assertStringContainsString('success Snapshot e8ecb7f4 saved', $this->logOutput());
+        $mail = $this->mail->sent[0];
+        self::assertSame('[ArkHive] backup completed with warnings on web1.example.com', $mail->getSubject());
+        self::assertStringContainsString('Failed dumps:  MySQL/blog', (string) $mail->getTextBody());
+    }
+
+    public function testWithDumpRequiredAFailedDumpIsTheExitCodeAndAFailureNotification(): void
+    {
+        $config = $this->writeConfig([...self::notify(), ...$this->dumpsWithAMissingDatabase(), 'DUMP_REQUIRED' => 'true']);
+
+        self::assertSame(ExitCode::NO_INPUT, Artisan::call('backup', ['--config' => $config]));
+
+        self::assertCount(1, $this->restic->backups, 'the files are backed up all the same');
+        $mail = $this->mail->sent[0];
+        self::assertSame('[ArkHive] backup FAILED on web1.example.com', $mail->getSubject());
+        self::assertStringStartsWith('The backup saved the files in snapshot e8ecb7f4, but database dumps required by DUMP_REQUIRED failed: the MySQL dump of blog failed: ', (string) $mail->getTextBody());
     }
 
     public function testAFailedBackupIsExit1AndNotified(): void

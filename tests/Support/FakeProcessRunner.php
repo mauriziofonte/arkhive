@@ -74,4 +74,12 @@ final class FakeProcessRunner implements ProcessRunner
     {
         return implode("\n", array_map(static fn (Command $command): string => implode(' ', $command->argv), $this->commands));
     }
+
+    /**
+     * @return list<Command> the commands run of one binary (by its basename)
+     */
+    public function commandsOf(string $binary): array
+    {
+        return array_values(array_filter($this->commands, static fn (Command $command): bool => basename($command->argv[0]) === $binary));
+    }
 }
