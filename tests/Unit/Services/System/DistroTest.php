@@ -135,6 +135,7 @@ final class DistroTest extends TestCase
         yield 'openssl' => [Dependency::Openssl, ['apt' => 'openssl', 'dnf' => 'openssl', 'apk' => 'openssl', 'pacman' => 'openssl', 'zypper' => 'openssl']];
         yield 'xz' => [Dependency::Xz, ['apt' => 'xz-utils', 'dnf' => 'xz', 'apk' => 'xz', 'pacman' => 'xz', 'zypper' => 'xz']];
         yield 'tar' => [Dependency::Tar, ['apt' => 'tar', 'dnf' => 'tar', 'apk' => 'tar', 'pacman' => 'tar', 'zypper' => 'tar']];
+        yield 'gh' => [Dependency::Gh, ['apt' => 'gh', 'dnf' => 'gh', 'apk' => 'github-cli', 'pacman' => 'github-cli', 'zypper' => 'gh']];
         yield 'fuse' => [Dependency::Fuse, ['apt' => 'fuse3', 'dnf' => 'fuse3', 'apk' => 'fuse3', 'pacman' => 'fuse3', 'zypper' => 'fuse3']];
     }
 

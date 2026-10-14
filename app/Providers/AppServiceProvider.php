@@ -16,6 +16,9 @@ use Mfonte\Arkhive\Services\Restore\Prompter;
 use Mfonte\Arkhive\Services\Restore\StreamPrompter;
 use Mfonte\Arkhive\Services\System\BinaryFinder;
 use Mfonte\Arkhive\Services\System\Distro;
+use Mfonte\Arkhive\Services\Update\CurlHttpClient;
+use Mfonte\Arkhive\Services\Update\HttpClient;
+use Mfonte\Arkhive\Services\Update\StreamHttpClient;
 use Mfonte\Arkhive\Support\Clock;
 use Mfonte\Arkhive\Support\SystemClock;
 use Random\Randomizer;
@@ -34,6 +37,12 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(Distro::class, static fn (): Distro => Distro::detect());
         // the CSPRNG engine: drill samples and throw-away database names
         $this->app->bind(Randomizer::class, static fn (): Randomizer => new Randomizer());
+        // self-update: the curl extension when loaded, PHP streams otherwise (never a curl or wget binary)
+        $this->app->bind(HttpClient::class, static function ($app): HttpClient {
+            $environment = $app->make(Terminal::class)->environment();
+
+            return extension_loaded('curl') ? new CurlHttpClient($environment) : new StreamHttpClient($environment);
+        });
         // questions on stderr next to the log, answers from stdin: stdout stays for results
         $this->app->bind(Prompter::class, static fn ($app): Prompter => new StreamPrompter(STDIN, $app->make(LogStream::class)->resource(), $app->make(Signals::class), getenv('NO_COLOR') === false));
     }
