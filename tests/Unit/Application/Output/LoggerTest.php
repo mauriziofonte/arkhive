@@ -254,7 +254,7 @@ final class LoggerTest extends TestCase
         $path = $this->tempDir() . '/arkhive.log';
         $log = new Logger(self::context(LogFormat::Human, interactive: true), $stderr, new LogFile($path), new FixedClock(), false);
 
-        // a closed pipe (or a restarted journald) makes each write fail; at run time Laravel reports
+        // a pipe closed early makes each write fail; at run time Laravel reports
         // every level and turns a PHP notice into an exception, so none may be raised
         $reporting = error_reporting(E_ALL);
         set_error_handler(static function (int $severity, string $message): bool {

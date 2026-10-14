@@ -76,8 +76,8 @@ dump no longer costs the backup of the files.
   `maintain` failed on restic older than 0.12 with the default `RESTIC_CHECK_SUBSET=5%`.
 - A repository of format 2 opened by restic older than 0.14 is reported as such (exit 69, with
   the version to install) instead of a bare restic error.
-- A run whose stderr reader went away (`arkhive ... 2>&1 | grep -q`, journald restarted under a
-  unit) exited 1 at its next log line although the work succeeded; the lost lines are now ignored.
+- A run whose stderr reader went away (`arkhive ... 2>&1 | grep -q`, a pipe closed early) exited 1
+  at its next log line although the work succeeded; the lost lines are now ignored.
 
 ### Changed
 

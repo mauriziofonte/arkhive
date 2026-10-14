@@ -126,7 +126,7 @@ final class ExecutionModeTest extends TestCase
         file_put_contents("{$dir}/config", "BACKUP_PATHS={$dir}\nRESTIC_REPOSITORY=/srv/restic-repo\nRESTIC_PASSWORD_FILE={$dir}/password\n");
         chmod("{$dir}/config", 0600);
 
-        // `arkhive ... 2>&1 | grep -q`, or journald restarted: stderr is a pipe nobody reads any more
+        // `arkhive ... 2>&1 | grep -q`: stderr is a pipe nobody reads any more
         $process = proc_open(
             [PHP_BINARY, dirname(__DIR__, 2) . '/arkhive', 'schedule', '--systemd', '--config', "{$dir}/config"],
             [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']],

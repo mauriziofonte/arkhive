@@ -232,8 +232,8 @@ final class Logger
     }
 
     /**
-     * Writes to stderr, ignoring a reader that went away (a closed pipe, journald restarted): a lost
-     * log line must never turn a run that worked into a failure.
+     * Writes to stderr, ignoring a reader that went away (a pipe closed early): a lost log line must
+     * never turn a run that worked into a failure.
      */
     private function emit(string $text): void
     {
