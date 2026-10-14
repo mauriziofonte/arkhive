@@ -93,6 +93,18 @@ final class MaintainCommandTest extends TestCase
         }
     }
 
+    public function testTheOutcomeIsRecorded(): void
+    {
+        self::assertSame(ExitCode::SUCCESS, Artisan::call('maintain', ['--config' => $this->writeConfig()]));
+        self::assertSame(ExitCode::SUCCESS, $this->runs->load('maintain')->last?->exitCode);
+
+        $this->restic->answers['forget'] = [1, '', "Fatal: unable to load index\n"];
+        self::assertSame(ExitCode::FAILURE, Artisan::call('maintain', ['--config' => $this->writeConfig()]));
+        self::assertSame(ExitCode::FAILURE, $this->runs->load('maintain')->last?->exitCode);
+        self::assertSame(ExitCode::SUCCESS, $this->runs->load('maintain')->lastSuccess?->exitCode);
+        self::assertSame([], array_diff(array_keys($this->runs->states), ['maintain']));
+    }
+
     public function testTheCheckSubsetComesFromTheConfiguration(): void
     {
         self::assertSame(ExitCode::SUCCESS, Artisan::call('maintain', ['--config' => $this->writeConfig(['RESTIC_CHECK_SUBSET' => '1/10'])]));

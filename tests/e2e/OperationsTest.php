@@ -40,7 +40,7 @@ final class OperationsTest extends E2eTestCase
      */
     private function runEnv(): array
     {
-        return ['ARKHIVE_LOCK_DIR' => "{$this->dir}/locks", 'TMPDIR' => "{$this->dir}/tmp"];
+        return ['ARKHIVE_LOCK_DIR' => "{$this->dir}/locks", 'TMPDIR' => "{$this->dir}/tmp", 'STATE_DIRECTORY' => "{$this->dir}/state"];
     }
 
     /**
@@ -210,10 +210,15 @@ final class OperationsTest extends E2eTestCase
         self::assertIsArray($status['latest']);
         self::assertLessThan(0.1, $status['latest']['age_hours']);
         self::assertGreaterThan(2 * 1024 * 1024, $status['raw_size']);
+        self::assertSame(0, $status['runs']['backup']['last']['exit_code'], 'the last backup is recorded in STATE_DIRECTORY');
+        self::assertSame($status['latest']['id'], $status['runs']['backup']['last']['snapshot_id']);
+        self::assertNull($status['runs']['drill']['last']);
+        self::assertSame(0600, fileperms("{$this->dir}/state/backup.json") & 0777);
 
         $human = self::arkhive(['status', '--config', $config], $this->runEnv());
         self::assertSame(0, $human->exitCode);
         self::assertMatchesRegularExpression('/^Latest snapshot: [0-9a-f]{8} at .+ \(\d+ min ago\)$/m', $human->stdout);
+        self::assertMatchesRegularExpression('/^Last backup:     .+, OK, snapshot [0-9a-f]{8}$/m', $human->stdout);
         self::assertStringStartsWith("Repository:      {$repository}\n", $human->stdout, 'stdout carries only the result, the log goes to stderr');
     }
 

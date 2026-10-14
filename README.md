@@ -405,7 +405,9 @@ arkhive status [--host <name>] [--max-age <hours>] [--json]
 arkhive status --max-age 26     # monitoring probe for a daily backup
 ```
 
-The latest backup of this host (`RESTIC_HOST`, or `--host`), its age, the snapshot count and the repository size on disk. With `--max-age`, exit 1 when there is no snapshot or the latest is older than that many hours. `--json` fields: `repository`, `host`, `latest` (`id`, `short_id`, `time`, `age_hours`), `snapshots`, `snapshots_total`, `hosts`, `raw_size`, `uncompressed_size`.
+The latest backup of this host (`RESTIC_HOST`, or `--host`), its age, the snapshot count and the repository size on disk. With `--max-age`, exit 1 when there is no snapshot or the latest is older than that many hours. It also shows how the last `backup`, `maintain` and `drill` of this host ended, and when a last run failed, the last one that succeeded. `--json` fields: `repository`, `host`, `latest` (`id`, `short_id`, `time`, `age_hours`), `snapshots`, `snapshots_total`, `hosts`, `raw_size`, `uncompressed_size`, and `runs`: for each of `backup`, `maintain` and `drill`, `last` and `last_success`, each `null` or an object with `job`, `started`, `ended`, `duration_seconds`, `exit_code`, `status` (`ok`, `warning`, `failed`), `snapshot_id`, `warnings` and `error`.
+
+Each `backup`, `maintain` and `drill` records how it ended in the state directory, one JSON file per job, replaced atomically: `$STATE_DIRECTORY` under systemd (`StateDirectory=arkhive`), otherwise `/var/lib/arkhive` as root and `$XDG_STATE_HOME/arkhive` (or `~/.local/state/arkhive`) for other users. A state directory that cannot be written is a warning, never a failure of the run.
 
 ### init
 
@@ -430,7 +432,7 @@ arkhive doctor [--json]
 arkhive doctor --repo <repository> --password-file <file> [--sftp-command <cmd>]
 ```
 
-Checks, in order, and says how to fix each problem: PHP version and extensions, distribution and package manager, restic binary and version, the configuration used (or why none was found), removed 1.x keys, password file permissions, SSH command and key, repository reachability and locks, the latest snapshot's age (warning beyond 26 hours), free space for the dumps, clock skew against the repository, the execution context detected, SELinux. It never changes anything. Exit 0 when all is fine, 3 with warnings only, 1 when a check failed.
+Checks, in order, and says how to fix each problem: PHP version and extensions, distribution and package manager, restic binary and version, the configuration used (or why none was found), removed 1.x keys, password file permissions, SSH command and key, repository reachability and locks, the latest snapshot's age (warning beyond 26 hours), the last recorded backup, maintain and drill (warning when the last one failed), free space for the dumps, clock skew against the repository, the execution context detected, SELinux. It never changes anything. Exit 0 when all is fine, 3 with warnings only, 1 when a check failed.
 
 ### schedule
 

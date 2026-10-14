@@ -68,6 +68,46 @@ final class BackupCommandTest extends TestCase
             self::assertStringContainsString($line, $body);
         }
         self::assertSame(['smtp://smtp.example.com:25?auto_tls=false'], $this->mail->dsns);
+
+        $run = $this->runs->load('backup')->last;
+        self::assertNotNull($run);
+        self::assertSame(['backup', 0, 'e8ecb7f41958b511ccbdba5c2db6c0ab81cdf6b2cb2afd345240800c7bf7c036', [], null], [$run->job, $run->exitCode, $run->snapshotId, $run->warnings, $run->error]);
+        self::assertSame($run, $this->runs->load('backup')->lastSuccess);
+    }
+
+    public function testAFailedBackupIsRecordedWithItsCauseAndKeepsTheLastSuccess(): void
+    {
+        $config = $this->writeConfig();
+        self::assertSame(ExitCode::SUCCESS, Artisan::call('backup', ['--config' => $config]));
+        $this->restic->catConfig = [10, '', FakeRestic::fixture('no-repository-0.19.stderr')];
+
+        self::assertSame(ExitCode::UNAVAILABLE, Artisan::call('backup', ['--config' => $config]));
+
+        $state = $this->runs->load('backup');
+        self::assertSame(ExitCode::UNAVAILABLE, $state->last?->exitCode);
+        self::assertSame('There is no restic repository at /srv/restic-repo', $state->last->error);
+        self::assertNull($state->last->snapshotId);
+        self::assertSame(ExitCode::SUCCESS, $state->lastSuccess?->exitCode);
+    }
+
+    public function testAnIncompleteBackupIsRecordedWithItsWarnings(): void
+    {
+        $this->restic->backup = [3, FakeRestic::fixture('backup-0.19-incomplete.jsonl'), FakeRestic::fixture('backup-0.19-incomplete.stderr')];
+
+        self::assertSame(ExitCode::WARNING, Artisan::call('backup', ['--config' => $this->writeConfig()]));
+
+        $run = $this->runs->load('backup')->last;
+        self::assertSame(ExitCode::WARNING, $run?->exitCode);
+        self::assertSame(['the snapshot was saved but 1 source item(s) could not be read'], $run->warnings);
+        self::assertSame($run, $this->runs->load('backup')->lastSuccess);
+    }
+
+    public function testAStateDirectoryThatCannotBeWrittenDoesNotChangeTheExitCode(): void
+    {
+        $this->runs->failing = true;
+
+        self::assertSame(ExitCode::SUCCESS, Artisan::call('backup', ['--config' => $this->writeConfig()]));
+        self::assertStringContainsString('warning Could not record the outcome of this backup in /var/lib/arkhive: Cannot write /var/lib/arkhive/backup.json', $this->logOutput());
     }
 
     public function testIncompleteSnapshotIsExit3(): void

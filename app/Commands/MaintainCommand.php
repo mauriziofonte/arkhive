@@ -23,6 +23,12 @@ final class MaintainCommand extends ConfiguredCommand
 
     protected $description = 'Apply the retention policy (forget --prune), then check the repository and read back a subset of its data';
 
+    #[\Override]
+    protected function recordedJob(): string
+    {
+        return 'maintain';
+    }
+
     protected function perform(): int
     {
         $config = $this->loadConfig();

@@ -65,6 +65,10 @@ final class DrillCommandTest extends TestCase
         self::assertSame('[ArkHive] restore drill PASSED on web1.example.com', $mail->getSubject());
         self::assertStringContainsString('Files tested:  3 of 5', (string) $mail->getTextBody());
         self::assertStringContainsString('Database:      not tested (no --db)', (string) $mail->getTextBody());
+
+        $run = $this->runs->load('drill')->last;
+        self::assertNotNull($run);
+        self::assertSame([0, 'e82340a77eda41788f329309f282cd62f1d4cad85933d8b22b6e4e72a0ab05b2', null], [$run->exitCode, $run->snapshotId, $run->error]);
     }
 
     public function testAFailingDrillIsExit1AndNotified(): void
@@ -78,6 +82,8 @@ final class DrillCommandTest extends TestCase
         $mail = $this->mail->sent[0];
         self::assertSame('[ArkHive] restore drill FAILED on web1.example.com', $mail->getSubject());
         self::assertStringStartsWith("The restore drill failed:\n  the restore failed: restic restore (drill) failed", (string) $mail->getTextBody());
+        self::assertSame(ExitCode::DATA_ERROR, $this->runs->load('drill')->last?->exitCode);
+        self::assertNull($this->runs->load('drill')->lastSuccess);
     }
 
     public function testADrillThatCannotRunIsNotified(): void
@@ -106,6 +112,7 @@ final class DrillCommandTest extends TestCase
             self::assertStringContainsString("error --sample must be a whole number from 1 to 100000, not '{$value}'", $this->logOutput());
         }
         self::assertSame([], $this->restic->calls);
+        self::assertSame([], $this->runs->states, 'a usage error is not a run of the drill');
     }
 
     public function testDbWithoutADatabaseInTheConfigurationIsAUsageError(): void

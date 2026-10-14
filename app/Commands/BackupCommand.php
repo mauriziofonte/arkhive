@@ -25,6 +25,12 @@ final class BackupCommand extends ConfiguredCommand
 
     protected $description = 'Dump the databases and back up the configured paths to the restic repository';
 
+    #[\Override]
+    protected function recordedJob(): string
+    {
+        return 'backup';
+    }
+
     protected function perform(): int
     {
         foreach (['with-progress' => 'progress is shown automatically in interactive mode', 'with-disk-space-check' => 'free space for the dumps is always checked'] as $flag => $why) {
@@ -53,6 +59,8 @@ final class BackupCommand extends ConfiguredCommand
             throw $e;
         }
 
+        $this->runSnapshot = $report->summary->snapshotId;
+        $this->runWarnings = $report->warnings;
         $this->log->success(ucfirst($report->summary->describe()), $report->summary->toArray());
         if ((bool) $this->option('json')) {
             $this->result(json_encode([

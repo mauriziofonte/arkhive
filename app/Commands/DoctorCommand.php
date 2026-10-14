@@ -8,6 +8,7 @@ use Mfonte\Arkhive\Application\Configuration\ConfigLocator;
 use Mfonte\Arkhive\Application\Diagnostics\Doctor;
 use Mfonte\Arkhive\Application\Port\ProcessRunner;
 use Mfonte\Arkhive\Application\Port\SnapshotStoreFactory;
+use Mfonte\Arkhive\Application\Run\RunJournal;
 use Mfonte\Arkhive\Application\System\Dependencies;
 use Mfonte\Arkhive\Domain\Configuration\ResticSettings;
 use Mfonte\Arkhive\Domain\Diagnostics\Check;
@@ -39,6 +40,7 @@ final class DoctorCommand extends RepositoryCommand
             $this->terminal->environment(),
             posix_geteuid(),
             self::hostname(),
+            runs: $this->laravel->make(RunJournal::class),
         );
         $checks = $doctor->run(ConfigLocator::fromEnvironment($this->terminal->environment()), self::stringOption($this->option('config')), $this->bareMetal());
         $overall = Doctor::overall($checks);

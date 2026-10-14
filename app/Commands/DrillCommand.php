@@ -35,6 +35,12 @@ final class DrillCommand extends RepositoryCommand
 
     protected $description = 'Restore a random sample of the latest snapshot into a temporary directory and verify it (exit 0 pass, 65 fail)';
 
+    #[\Override]
+    protected function recordedJob(): string
+    {
+        return 'drill';
+    }
+
     protected function perform(): int
     {
         $sample = $this->sample();
@@ -66,6 +72,7 @@ final class DrillCommand extends RepositoryCommand
             throw $e;
         }
 
+        $this->runSnapshot = $report->snapshot->id;
         if ((bool) $this->option('json')) {
             $this->result(json_encode($report->toArray(), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
         }

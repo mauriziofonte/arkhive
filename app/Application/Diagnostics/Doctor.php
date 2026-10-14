@@ -17,6 +17,7 @@ use Mfonte\Arkhive\Application\Port\SnapshotStore;
 use Mfonte\Arkhive\Application\Port\SnapshotStoreFactory;
 use Mfonte\Arkhive\Application\Process\Cleanup;
 use Mfonte\Arkhive\Application\Restore\TargetDirectory;
+use Mfonte\Arkhive\Application\Run\RunJournal;
 use Mfonte\Arkhive\Application\System\Dependencies;
 use Mfonte\Arkhive\Application\System\Lock;
 use Mfonte\Arkhive\Domain\Configuration\Config;
@@ -90,6 +91,7 @@ final class Doctor
         ?Closure $processExists = null,
         private readonly string $phpVersion = PHP_VERSION,
         private readonly string $selinuxEnforce = '/sys/fs/selinux/enforce',
+        private readonly ?RunJournal $runs = null,
     ) {
         $this->extensionLoaded = $extensionLoaded ?? static fn (string $extension): bool => extension_loaded($extension);
         $this->processExists = $processExists ?? static fn (int $pid): bool => function_exists('posix_kill') && posix_kill($pid, 0);
@@ -116,6 +118,7 @@ final class Doctor
         $this->ssh();
         $this->repository();
         $this->latestSnapshot();
+        $this->lastRuns();
         $this->dumpSpace();
         $this->clockSkew();
         $this->add('execution context', CheckStatus::Info, $this->context->describe());
@@ -424,6 +427,43 @@ final class Doctor
             return;
         }
         $this->add('latest snapshot', CheckStatus::Ok, $text);
+    }
+
+    /**
+     * The last backup, maintain and drill recorded on this host: a failed one is a warning, even
+     * when an older snapshot still looks recent enough.
+     */
+    private function lastRuns(): void
+    {
+        $location = $this->runs?->location();
+        if ($this->runs === null || $location === null) {
+            $this->add('last runs', CheckStatus::Info, 'not recorded: no state directory');
+
+            return;
+        }
+        $zone = $this->clock->now()->getTimezone();
+        $described = [];
+        $failed = null;
+        foreach ($this->runs->states() as $job => $state) {
+            if ($state->last === null) {
+                continue;
+            }
+            $described[] = "{$job} {$state->last->describe($zone)}";
+            if ($failed === null && !$state->last->succeeded()) {
+                $failed = $job;
+            }
+        }
+        if ($described === []) {
+            $this->add('last runs', CheckStatus::Info, "none recorded yet in {$location}");
+
+            return;
+        }
+        if ($failed !== null) {
+            $this->add('last runs', CheckStatus::Warning, implode('; ', $described), "Read the log of that run (journalctl -u arkhive-{$failed}.service, or the cron mail or --log-file), fix the cause, then run: arkhive {$failed}");
+
+            return;
+        }
+        $this->add('last runs', CheckStatus::Ok, implode('; ', $described));
     }
 
     private function dumpSpace(): void

@@ -20,6 +20,11 @@ All notable changes to ArkHive are documented in this file. The format follows
   repository that cannot be reached is tried three times, and a notification refused with a 4xx
   answer (greylisting) or not delivered for a network error is tried three times. Permanent
   failures (wrong password, missing repository, refused SSH key) are never retried.
+- Each `backup`, `maintain` and `drill` records how it ended (start, end, exit code, snapshot,
+  warnings, error) in the state directory: `$STATE_DIRECTORY` under systemd, `/var/lib/arkhive`
+  as root, `$XDG_STATE_HOME/arkhive` otherwise. `status` shows the last run of each job (and the
+  last good one after a failure), `status --json` adds `runs`, and `doctor` warns when the last
+  run of a job failed.
 - `tests/Compat`: ArkHive's commands against a real restic (`ARKHIVE_TEST_RESTIC`), run in CI for
   every release from 0.11.0 to the current one, including an `sftp:` repository on a local sshd.
 

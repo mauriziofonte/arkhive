@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Mfonte\Arkhive\Commands;
 
+use Mfonte\Arkhive\Application\Run\RunJournal;
 use Mfonte\Arkhive\Domain\Repository\Snapshot;
 use Mfonte\Arkhive\Domain\Repository\Snapshots;
 use Mfonte\Arkhive\Domain\Shared\Bytes;
@@ -11,8 +12,9 @@ use Mfonte\Arkhive\Exceptions\UsageException;
 use Mfonte\Arkhive\ExitCode;
 
 /**
- * spec §6 status: latest snapshot and its age, snapshot count, repository size. With --max-age it is
- * a monitoring probe: exit 1 when the latest backup is older than that or missing.
+ * spec §6 status: latest snapshot and its age, snapshot count, repository size, and the last run of
+ * each job on this host (from the state directory). With --max-age it is a monitoring probe: exit 1
+ * when the latest backup is older than that or missing.
  */
 final class StatusCommand extends RepositoryCommand
 {
@@ -53,11 +55,12 @@ final class StatusCommand extends RepositoryCommand
             'hosts' => $all->hosts(),
             'raw_size' => $stats->rawBytes,
             'uncompressed_size' => $stats->uncompressedBytes,
+            'runs' => array_map(static fn ($state): array => $state->toArray(), $runs = $this->laravel->make(RunJournal::class)->states()),
         ];
         if ((bool) $this->option('json')) {
             $this->result(json_encode($status, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION));
         } else {
-            $this->result($this->describe($status, $latest, $now));
+            $this->result($this->describe($status, $latest, $now, $runs));
         }
 
         if ($maxAge === null) {
@@ -91,9 +94,10 @@ final class StatusCommand extends RepositoryCommand
     }
 
     /**
-     * @param array<string, mixed> $status
+     * @param array<string, mixed>                                $status
+     * @param array<string, \Mfonte\Arkhive\Domain\Run\JobState> $runs
      */
-    private function describe(array $status, ?Snapshot $latest, \DateTimeImmutable $now): string
+    private function describe(array $status, ?Snapshot $latest, \DateTimeImmutable $now, array $runs): string
     {
         $rows = [
             'Repository' => (string) $status['repository'],
@@ -104,6 +108,15 @@ final class StatusCommand extends RepositoryCommand
             'Snapshots' => sprintf('%d', $status['snapshots']) . ($status['snapshots'] === $status['snapshots_total'] ? '' : sprintf(' (%d in the repository)', $status['snapshots_total'])),
             'Repository size' => Bytes::format((int) $status['raw_size']),
         ];
+        foreach ($runs as $job => $state) {
+            if ($state->last === null) {
+                continue;
+            }
+            $rows["Last {$job}"] = $state->last->describe($now->getTimezone());
+            if (!$state->last->succeeded()) {
+                $rows["Last good {$job}"] = $state->lastSuccess === null ? 'none recorded' : $state->lastSuccess->describe($now->getTimezone());
+            }
+        }
         $width = max(array_map('strlen', array_keys($rows)));
         $lines = [];
         foreach ($rows as $label => $value) {

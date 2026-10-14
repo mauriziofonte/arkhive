@@ -53,7 +53,8 @@ abstract class CompatTestCase extends TestCase
         $phar = getenv('ARKHIVE_TEST_PHAR');
         $entry = $phar === false || $phar === '' ? dirname(__DIR__, 2) . '/arkhive' : $phar;
 
-        return self::exec([PHP_BINARY, $entry, ...$args], $env);
+        // never the real /var/lib/arkhive, even when the suite runs as root
+        return self::exec([PHP_BINARY, $entry, ...$args], ['STATE_DIRECTORY' => sys_get_temp_dir() . '/arkhive-compat-state-' . getmypid(), ...$env]);
     }
 
     /**

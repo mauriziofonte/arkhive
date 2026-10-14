@@ -69,7 +69,7 @@ final class NotificationTest extends E2eTestCase
             'SMTP_TO' => 'admin@example.com',
         ]);
 
-        return self::arkhive(['backup', '--config', $config], ['ARKHIVE_LOCK_DIR' => "{$this->dir}/locks"]);
+        return self::arkhive(['backup', '--config', $config], ['ARKHIVE_LOCK_DIR' => "{$this->dir}/locks", 'STATE_DIRECTORY' => "{$this->dir}/state"]);
     }
 
     /**

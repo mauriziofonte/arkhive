@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Mfonte\Arkhive\Commands;
 
+use DateTimeImmutable;
 use LaravelZero\Framework\Commands\Command;
 use Mfonte\Arkhive\Application\Output\Logger;
 use Mfonte\Arkhive\Application\Port\Terminal;
@@ -101,27 +102,42 @@ abstract class ArkhiveCommand extends Command
         $this->log = new Logger($this->context, $stream->resource(), $file, $clock, $this->output->isVerbose());
 
         $installed = $signals->installed() || !$signals->install();
+        $started = $clock->now();
+        $failure = null;
         try {
-            return $this->perform();
-        } catch (ArkhiveException $e) {
-            $this->log->error($e->getMessage());
-            if ($e->hint() !== null) {
-                $this->log->notice($e->hint());
+            try {
+                $exit = $this->perform();
+            } catch (ArkhiveException $e) {
+                $this->log->error($e->getMessage());
+                if ($e->hint() !== null) {
+                    $this->log->notice($e->hint());
+                }
+                $exit = $e->exitCode();
+                $failure = $e;
+            } catch (Throwable $e) {
+                $this->log->error(sprintf('Unexpected error: %s (%s:%d)', $e->getMessage(), $e->getFile(), $e->getLine()));
+                $exit = ExitCode::SOFTWARE;
+                $failure = $e;
             }
+            $this->finished($exit, $failure, $started);
 
-            return $e->exitCode();
-        } catch (Throwable $e) {
-            $this->log->error(sprintf('Unexpected error: %s (%s:%d)', $e->getMessage(), $e->getFile(), $e->getLine()));
-
-            return ExitCode::SOFTWARE;
+            return $exit;
         } finally {
-            foreach ($cleanup->runAll() as $failure) {
-                $this->log->warning("Cleanup failed: {$failure}");
+            foreach ($cleanup->runAll() as $cleanupFailure) {
+                $this->log->warning("Cleanup failed: {$cleanupFailure}");
             }
             if (!$installed) {
                 $signals->uninstall();
             }
         }
+    }
+
+    /**
+     * Called once the command has ended, with its exit code, before the cleanup (the lock is still
+     * held). Must not throw.
+     */
+    protected function finished(int $exit, ?Throwable $failure, DateTimeImmutable $started): void
+    {
     }
 
     /**

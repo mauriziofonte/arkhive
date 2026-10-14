@@ -35,7 +35,7 @@ final class DoctorTest extends TestCase
     use TempDir;
     use WritesConfig;
 
-    private const ORDER = ['PHP', 'distribution', 'restic', 'configuration', 'removed 1.x keys', 'password file', 'SSH', 'repository', 'latest snapshot', 'dump space', 'clock', 'execution context', 'SELinux'];
+    private const ORDER = ['PHP', 'distribution', 'restic', 'configuration', 'removed 1.x keys', 'password file', 'SSH', 'repository', 'latest snapshot', 'last runs', 'dump space', 'clock', 'execution context', 'SELinux'];
 
     private FakeProcessRunner $runner;
     private FakeRestic $restic;
@@ -115,9 +115,10 @@ final class DoctorTest extends TestCase
 
         self::assertSame([
             'PHP' => 'ok', 'distribution' => 'ok', 'restic' => 'ok', 'configuration' => 'ok', 'removed 1.x keys' => 'ok', 'password file' => 'ok',
-            'SSH' => 'skipped', 'repository' => 'ok', 'latest snapshot' => 'ok', 'dump space' => 'skipped', 'clock' => 'ok', 'execution context' => 'info', 'SELinux' => 'skipped',
+            'SSH' => 'skipped', 'repository' => 'ok', 'latest snapshot' => 'ok', 'last runs' => 'info', 'dump space' => 'skipped', 'clock' => 'ok', 'execution context' => 'info', 'SELinux' => 'skipped',
         ], self::statuses($checks));
         self::assertSame('PHP 8.4.1 with phar, json, mbstring, posix, pcntl, curl', $checks['PHP']->message);
+        self::assertSame('not recorded: no state directory', $checks['last runs']->message, 'no RunJournal given');
         self::assertSame('debian 12, packages via apt install <package>', $checks['distribution']->message);
         self::assertSame("restic 0.19.1 at {$this->dir}/bin/restic", $checks['restic']->message);
         self::assertSame("{$this->dir}/config", $checks['configuration']->message);
