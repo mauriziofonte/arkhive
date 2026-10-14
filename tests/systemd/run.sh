@@ -41,7 +41,15 @@ for job in backup maintain drill; do
     expect "arkhive-${job}.timer is active" active "$(systemctl is-active "arkhive-${job}.timer")"
 done
 expect "schedule --status before any run" true "$(arkhive schedule --status --json | jq -r .healthy)"
-arkhive schedule --install --config /etc/arkhive/config 2>&1 | grep -q 'Unchanged: /etc/systemd/system/arkhive-backup.service' && pass 'a second install changes nothing' || fail 'a second install rewrote the units'
+units_before="$(sha256sum /etc/systemd/system/arkhive-*)"
+second=0
+reinstall="$(arkhive schedule --install --config /etc/arkhive/config 2>&1)" || second=$?
+expect 'a second install succeeds' 0 "$second"
+case "$reinstall" in
+    *'Unchanged: /etc/systemd/system/arkhive-backup.service'*) pass 'a second install reports the units unchanged' ;;
+    *) fail "a second install did not report the units unchanged: ${reinstall}" ;;
+esac
+expect 'a second install leaves the unit files as they were' "$units_before" "$(sha256sum /etc/systemd/system/arkhive-*)"
 
 # a backup under the hardened unit
 if systemctl start arkhive-backup.service; then pass 'the backup unit succeeds'; else fail 'the backup unit failed'; fi
