@@ -4,6 +4,8 @@ Description=Weekly ArkHive maintenance (retention, prune, check)
 
 [Timer]
 OnCalendar=Sun *-*-* 05:30:00
+RandomizedDelaySec=10min
+AccuracySec=1min
 Persistent=true
 
 [Install]

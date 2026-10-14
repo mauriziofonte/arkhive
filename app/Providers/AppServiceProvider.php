@@ -68,7 +68,7 @@ class AppServiceProvider extends ServiceProvider
             static fn () => $app->make(ServiceStatus::class)->heartbeat(),
         ));
         // the outcome of each backup, maintain and drill, for status and doctor
-        $this->app->bind(RunStateStore::class, static fn ($app): RunStateStore => new JsonRunStateStore(StateDirectory::resolve($app->make(Terminal::class)->environment(), posix_geteuid())));
+        $this->app->bind(RunStateStore::class, static fn ($app): RunStateStore => new JsonRunStateStore(StateDirectory::resolve($app->make(Terminal::class)->environment(), posix_geteuid(), StateDirectory::systemOwner())));
         $this->app->singleton(Distro::class, static fn (): Distro => OsRelease::detect());
         // the CSPRNG engine: drill samples and throw-away database names
         $this->app->bind(Randomizer::class, static fn (): Randomizer => new Randomizer());

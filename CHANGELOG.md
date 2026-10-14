@@ -35,6 +35,11 @@ All notable changes to ArkHive are documented in this file. The format follows
   `systemctl status` shows the current step and its progress, then the outcome; a run that still
   makes progress gets more time (`EXTEND_TIMEOUT_USEC`) instead of being stopped by
   `TimeoutStartSec`; `WatchdogSec=` is supported. The units set `NotifyAccess=main`.
+- Hardened systemd units: `StateDirectory=` and `CacheDirectory=`, `ProtectSystem=full`,
+  `ProtectHome=read-only` with the dump directory and a local repository writable, and the
+  kernel and privilege protections; `CPUSchedulingPolicy=batch`; timers spread over 10 minutes
+  (`RandomizedDelaySec`); maintain and drill wait for a backup due at the same time. Regenerate
+  and reinstall the units (`arkhive schedule --systemd`) to get them.
 - `tests/Compat`: ArkHive's commands against a real restic (`ARKHIVE_TEST_RESTIC`), run in CI for
   every release from 0.11.0 to the current one, including an `sftp:` repository on a local sshd.
 

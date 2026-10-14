@@ -506,7 +506,7 @@ arkhive schedule --systemd --config /etc/arkhive/config
 arkhive schedule --cron --at 01:00 --config /etc/arkhive/config
 ```
 
-- **systemd**: six units (`arkhive-backup`, `arkhive-maintain`, `arkhive-drill`, each a `.service` and a `.timer`) with `Nice=10`, `IOSchedulingClass=idle`, `TimeoutStartSec=` and `Persistent=true` timers. Save each under `/etc/systemd/system/`, then `systemctl daemon-reload && systemctl enable --now arkhive-backup.timer arkhive-maintain.timer arkhive-drill.timer`. Logs: `journalctl -u arkhive-backup.service`; timers: `systemctl list-timers 'arkhive-*'`.
+- **systemd**: six units (`arkhive-backup`, `arkhive-maintain`, `arkhive-drill`, each a `.service` and a `.timer`) with `Nice=10`, `IOSchedulingClass=idle`, `CPUSchedulingPolicy=batch`, `TimeoutStartSec=` and `Persistent=true` timers that start within 10 minutes of their time (`RandomizedDelaySec`, so hosts with the same `--at` do not reach the repository server together). The services are hardened: `ProtectSystem=full` and `ProtectHome=read-only` (the backup reads everything, writes only `StateDirectory=arkhive`, `CacheDirectory=arkhive`, `/tmp` and, through `ReadWritePaths=`, the `DUMP_DIRECTORY` and a local repository), `PrivateTmp`, `NoNewPrivileges`, `ProtectKernelTunables`, `ProtectKernelModules`, `ProtectControlGroups`, `RestrictSUIDSGID`, `LockPersonality`. `maintain` and `drill` are ordered after `backup` (`After=`), so after a boot, when missed timers fire together, they wait for it. Save each under `/etc/systemd/system/`, then `systemctl daemon-reload && systemctl enable --now arkhive-backup.timer arkhive-maintain.timer arkhive-drill.timer`. Logs: `journalctl -u arkhive-backup.service`; timers: `systemctl list-timers 'arkhive-*'`.
 - **cron**: lines for `/etc/cron.d/arkhive` (root:root, 0644) or `crontab -e` for another user, logging with `--log-file` (`/var/log/arkhive.log` for root, `$XDG_STATE_HOME/arkhive/arkhive.log` or `~/.local/state/arkhive/arkhive.log` otherwise).
 
 Under systemd ArkHive speaks the service manager's notify protocol (`NotifyAccess=main` in the units; nothing is sent when `NOTIFY_SOCKET` is unset). `systemctl status arkhive-backup` shows the current step and its progress (`Status: "Backing up /srv/www /etc: 42.0% 120/300 files 1.20 GiB/3.10 GiB"`), then how the run ended (`arkhive backup failed with exit 69 (UNAVAILABLE): ...`). While a backup or a restore still advances, each progress report gives the unit 30 more minutes (`EXTEND_TIMEOUT_USEC`), so `TimeoutStartSec` stops a run that is stuck, not one that is slow. With `WatchdogSec=` in a unit, ArkHive pings the watchdog while it works and waits.
@@ -540,7 +540,7 @@ ArkHive follows the `sysexits.h` convention, so scripts and systemd can tell a c
 | 130 | SIGINT | Interrupted by SIGINT (cleanup done, lock released) |
 | 143 | SIGTERM | Interrupted by SIGTERM (cleanup done, lock released) |
 
-64, 65, 66, 77 and 78 cannot succeed by running again unchanged; the systemd units list them in `RestartPreventExitStatus`. 2.0.0-rc.1 used 2 for usage and configuration errors and 4 for refusals: they are now 64 or 78, and 73 or 64.
+64, 65, 66, 77 and 78 cannot succeed by running again unchanged (`ExitCode::NOT_RETRYABLE`). 2.0.0-rc.1 used 2 for usage and configuration errors and 4 for refusals: they are now 64 or 78, and 73 or 64.
 
 ### Retries
 

@@ -37,9 +37,19 @@ final class SystemdUnitsTest extends TestCase
             . "ExecStart=/usr/local/bin/arkhive backup --config /etc/arkhive/config\n"
             . "Nice=10\n"
             . "IOSchedulingClass=idle\n"
+            . "CPUSchedulingPolicy=batch\n"
             . "TimeoutStartSec=6h\n"
+            . "StateDirectory=arkhive\n"
+            . "CacheDirectory=arkhive\n"
+            . "ProtectSystem=full\n"
+            . "ProtectHome=read-only\n"
             . "PrivateTmp=true\n"
-            . "NoNewPrivileges=true\n",
+            . "NoNewPrivileges=true\n"
+            . "ProtectKernelTunables=true\n"
+            . "ProtectKernelModules=true\n"
+            . "ProtectControlGroups=true\n"
+            . "RestrictSUIDSGID=true\n"
+            . "LockPersonality=true\n",
             $units['/etc/systemd/system/arkhive-backup.service'],
         );
         self::assertSame(
@@ -49,6 +59,8 @@ final class SystemdUnitsTest extends TestCase
             . "\n"
             . "[Timer]\n"
             . "OnCalendar=*-*-* 02:30:00\n"
+            . "RandomizedDelaySec=10min\n"
+            . "AccuracySec=1min\n"
             . "Persistent=true\n"
             . "\n"
             . "[Install]\n"
@@ -65,8 +77,11 @@ final class SystemdUnitsTest extends TestCase
         self::assertStringContainsString("Description=Weekly ArkHive maintenance (retention, prune, check)\n", $units['/etc/systemd/system/arkhive-maintain.timer']);
         self::assertStringContainsString("OnCalendar=Sun *-*-* 01:05:00\n", $units['/etc/systemd/system/arkhive-maintain.timer']);
         self::assertStringContainsString("OnCalendar=Wed *-*-* 01:05:00\n", $units['/etc/systemd/system/arkhive-drill.timer']);
-        self::assertStringContainsString("ExecStart=/usr/local/bin/arkhive maintain --config /etc/arkhive/config\nNice=10\nIOSchedulingClass=idle\nTimeoutStartSec=12h\n", $units['/etc/systemd/system/arkhive-maintain.service']);
-        self::assertStringContainsString("ExecStart=/usr/local/bin/arkhive drill --config /etc/arkhive/config\nNice=10\nIOSchedulingClass=idle\nTimeoutStartSec=3h\n", $units['/etc/systemd/system/arkhive-drill.service']);
+        self::assertStringContainsString("TimeoutStartSec=12h\n", $units['/etc/systemd/system/arkhive-maintain.service']);
+        self::assertStringContainsString("TimeoutStartSec=3h\n", $units['/etc/systemd/system/arkhive-drill.service']);
+        self::assertStringContainsString("After=network-online.target\n", $units['/etc/systemd/system/arkhive-backup.service']);
+        self::assertStringContainsString("After=network-online.target arkhive-backup.service\n", $units['/etc/systemd/system/arkhive-maintain.service'], 'a maintain due with a backup waits for it');
+        self::assertStringContainsString("After=network-online.target arkhive-backup.service arkhive-maintain.service\n", $units['/etc/systemd/system/arkhive-drill.service']);
         self::assertSame(['arkhive-backup.timer', 'arkhive-maintain.timer', 'arkhive-drill.timer'], SystemdUnits::timers());
     }
 
@@ -75,6 +90,15 @@ final class SystemdUnitsTest extends TestCase
         $units = SystemdUnits::render(new Schedule(['/usr/bin/php8.4', '/home/deploy/bin/arkhive.phar'], '/home/deploy/.config/arkhive/config', 'deploy', 2, 30, '/home/deploy/.local/state/arkhive/arkhive.log'));
 
         self::assertStringContainsString("User=deploy\nExecStart=/usr/bin/php8.4 /home/deploy/bin/arkhive.phar backup --config /home/deploy/.config/arkhive/config\n", $units['/etc/systemd/system/arkhive-backup.service']);
+    }
+
+    public function testTheDirectoriesTheJobsWriteStayWritable(): void
+    {
+        $units = SystemdUnits::render(new Schedule(['/usr/local/bin/arkhive'], '/etc/arkhive/config', 'root', 2, 30, '/var/log/arkhive.log', ['/home/backup/dumps', '/srv/my repo/100%"x"']));
+
+        // "-": a directory that does not exist yet does not stop the unit
+        self::assertStringContainsString("ProtectHome=read-only\nReadWritePaths=-/home/backup/dumps \"-/srv/my repo/100%%\\\"x\\\"\"\nPrivateTmp=true\n", $units['/etc/systemd/system/arkhive-backup.service']);
+        self::assertStringNotContainsString('ReadWritePaths', SystemdUnits::render(new Schedule(['/usr/local/bin/arkhive'], '/etc/arkhive/config', 'root', 2, 30, '/var/log/arkhive.log'))['/etc/systemd/system/arkhive-backup.service']);
     }
 
     public function testExecStartQuoting(): void

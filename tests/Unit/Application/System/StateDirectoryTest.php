@@ -37,6 +37,31 @@ final class StateDirectoryTest extends TestCase
         self::assertSame($expected, StateDirectory::resolve($environment, $uid));
     }
 
+    public function testTheUnitsStateDirectoryOfThisUserIsFound(): void
+    {
+        $home = ['HOME' => '/home/ops'];
+
+        self::assertSame('/var/lib/arkhive', StateDirectory::resolve($home, 1000, 1000), 'created by systemd for User=ops');
+        self::assertSame('/home/ops/.local/state/arkhive', StateDirectory::resolve($home, 1000, 0), 'root\'s');
+        self::assertSame('/home/ops/.local/state/arkhive', StateDirectory::resolve($home, 1000, null));
+        self::assertSame('/var/lib/arkhive', StateDirectory::resolve($home, 0, 1000));
+    }
+
+    public function testTheOwnerOfTheSystemDirectory(): void
+    {
+        $dir = sys_get_temp_dir() . '/arkhive-state-test-' . bin2hex(random_bytes(4));
+        mkdir($dir);
+        try {
+            self::assertSame(fileowner($dir), StateDirectory::systemOwner($dir));
+            self::assertNull(StateDirectory::systemOwner("{$dir}/missing"));
+            touch("{$dir}/file");
+            self::assertNull(StateDirectory::systemOwner("{$dir}/file"), 'not a directory');
+        } finally {
+            @unlink("{$dir}/file");
+            rmdir($dir);
+        }
+    }
+
     public function testTheFirstAbsolutePath(): void
     {
         self::assertSame('/', StateDirectory::firstAbsolute('/'));

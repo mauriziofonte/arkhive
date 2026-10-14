@@ -50,6 +50,8 @@ final class ScheduleCommand extends ConfiguredCommand
             $hour,
             $minute,
             $this->logFile($user),
+            // the units keep the system and the homes read-only: these stay writable
+            array_values(array_unique(array_filter([$config->dumpDirectory, $config->restic->localPath()], static fn (?string $path): bool => $path !== null))),
         );
 
         if ($format === 'systemd') {

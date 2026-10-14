@@ -17,6 +17,7 @@ final readonly class Schedule
     /**
      * @param list<string> $invocation the ArkHive executable, e.g. ['/usr/local/bin/arkhive'] or [php, phar]
      * @param string       $user       the account the jobs run as
+     * @param list<string> $writable   directories the jobs write besides their state and cache (dumps, a local repository)
      */
     public function __construct(
         public array $invocation,
@@ -25,8 +26,9 @@ final readonly class Schedule
         public int $hour,
         public int $minute,
         public string $logFile,
+        public array $writable = [],
     ) {
-        foreach ([...$invocation, $config, $user, $logFile] as $value) {
+        foreach ([...$invocation, $config, $user, $logFile, ...$writable] as $value) {
             if ($value === '' || preg_match('/[\x00-\x1f\x7f]/', $value) === 1) {
                 throw new UsageException('Cannot schedule ' . json_encode($value) . ': a path or name with a control character (or an empty one) cannot be written into a unit or crontab');
             }

@@ -67,7 +67,7 @@ final class ExitCode
         self::SIGTERM => ['SIGTERM', 'interrupted by SIGTERM: cleanup done, lock released'],
     ];
 
-    /** codes after which retrying the same run cannot succeed (systemd RestartPreventExitStatus) */
+    /** codes after which running the same command again unchanged cannot succeed */
     public const NOT_RETRYABLE = [self::USAGE, self::DATA_ERROR, self::NO_INPUT, self::NO_PERMISSION, self::CONFIG];
 
     private function __construct()

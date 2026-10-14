@@ -4,6 +4,8 @@ Description=Daily ArkHive backup
 
 [Timer]
 OnCalendar=*-*-* 02:30:00
+RandomizedDelaySec=10min
+AccuracySec=1min
 Persistent=true
 
 [Install]

@@ -56,6 +56,21 @@ enum Job: string
     }
 
     /**
+     * The jobs that start before this one when both are due (after a boot, Persistent= timers fire
+     * together): maintain waits for the backup, the drill for both.
+     *
+     * @return list<self>
+     */
+    public function after(): array
+    {
+        return match ($this) {
+            self::Backup => [],
+            self::Maintain => [self::Backup],
+            self::Drill => [self::Backup, self::Maintain],
+        };
+    }
+
+    /**
      * systemd TimeoutStartSec: a run past this is stopped with SIGTERM (ArkHive cleans up, exit 143).
      */
     public function timeout(): string
