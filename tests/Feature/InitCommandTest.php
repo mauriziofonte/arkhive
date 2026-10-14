@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use Illuminate\Support\Facades\Artisan;
+use Mfonte\Arkhive\Application\Port\ProcessRunner;
+use Mfonte\Arkhive\Application\Process\Command;
+use Mfonte\Arkhive\Application\System\Dependencies;
 use Mfonte\Arkhive\Commands\InitCommand;
 use Mfonte\Arkhive\ExitCode;
-use Mfonte\Arkhive\Services\Process\Command;
-use Mfonte\Arkhive\Services\Process\ProcessRunner;
-use Mfonte\Arkhive\Services\System\Dependencies;
 use Tests\Support\FakeBinaries;
 use Tests\Support\FakeProcessRunner;
 use Tests\Support\FakeRestic;

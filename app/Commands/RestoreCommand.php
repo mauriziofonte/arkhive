@@ -4,20 +4,20 @@ declare(strict_types=1);
 
 namespace Mfonte\Arkhive\Commands;
 
+use Mfonte\Arkhive\Application\Port\ProcessRunner;
+use Mfonte\Arkhive\Application\Port\Prompter;
+use Mfonte\Arkhive\Application\Port\SnapshotStore;
+use Mfonte\Arkhive\Application\Restore\RestorePlanner;
+use Mfonte\Arkhive\Application\Restore\RestoreRunner;
+use Mfonte\Arkhive\Application\Restore\TargetDirectory;
+use Mfonte\Arkhive\Application\System\Dependencies;
+use Mfonte\Arkhive\Domain\Repository\Snapshots;
+use Mfonte\Arkhive\Domain\Restore\RestoreOptions;
+use Mfonte\Arkhive\Domain\Restore\RestorePlan;
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
 use Mfonte\Arkhive\Exceptions\SoftwareException;
 use Mfonte\Arkhive\Exceptions\UsageException;
 use Mfonte\Arkhive\ExitCode;
-use Mfonte\Arkhive\Services\Process\ProcessRunner;
-use Mfonte\Arkhive\Services\Restic\Restic;
-use Mfonte\Arkhive\Services\Restore\Prompter;
-use Mfonte\Arkhive\Services\Restore\RestoreOptions;
-use Mfonte\Arkhive\Services\Restore\RestorePlan;
-use Mfonte\Arkhive\Services\Restore\RestorePlanner;
-use Mfonte\Arkhive\Services\Restore\RestoreRunner;
-use Mfonte\Arkhive\Services\Restore\Snapshots;
-use Mfonte\Arkhive\Services\Restore\TargetDirectory;
-use Mfonte\Arkhive\Services\System\Dependencies;
 use Symfony\Component\Console\Output\StreamOutput;
 
 /**
@@ -112,7 +112,7 @@ final class RestoreCommand extends RepositoryCommand
      * Wizard step 1: locks in the repository. A stale one is explained with the exact unlock command;
      * ArkHive never removes a lock itself.
      */
-    private function reportLocks(Restic $restic, string $repository): void
+    private function reportLocks(SnapshotStore $restic, string $repository): void
     {
         try {
             $locks = $restic->locks();
@@ -126,7 +126,7 @@ final class RestoreCommand extends RepositoryCommand
             $stale = $lock->isStale($now, self::hostname(), static fn (int $pid): bool => posix_kill($pid, 0) || posix_get_last_error() === 1);
             if ($stale) {
                 $this->log->warning('The repository has a stale lock: ' . $lock->describe() . '; it was left by a restic run that was killed or lost its connection');
-                $this->log->notice('If no other restic process uses the repository, remove it with: RESTIC_PASSWORD_FILE=' . escapeshellarg($restic->settings->passwordFile) . ' restic -r ' . escapeshellarg($repository) . ' unlock (ArkHive never does this automatically)');
+                $this->log->notice('If no other restic process uses the repository, remove it with: RESTIC_PASSWORD_FILE=' . escapeshellarg($restic->settings()->passwordFile) . ' restic -r ' . escapeshellarg($repository) . ' unlock (ArkHive never does this automatically)');
             } elseif ($lock->exclusive) {
                 $this->log->warning('The repository is locked exclusively (' . $lock->describe() . '), probably by a running prune: the restore fails until it ends');
             } else {

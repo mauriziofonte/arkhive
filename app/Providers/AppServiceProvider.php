@@ -5,22 +5,27 @@ declare(strict_types=1);
 namespace Mfonte\Arkhive\Providers;
 
 use Illuminate\Support\ServiceProvider;
-use Mfonte\Arkhive\Services\Context\SystemTerminal;
-use Mfonte\Arkhive\Services\Context\Terminal;
-use Mfonte\Arkhive\Services\Output\LogStream;
-use Mfonte\Arkhive\Services\Process\Cleanup;
-use Mfonte\Arkhive\Services\Process\ProcessRunner;
-use Mfonte\Arkhive\Services\Process\Signals;
-use Mfonte\Arkhive\Services\Process\SystemProcessRunner;
-use Mfonte\Arkhive\Services\Restore\Prompter;
-use Mfonte\Arkhive\Services\Restore\StreamPrompter;
-use Mfonte\Arkhive\Services\System\BinaryFinder;
-use Mfonte\Arkhive\Services\System\Distro;
-use Mfonte\Arkhive\Services\Update\CurlHttpClient;
-use Mfonte\Arkhive\Services\Update\HttpClient;
-use Mfonte\Arkhive\Services\Update\StreamHttpClient;
-use Mfonte\Arkhive\Support\Clock;
-use Mfonte\Arkhive\Support\SystemClock;
+use Mfonte\Arkhive\Application\Port\HttpClient;
+use Mfonte\Arkhive\Application\Port\Notifier;
+use Mfonte\Arkhive\Application\Port\ProcessRunner;
+use Mfonte\Arkhive\Application\Port\Prompter;
+use Mfonte\Arkhive\Application\Port\SnapshotStoreFactory;
+use Mfonte\Arkhive\Application\Port\Terminal;
+use Mfonte\Arkhive\Application\Process\Cleanup;
+use Mfonte\Arkhive\Application\System\BinaryFinder;
+use Mfonte\Arkhive\Domain\Shared\Clock;
+use Mfonte\Arkhive\Domain\System\Distro;
+use Mfonte\Arkhive\Infrastructure\Console\StreamPrompter;
+use Mfonte\Arkhive\Infrastructure\Console\SystemTerminal;
+use Mfonte\Arkhive\Infrastructure\Http\CurlHttpClient;
+use Mfonte\Arkhive\Infrastructure\Http\StreamHttpClient;
+use Mfonte\Arkhive\Infrastructure\Logging\LogStream;
+use Mfonte\Arkhive\Infrastructure\Mail\SmtpNotifier;
+use Mfonte\Arkhive\Infrastructure\Process\Signals;
+use Mfonte\Arkhive\Infrastructure\Process\SystemProcessRunner;
+use Mfonte\Arkhive\Infrastructure\Restic\ResticFactory;
+use Mfonte\Arkhive\Infrastructure\System\OsRelease;
+use Mfonte\Arkhive\Infrastructure\System\SystemClock;
 use Random\Randomizer;
 
 class AppServiceProvider extends ServiceProvider
@@ -34,7 +39,9 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(Cleanup::class);
         $this->app->singleton(ProcessRunner::class, SystemProcessRunner::class);
         $this->app->singleton(BinaryFinder::class, static fn (): BinaryFinder => BinaryFinder::fromEnvironment());
-        $this->app->singleton(Distro::class, static fn (): Distro => Distro::detect());
+        $this->app->bind(SnapshotStoreFactory::class, ResticFactory::class);
+        $this->app->bind(Notifier::class, SmtpNotifier::class);
+        $this->app->singleton(Distro::class, static fn (): Distro => OsRelease::detect());
         // the CSPRNG engine: drill samples and throw-away database names
         $this->app->bind(Randomizer::class, static fn (): Randomizer => new Randomizer());
         // self-update: the curl extension when loaded, PHP streams otherwise (never a curl or wget binary)

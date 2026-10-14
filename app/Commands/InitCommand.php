@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace Mfonte\Arkhive\Commands;
 
+use Mfonte\Arkhive\Application\Configuration\PasswordFile;
+use Mfonte\Arkhive\Application\Port\SnapshotStoreFactory;
 use Mfonte\Arkhive\Exceptions\ConfigException;
 use Mfonte\Arkhive\Exceptions\IoException;
 use Mfonte\Arkhive\Exceptions\NoInputException;
 use Mfonte\Arkhive\Exceptions\RefusedException;
 use Mfonte\Arkhive\ExitCode;
-use Mfonte\Arkhive\Services\Config\PasswordFile;
-use Mfonte\Arkhive\Services\Restic\ResticFactory;
 
 /**
  * spec §6 init: creates the repository of the configuration. A missing RESTIC_PASSWORD_FILE is
@@ -42,9 +42,9 @@ final class InitCommand extends ConfiguredCommand
             PasswordFile::assertSafe($passwordFile);
         }
 
-        $restic = $this->laravel->make(ResticFactory::class)->create($settings, 'to create the repository');
+        $restic = $this->laravel->make(SnapshotStoreFactory::class)->create($settings, 'to create the repository');
         $version = $restic->requireSupportedVersion();
-        $this->log->debug("Using {$restic->binary} (restic {$version})");
+        $this->log->debug("Using {$restic->binary()} (restic {$version})");
         $this->log->info("Creating the restic repository {$settings->repository}");
         $id = $restic->init();
 

@@ -211,7 +211,7 @@ final class ArkhiveCommandTest extends TestCase
 
         Artisan::call('test:probe');
 
-        self::assertSame(\Mfonte\Arkhive\Services\Process\Signals::supported(), $installed);
-        self::assertFalse($this->app->make(\Mfonte\Arkhive\Services\Process\Signals::class)->installed());
+        self::assertSame(\Mfonte\Arkhive\Infrastructure\Process\Signals::supported(), $installed);
+        self::assertFalse($this->app->make(\Mfonte\Arkhive\Infrastructure\Process\Signals::class)->installed());
     }
 }

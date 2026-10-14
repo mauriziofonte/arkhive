@@ -4,16 +4,16 @@ declare(strict_types=1);
 
 namespace Mfonte\Arkhive\Commands;
 
+use Mfonte\Arkhive\Application\Maintenance\MaintainRunner;
+use Mfonte\Arkhive\Application\Port\SnapshotStoreFactory;
+use Mfonte\Arkhive\Domain\Configuration\Config;
+use Mfonte\Arkhive\Domain\Maintenance\MaintainReport;
+use Mfonte\Arkhive\Domain\Notification\Notification;
+use Mfonte\Arkhive\Domain\Repository\CheckResult;
+use Mfonte\Arkhive\Domain\Shared\Bytes;
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
 use Mfonte\Arkhive\Exceptions\InterruptedException;
 use Mfonte\Arkhive\ExitCode;
-use Mfonte\Arkhive\Services\Config\Config;
-use Mfonte\Arkhive\Services\Maintain\MaintainReport;
-use Mfonte\Arkhive\Services\Maintain\MaintainRunner;
-use Mfonte\Arkhive\Services\Notify\Notification;
-use Mfonte\Arkhive\Services\Restic\CheckResult;
-use Mfonte\Arkhive\Services\Restic\ResticFactory;
-use Mfonte\Arkhive\Support\Bytes;
 
 final class MaintainCommand extends ConfiguredCommand
 {
@@ -26,7 +26,7 @@ final class MaintainCommand extends ConfiguredCommand
     {
         $config = $this->loadConfig();
         $runner = new MaintainRunner(
-            $this->laravel->make(ResticFactory::class),
+            $this->laravel->make(SnapshotStoreFactory::class),
             $this->cleanup,
             $this->clock,
             $this->terminal->environment(),

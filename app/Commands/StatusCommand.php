@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace Mfonte\Arkhive\Commands;
 
+use Mfonte\Arkhive\Domain\Repository\Snapshot;
+use Mfonte\Arkhive\Domain\Repository\Snapshots;
+use Mfonte\Arkhive\Domain\Shared\Bytes;
 use Mfonte\Arkhive\Exceptions\UsageException;
 use Mfonte\Arkhive\ExitCode;
-use Mfonte\Arkhive\Services\Restic\Snapshot;
-use Mfonte\Arkhive\Services\Restore\Snapshots;
-use Mfonte\Arkhive\Support\Bytes;
 
 /**
  * spec §6 status: latest snapshot and its age, snapshot count, repository size. With --max-age it is

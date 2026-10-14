@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Tests\Support;
 
+use Mfonte\Arkhive\Application\Port\HttpClient;
+use Mfonte\Arkhive\Application\Port\HttpResponse;
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
-use Mfonte\Arkhive\Services\Update\HttpClient;
-use Mfonte\Arkhive\Services\Update\HttpResponse;
 
 /**
  * Canned answers by URL; records every request with its headers. An unknown URL is a 404.

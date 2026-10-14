@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Tests\Support;
 
-use Mfonte\Arkhive\Services\System\BinaryFinder;
-use Mfonte\Arkhive\Services\System\Dependencies;
-use Mfonte\Arkhive\Services\System\Distro;
+use Mfonte\Arkhive\Application\System\BinaryFinder;
+use Mfonte\Arkhive\Application\System\Dependencies;
+use Mfonte\Arkhive\Domain\System\Distro;
 
 /**
  * Executable placeholders in a directory, so that dependency lookup succeeds without the real tools.

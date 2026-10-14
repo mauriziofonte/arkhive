@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use Illuminate\Support\Facades\Artisan;
+use Mfonte\Arkhive\Application\Port\Prompter;
 use Mfonte\Arkhive\Commands\ScheduleCommand;
 use Mfonte\Arkhive\ExitCode;
-use Mfonte\Arkhive\Services\Restore\Prompter;
 use Tests\Support\Cli;
 use Tests\Support\FakePrompter;
 use Tests\Support\TempDir;

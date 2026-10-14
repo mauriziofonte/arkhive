@@ -4,19 +4,19 @@ declare(strict_types=1);
 
 namespace Mfonte\Arkhive\Commands;
 
+use Mfonte\Arkhive\Application\Drill\DrillRunner;
+use Mfonte\Arkhive\Application\Port\ProcessRunner;
+use Mfonte\Arkhive\Application\System\Dependencies;
+use Mfonte\Arkhive\Domain\Configuration\Config;
+use Mfonte\Arkhive\Domain\Drill\DrillReport;
+use Mfonte\Arkhive\Domain\Notification\Notification;
+use Mfonte\Arkhive\Domain\Repository\Snapshots;
+use Mfonte\Arkhive\Domain\Shared\Bytes;
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
 use Mfonte\Arkhive\Exceptions\ConfigException;
 use Mfonte\Arkhive\Exceptions\InterruptedException;
 use Mfonte\Arkhive\Exceptions\UsageException;
 use Mfonte\Arkhive\ExitCode;
-use Mfonte\Arkhive\Services\Config\Config;
-use Mfonte\Arkhive\Services\Drill\DrillReport;
-use Mfonte\Arkhive\Services\Drill\DrillRunner;
-use Mfonte\Arkhive\Services\Notify\Notification;
-use Mfonte\Arkhive\Services\Process\ProcessRunner;
-use Mfonte\Arkhive\Services\Restore\Snapshots;
-use Mfonte\Arkhive\Services\System\Dependencies;
-use Mfonte\Arkhive\Support\Bytes;
 use Random\Randomizer;
 
 /**

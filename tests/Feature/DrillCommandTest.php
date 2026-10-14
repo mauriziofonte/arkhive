@@ -5,10 +5,11 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use Illuminate\Support\Facades\Artisan;
+use Mfonte\Arkhive\Application\Port\Notifier;
+use Mfonte\Arkhive\Application\Port\ProcessRunner;
+use Mfonte\Arkhive\Application\System\Dependencies;
 use Mfonte\Arkhive\ExitCode;
-use Mfonte\Arkhive\Services\Notify\Notifier;
-use Mfonte\Arkhive\Services\Process\ProcessRunner;
-use Mfonte\Arkhive\Services\System\Dependencies;
+use Mfonte\Arkhive\Infrastructure\Mail\SmtpNotifier;
 use Random\Engine\Mt19937;
 use Random\Randomizer;
 use Tests\Support\CapturingTransport;
@@ -40,7 +41,7 @@ final class DrillCommandTest extends TestCase
         $this->mail = new CapturingTransport();
         $this->app->instance(ProcessRunner::class, $runner);
         $this->app->instance(Dependencies::class, FakeBinaries::dependencies("{$this->dir}/bin", ['restic']));
-        $this->app->instance(Notifier::class, new Notifier($this->mail->factory()));
+        $this->app->instance(Notifier::class, new SmtpNotifier($this->mail->factory()));
         $this->app->instance(Randomizer::class, new Randomizer(new Mt19937(3)));
     }
 

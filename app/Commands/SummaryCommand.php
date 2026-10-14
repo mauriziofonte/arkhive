@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Mfonte\Arkhive\Commands;
 
-use Mfonte\Arkhive\Services\Output\UsageErrors;
+use Mfonte\Arkhive\Commands\Support\UsageErrors;
 use NunoMaduro\LaravelConsoleSummary\SummaryCommand as BaseSummaryCommand;
 use Symfony\Component\Console\Exception\CommandNotFoundException;
 use Symfony\Component\Console\Exception\ExceptionInterface;

@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace Tests\Integration\Process;
 
+use Mfonte\Arkhive\Application\Process\Command;
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
 use Mfonte\Arkhive\Exceptions\InterruptedException;
-use Mfonte\Arkhive\Services\Process\Command;
-use Mfonte\Arkhive\Services\Process\Signals;
-use Mfonte\Arkhive\Services\Process\SystemProcessRunner;
+use Mfonte\Arkhive\Infrastructure\Process\Signals;
+use Mfonte\Arkhive\Infrastructure\Process\SystemProcessRunner;
 use PHPUnit\Framework\TestCase;
 use Tests\Support\TempDir;
 

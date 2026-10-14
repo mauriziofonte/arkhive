@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Tests\Support;
 
 use DateTimeImmutable;
-use Mfonte\Arkhive\Support\Clock;
+use Mfonte\Arkhive\Domain\Shared\Clock;
 
 final class FixedClock implements Clock
 {

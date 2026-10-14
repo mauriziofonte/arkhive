@@ -6,9 +6,9 @@ namespace Tests;
 
 use Illuminate\Contracts\Console\Kernel;
 use LaravelZero\Framework\Testing\TestCase as BaseTestCase;
-use Mfonte\Arkhive\Services\Context\Terminal;
-use Mfonte\Arkhive\Services\Output\LogStream;
-use Mfonte\Arkhive\Support\Clock;
+use Mfonte\Arkhive\Application\Port\Terminal;
+use Mfonte\Arkhive\Domain\Shared\Clock;
+use Mfonte\Arkhive\Infrastructure\Logging\LogStream;
 use Symfony\Component\Console\Command\Command;
 use Tests\Support\FakeTerminal;
 use Tests\Support\FixedClock;

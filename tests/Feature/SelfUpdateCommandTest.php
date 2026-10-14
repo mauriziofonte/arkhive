@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use Illuminate\Support\Facades\Artisan;
+use Mfonte\Arkhive\Application\Port\HttpClient;
+use Mfonte\Arkhive\Application\System\Dependencies;
 use Mfonte\Arkhive\Commands\SelfUpdateCommand;
 use Mfonte\Arkhive\ExitCode;
-use Mfonte\Arkhive\Services\System\Dependencies;
-use Mfonte\Arkhive\Services\Update\HttpClient;
 use Tests\Support\FakeBinaries;
 use Tests\Support\FakeHttpClient;
 use Tests\Support\FakeReleases;

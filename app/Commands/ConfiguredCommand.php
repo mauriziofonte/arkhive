@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace Mfonte\Arkhive\Commands;
 
+use Mfonte\Arkhive\Application\Configuration\ConfigLoader;
+use Mfonte\Arkhive\Application\Configuration\ConfigLocator;
+use Mfonte\Arkhive\Application\Port\Notifier;
+use Mfonte\Arkhive\Domain\Configuration\Config;
+use Mfonte\Arkhive\Domain\Notification\Notification;
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
-use Mfonte\Arkhive\Services\Config\Config;
-use Mfonte\Arkhive\Services\Config\ConfigLoader;
-use Mfonte\Arkhive\Services\Config\ConfigLocator;
-use Mfonte\Arkhive\Services\Notify\Notification;
-use Mfonte\Arkhive\Services\Notify\Notifier;
 use Symfony\Component\Console\Input\InputOption;
 
 /**
@@ -49,7 +49,7 @@ abstract class ConfiguredCommand extends ArkhiveCommand
      */
     protected function sendNotification(Config $config, Notification $notification): bool
     {
-        if ($config->notify === null || !Notifier::shouldSend($config->notify, $notification)) {
+        if ($config->notify === null || !$config->notify->wants($notification)) {
             return true;
         }
         try {

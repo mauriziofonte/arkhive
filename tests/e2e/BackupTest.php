@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Tests\e2e;
 
+use Mfonte\Arkhive\Domain\Exclusion\ExclusionConverter;
+use Mfonte\Arkhive\Domain\Exclusion\ResticPatternMatcher;
 use Mfonte\Arkhive\ExitCode;
-use Mfonte\Arkhive\Services\Exclusion\ExclusionConverter;
-use Mfonte\Arkhive\Services\Exclusion\ResticPatternMatcher;
 
 /**
  * spec §13.2 steps 1-4 and 8-11: the PHAR backs up a generated tree and the seeded databases to the

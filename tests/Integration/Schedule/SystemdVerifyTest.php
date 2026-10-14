@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Tests\Integration\Schedule;
 
-use Mfonte\Arkhive\Services\Schedule\Schedule;
-use Mfonte\Arkhive\Services\Schedule\SystemdUnits;
+use Mfonte\Arkhive\Domain\Schedule\Schedule;
+use Mfonte\Arkhive\Domain\Schedule\SystemdUnits;
 use PHPUnit\Framework\TestCase;
 use Tests\Support\TempDir;
 

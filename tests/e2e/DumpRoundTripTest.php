@@ -4,17 +4,17 @@ declare(strict_types=1);
 
 namespace Tests\e2e;
 
-use Mfonte\Arkhive\Services\Config\MysqlConfig;
-use Mfonte\Arkhive\Services\Config\PgsqlConfig;
-use Mfonte\Arkhive\Services\Dump\DumpStaging;
-use Mfonte\Arkhive\Services\Dump\MysqlDumper;
-use Mfonte\Arkhive\Services\Dump\PgsqlDumper;
-use Mfonte\Arkhive\Services\Process\Cleanup;
-use Mfonte\Arkhive\Services\Process\Signals;
-use Mfonte\Arkhive\Services\Process\SystemProcessRunner;
-use Mfonte\Arkhive\Services\System\BinaryFinder;
-use Mfonte\Arkhive\Services\System\Dependencies;
-use Mfonte\Arkhive\Services\System\Distro;
+use Mfonte\Arkhive\Application\Database\DumpStaging;
+use Mfonte\Arkhive\Application\Database\MysqlDumper;
+use Mfonte\Arkhive\Application\Database\PgsqlDumper;
+use Mfonte\Arkhive\Application\Process\Cleanup;
+use Mfonte\Arkhive\Application\System\BinaryFinder;
+use Mfonte\Arkhive\Application\System\Dependencies;
+use Mfonte\Arkhive\Domain\Configuration\MysqlConfig;
+use Mfonte\Arkhive\Domain\Configuration\PgsqlConfig;
+use Mfonte\Arkhive\Infrastructure\Process\Signals;
+use Mfonte\Arkhive\Infrastructure\Process\SystemProcessRunner;
+use Mfonte\Arkhive\Infrastructure\System\OsRelease;
 
 /**
  * Real dumps from the seeded MariaDB and PostgreSQL servers, imported into fresh databases: rows,
@@ -37,7 +37,7 @@ final class DumpRoundTripTest extends E2eTestCase
     {
         $this->runner = new SystemProcessRunner(new Signals());
         $this->finder = BinaryFinder::fromEnvironment();
-        $this->dependencies = new Dependencies($this->finder, Distro::detect());
+        $this->dependencies = new Dependencies($this->finder, OsRelease::detect());
         $this->cleanup = new Cleanup();
     }
 

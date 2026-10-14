@@ -4,15 +4,15 @@ declare(strict_types=1);
 
 namespace Tests\e2e;
 
-use Mfonte\Arkhive\Services\Config\MysqlConfig;
-use Mfonte\Arkhive\Services\Config\PgsqlConfig;
-use Mfonte\Arkhive\Services\Dump\MysqlDumper;
-use Mfonte\Arkhive\Services\Dump\PgsqlDumper;
-use Mfonte\Arkhive\Services\Dump\SecretFile;
-use Mfonte\Arkhive\Services\Process\Command;
-use Mfonte\Arkhive\Services\Process\Signals;
-use Mfonte\Arkhive\Services\Process\SystemProcessRunner;
-use Mfonte\Arkhive\Services\System\BinaryFinder;
+use Mfonte\Arkhive\Application\Database\MysqlDumper;
+use Mfonte\Arkhive\Application\Database\PgsqlDumper;
+use Mfonte\Arkhive\Application\Database\SecretFile;
+use Mfonte\Arkhive\Application\Process\Command;
+use Mfonte\Arkhive\Application\System\BinaryFinder;
+use Mfonte\Arkhive\Domain\Configuration\MysqlConfig;
+use Mfonte\Arkhive\Domain\Configuration\PgsqlConfig;
+use Mfonte\Arkhive\Infrastructure\Process\Signals;
+use Mfonte\Arkhive\Infrastructure\Process\SystemProcessRunner;
 
 /**
  * Queries against the seeded MariaDB and PostgreSQL servers, credentials through files as ArkHive does.

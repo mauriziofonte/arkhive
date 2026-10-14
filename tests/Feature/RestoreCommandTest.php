@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use Illuminate\Support\Facades\Artisan;
+use Mfonte\Arkhive\Application\Port\ProcessRunner;
+use Mfonte\Arkhive\Application\Port\Prompter;
+use Mfonte\Arkhive\Application\System\Dependencies;
 use Mfonte\Arkhive\ExitCode;
-use Mfonte\Arkhive\Services\Process\ProcessRunner;
-use Mfonte\Arkhive\Services\Restore\Prompter;
-use Mfonte\Arkhive\Services\System\Dependencies;
 use Tests\Support\FakeBinaries;
 use Tests\Support\FakeProcessRunner;
 use Tests\Support\FakePrompter;
@@ -88,8 +88,8 @@ final class RestoreCommandTest extends TestCase
             [['--snapshot' => 'latest'], '--target'],
             [['--snapshot' => 'latest', '--target' => "{$this->dir}/out"], '--yes'],
         ] as [$args, $flag]) {
-            $this->logStream = \Mfonte\Arkhive\Services\Output\LogStream::memory();
-            $this->app->instance(\Mfonte\Arkhive\Services\Output\LogStream::class, $this->logStream);
+            $this->logStream = \Mfonte\Arkhive\Infrastructure\Logging\LogStream::memory();
+            $this->app->instance(\Mfonte\Arkhive\Infrastructure\Logging\LogStream::class, $this->logStream);
 
             self::assertSame(ExitCode::USAGE, $this->restore(['--config' => $config, ...$args]));
             self::assertStringContainsString("is required in unattended mode: pass {$flag}", $this->logOutput());
@@ -121,8 +121,8 @@ final class RestoreCommandTest extends TestCase
             [['--repo' => '/srv/restic-repo', '--password-file' => "{$this->dir}/password"], "--password-file {$this->dir}/password is readable by group or others (mode 0644)", ExitCode::NO_PERMISSION],
             [['--repo' => '/srv/restic-repo', '--password-file' => "{$this->dir}/missing"], "--password-file {$this->dir}/missing does not exist", ExitCode::NO_INPUT],
         ] as [$args, $message, $exit]) {
-            $this->logStream = \Mfonte\Arkhive\Services\Output\LogStream::memory();
-            $this->app->instance(\Mfonte\Arkhive\Services\Output\LogStream::class, $this->logStream);
+            $this->logStream = \Mfonte\Arkhive\Infrastructure\Logging\LogStream::memory();
+            $this->app->instance(\Mfonte\Arkhive\Infrastructure\Logging\LogStream::class, $this->logStream);
 
             self::assertSame($exit, $this->restore($args), $message);
             self::assertStringContainsString($message, $this->logOutput());

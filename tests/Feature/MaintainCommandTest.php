@@ -5,11 +5,12 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use Illuminate\Support\Facades\Artisan;
+use Mfonte\Arkhive\Application\Port\Notifier;
+use Mfonte\Arkhive\Application\Port\ProcessRunner;
+use Mfonte\Arkhive\Application\System\Dependencies;
+use Mfonte\Arkhive\Application\System\Lock;
 use Mfonte\Arkhive\ExitCode;
-use Mfonte\Arkhive\Services\Notify\Notifier;
-use Mfonte\Arkhive\Services\Process\ProcessRunner;
-use Mfonte\Arkhive\Services\System\Dependencies;
-use Mfonte\Arkhive\Services\System\Lock;
+use Mfonte\Arkhive\Infrastructure\Mail\SmtpNotifier;
 use Tests\Support\CapturingTransport;
 use Tests\Support\FakeBinaries;
 use Tests\Support\FakeProcessRunner;
@@ -45,7 +46,7 @@ final class MaintainCommandTest extends TestCase
         $this->mail = new CapturingTransport();
         $this->app->instance(ProcessRunner::class, $this->runner);
         $this->app->instance(Dependencies::class, FakeBinaries::dependencies("{$this->dir}/bin", ['restic']));
-        $this->app->instance(Notifier::class, new Notifier($this->mail->factory()));
+        $this->app->instance(Notifier::class, new SmtpNotifier($this->mail->factory()));
     }
 
     private function damaged(): void

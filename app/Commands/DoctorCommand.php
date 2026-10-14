@@ -4,15 +4,15 @@ declare(strict_types=1);
 
 namespace Mfonte\Arkhive\Commands;
 
+use Mfonte\Arkhive\Application\Configuration\ConfigLocator;
+use Mfonte\Arkhive\Application\Diagnostics\Doctor;
+use Mfonte\Arkhive\Application\Port\ProcessRunner;
+use Mfonte\Arkhive\Application\Port\SnapshotStoreFactory;
+use Mfonte\Arkhive\Application\System\Dependencies;
+use Mfonte\Arkhive\Domain\Configuration\ResticSettings;
+use Mfonte\Arkhive\Domain\Diagnostics\Check;
+use Mfonte\Arkhive\Domain\Diagnostics\CheckStatus;
 use Mfonte\Arkhive\ExitCode;
-use Mfonte\Arkhive\Services\Config\ConfigLocator;
-use Mfonte\Arkhive\Services\Config\ResticSettings;
-use Mfonte\Arkhive\Services\Doctor\Check;
-use Mfonte\Arkhive\Services\Doctor\CheckStatus;
-use Mfonte\Arkhive\Services\Doctor\Doctor;
-use Mfonte\Arkhive\Services\Process\ProcessRunner;
-use Mfonte\Arkhive\Services\Restic\ResticFactory;
-use Mfonte\Arkhive\Services\System\Dependencies;
 
 /**
  * spec §10.6: diagnosis of the environment and the repository. Exit 0 when everything is fine,
@@ -31,7 +31,7 @@ final class DoctorCommand extends RepositoryCommand
     {
         $doctor = new Doctor(
             $this->laravel->make(Dependencies::class),
-            $this->laravel->make(ResticFactory::class),
+            $this->laravel->make(SnapshotStoreFactory::class),
             $this->laravel->make(ProcessRunner::class),
             $this->cleanup,
             $this->clock,

@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace Mfonte\Arkhive\Commands;
 
+use Mfonte\Arkhive\Application\Port\Prompter;
+use Mfonte\Arkhive\Application\Schedule\Invocation;
+use Mfonte\Arkhive\Domain\Schedule\CronTable;
+use Mfonte\Arkhive\Domain\Schedule\Schedule;
+use Mfonte\Arkhive\Domain\Schedule\SystemdUnits;
 use Mfonte\Arkhive\Exceptions\UsageException;
 use Mfonte\Arkhive\ExitCode;
-use Mfonte\Arkhive\Services\Restore\Prompter;
-use Mfonte\Arkhive\Services\Schedule\CronTable;
-use Mfonte\Arkhive\Services\Schedule\Invocation;
-use Mfonte\Arkhive\Services\Schedule\Schedule;
-use Mfonte\Arkhive\Services\Schedule\SystemdUnits;
 use Phar;
 
 /**

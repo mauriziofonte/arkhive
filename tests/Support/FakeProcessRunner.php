@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Tests\Support;
 
-use Mfonte\Arkhive\Services\Process\Command;
-use Mfonte\Arkhive\Services\Process\ProcessResult;
-use Mfonte\Arkhive\Services\Process\ProcessRunner;
+use Mfonte\Arkhive\Application\Port\ProcessRunner;
+use Mfonte\Arkhive\Application\Process\Command;
+use Mfonte\Arkhive\Application\Process\ProcessResult;
 use RuntimeException;
 
 /**

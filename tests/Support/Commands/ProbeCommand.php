@@ -26,17 +26,17 @@ final class ProbeCommand extends ArkhiveCommand
         return $body($this);
     }
 
-    public function logger(): \Mfonte\Arkhive\Services\Output\Logger
+    public function logger(): \Mfonte\Arkhive\Application\Output\Logger
     {
         return $this->log;
     }
 
-    public function interrupts(): \Mfonte\Arkhive\Services\Process\Signals
+    public function interrupts(): \Mfonte\Arkhive\Infrastructure\Process\Signals
     {
         return $this->interrupts;
     }
 
-    public function cleanupTasks(): \Mfonte\Arkhive\Services\Process\Cleanup
+    public function cleanupTasks(): \Mfonte\Arkhive\Application\Process\Cleanup
     {
         return $this->cleanup;
     }

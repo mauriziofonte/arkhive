@@ -4,16 +4,16 @@ declare(strict_types=1);
 
 namespace Mfonte\Arkhive\Commands;
 
+use Mfonte\Arkhive\Application\Backup\BackupRunner;
+use Mfonte\Arkhive\Application\Database\DatabaseDumps;
+use Mfonte\Arkhive\Application\Port\SnapshotStoreFactory;
+use Mfonte\Arkhive\Domain\Backup\BackupReport;
+use Mfonte\Arkhive\Domain\Configuration\Config;
+use Mfonte\Arkhive\Domain\Notification\Notification;
+use Mfonte\Arkhive\Domain\Shared\Bytes;
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
 use Mfonte\Arkhive\Exceptions\InterruptedException;
 use Mfonte\Arkhive\ExitCode;
-use Mfonte\Arkhive\Services\Backup\BackupReport;
-use Mfonte\Arkhive\Services\Backup\BackupRunner;
-use Mfonte\Arkhive\Services\Config\Config;
-use Mfonte\Arkhive\Services\Dump\DatabaseDumps;
-use Mfonte\Arkhive\Services\Notify\Notification;
-use Mfonte\Arkhive\Services\Restic\ResticFactory;
-use Mfonte\Arkhive\Support\Bytes;
 
 final class BackupCommand extends ConfiguredCommand
 {
@@ -34,7 +34,7 @@ final class BackupCommand extends ConfiguredCommand
         $config = $this->loadConfig();
 
         $runner = new BackupRunner(
-            $this->laravel->make(ResticFactory::class),
+            $this->laravel->make(SnapshotStoreFactory::class),
             $this->laravel->make(DatabaseDumps::class),
             $this->cleanup,
             $this->clock,
