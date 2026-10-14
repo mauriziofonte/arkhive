@@ -14,6 +14,11 @@ interface Terminal
     public function stdoutIsTty(): bool;
 
     /**
+     * "device:inode" of stderr, as systemd writes it in $JOURNAL_STREAM; null when unknown.
+     */
+    public function stderrIdentity(): ?string;
+
+    /**
      * @return array<string, string>
      */
     public function environment(): array;

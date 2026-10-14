@@ -12,6 +12,8 @@ use Mfonte\Arkhive\Domain\Configuration\RemovedKeys;
 use Mfonte\Arkhive\Domain\Configuration\ResticSettings;
 use Mfonte\Arkhive\Domain\Exclusion\ExclusionConverter;
 use Mfonte\Arkhive\Domain\Exclusion\ResticPatternMatcher;
+use Mfonte\Arkhive\Domain\Execution\LogTarget;
+use Mfonte\Arkhive\Domain\Execution\SyslogFacility;
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
 use Mfonte\Arkhive\Exceptions\ConfigException;
 
@@ -31,6 +33,7 @@ final class ConfigFactory
         'WITH_MYSQL', 'MYSQL_HOST', 'MYSQL_PORT', 'MYSQL_USER', 'MYSQL_PASSWORD', 'MYSQL_DATABASES',
         'WITH_PGSQL', 'PGSQL_HOST', 'PGSQL_PORT', 'PGSQL_USER', 'PGSQL_PASSWORD', 'PGSQL_DATABASES', 'PGSQL_DUMP_OPTIONS',
         'NOTIFY', 'NOTIFY_ON', 'SMTP_HOST', 'SMTP_PORT', 'SMTP_ENCRYPTION', 'SMTP_USER', 'SMTP_PASSWORD', 'SMTP_FROM', 'SMTP_TO',
+        'LOG_TARGET', 'SYSLOG_FACILITY',
     ];
 
     public const DEFAULT_PGSQL_DUMP_OPTIONS = '--no-owner --no-privileges';
@@ -148,6 +151,7 @@ final class ConfigFactory
         $pgsql = $this->boolean('WITH_PGSQL') ? $this->pgsql() : null;
         $dumpDirectory = $this->dumpDirectory($mysql !== null || $pgsql !== null, $backupPaths, $excludes);
         $notify = $this->boolean('NOTIFY') ? $this->notify() : null;
+        [$logTarget, $facility] = $this->logging();
 
         $config = new Config(
             $this->source,
@@ -165,6 +169,8 @@ final class ConfigFactory
             $notify,
             array_values(array_diff(array_keys($this->values), self::KNOWN_KEYS)),
             $this->boolean('DUMP_REQUIRED'),
+            $logTarget,
+            $facility,
         );
 
         if ($this->errors !== []) {
@@ -273,6 +279,23 @@ final class ConfigFactory
             $databases,
             $options,
         );
+    }
+
+    /**
+     * @return array{LogTarget|null, SyslogFacility}
+     */
+    private function logging(): array
+    {
+        $target = $this->optional('LOG_TARGET') ?? LogTarget::AUTO;
+        if (!LogTarget::isName($target)) {
+            $this->errors[] = 'LOG_TARGET must be ' . LogTarget::CHOICES . ", got \"{$target}\"";
+        }
+        $facility = $this->optional('SYSLOG_FACILITY') ?? SyslogFacility::Daemon->value;
+        if (SyslogFacility::tryFrom($facility) === null) {
+            $this->errors[] = "SYSLOG_FACILITY must be user, daemon or local0 to local7, got \"{$facility}\"";
+        }
+
+        return [LogTarget::tryFrom($target), SyslogFacility::tryFrom($facility) ?? SyslogFacility::Daemon];
     }
 
     private function notify(): NotifyConfig

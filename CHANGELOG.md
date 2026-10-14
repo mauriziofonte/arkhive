@@ -48,6 +48,15 @@ All notable changes to ArkHive are documented in this file. The format follows
   timers; it rewrites only what changed and never overwrites a unit it did not generate.
   `arkhive schedule --status [--json]` shows each timer's state, next and last run and last
   result, exit 1 when a timer is missing, disabled or its last run failed.
+- Logging to the systemd journal through its native protocol, with structured fields
+  (`ARKHIVE_COMMAND`, `ARKHIVE_RUN_ID`, `ARKHIVE_PHASE`, `ARKHIVE_LEVEL`, the event's data as
+  `ARKHIVE_<KEY>`), chosen automatically when stderr is connected to the journal; or to the local
+  syslog daemon (`/dev/log`, facility `SYSLOG_FACILITY`) for hosts without systemd. New option
+  `--log-target auto|stderr|journal|syslog` and keys `LOG_TARGET`, `SYSLOG_FACILITY`; stderr is
+  the fallback when neither can be reached, and `doctor` reports the target.
+- `backup`, `maintain`, `drill` and `restore` open and close with journal events that carry a
+  `MESSAGE_ID` (`journalctl MESSAGE_ID=...` lists every failed backup) and `ARKHIVE_EXIT_STATUS`;
+  `contrib/systemd/arkhive.catalog` explains them in `journalctl -x`.
 - `tests/Compat`: ArkHive's commands against a real restic (`ARKHIVE_TEST_RESTIC`), run in CI for
   every release from 0.11.0 to the current one, including an `sftp:` repository on a local sshd.
 

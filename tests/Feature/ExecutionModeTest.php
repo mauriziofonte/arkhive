@@ -8,6 +8,7 @@ use Mfonte\Arkhive\ExitCode;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 use Tests\Support\Cli;
+use Tests\Support\TempDir;
 
 /**
  * The real entry point under a pseudo-TTY and without a TTY (spec §11, §13.4).
@@ -15,6 +16,8 @@ use Tests\Support\Cli;
 #[Group('process')]
 final class ExecutionModeTest extends TestCase
 {
+    use TempDir;
+
     public function testWithoutATerminalOutputIsTimestampedPlainLinesWithoutColour(): void
     {
         $result = Cli::run(['internal:context', '--sample-log']);
@@ -23,7 +26,7 @@ final class ExecutionModeTest extends TestCase
         self::assertMatchesRegularExpression('/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d[+-]\d\d:\d\d warning sample warning$/m', $result->stderr);
         self::assertStringNotContainsString("\033[", $result->output());
         self::assertStringNotContainsString('⚠️', $result->output());
-        self::assertSame('{"interactive":false,"systemd":false,"colour":false,"log_format":"plain","reason":"no terminal"}', trim($result->stdout));
+        self::assertSame('{"interactive":false,"systemd":false,"colour":false,"log_format":"plain","reason":"no terminal","log_target":"stderr","log_target_reason":"default"}', trim($result->stdout));
     }
 
     public function testUnderAPseudoTerminalOutputIsHumanWithColour(): void
@@ -84,5 +87,34 @@ final class ExecutionModeTest extends TestCase
 
         self::assertSame(ExitCode::USAGE, $result->exitCode);
         self::assertStringContainsString('error --interactive needs a terminal on stdin', $result->stderr);
+    }
+
+    /**
+     * The real stderr's device and inode against $JOURNAL_STREAM: the journal is chosen only while
+     * stderr is still the stream systemd connected.
+     */
+    public function testTheJournalIsChosenOnlyWhenStderrIsTheJournalStream(): void
+    {
+        $dir = $this->tempDir();
+        $stderr = "{$dir}/stderr";
+        touch($stderr);
+        $stat = stat($stderr);
+        self::assertIsArray($stat);
+
+        foreach (["{$stat['dev']}:{$stat['ino']}" => 'journal', "{$stat['dev']}:1" => 'stderr'] as $stream => $target) {
+            $process = proc_open(
+                [PHP_BINARY, dirname(__DIR__, 2) . '/arkhive', 'internal:context'],
+                [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['file', $stderr, 'a']],
+                $pipes,
+                null,
+                ['PATH' => (string) getenv('PATH'), 'LC_ALL' => 'C', 'INVOCATION_ID' => '0123456789abcdef', 'JOURNAL_STREAM' => $stream],
+            );
+            self::assertIsResource($process);
+            fclose($pipes[0]);
+            $stdout = (string) stream_get_contents($pipes[1]);
+            fclose($pipes[1]);
+            self::assertSame(0, proc_close($process), (string) file_get_contents($stderr));
+            self::assertStringContainsString("\"log_target\":\"{$target}\"", $stdout);
+        }
     }
 }

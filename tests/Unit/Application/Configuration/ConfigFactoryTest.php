@@ -10,6 +10,8 @@ use Mfonte\Arkhive\Application\Configuration\ConfigLocator;
 use Mfonte\Arkhive\Application\Configuration\ConfigParser;
 use Mfonte\Arkhive\Domain\Configuration\Config;
 use Mfonte\Arkhive\Domain\Configuration\RemovedKeys;
+use Mfonte\Arkhive\Domain\Execution\LogTarget;
+use Mfonte\Arkhive\Domain\Execution\SyslogFacility;
 use Mfonte\Arkhive\Exceptions\ConfigException;
 use Mfonte\Arkhive\ExitCode;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -278,6 +280,25 @@ final class ConfigFactoryTest extends TestCase
     {
         self::assertSame(['a', 'b c', 'd e', 'f"g'], ConfigFactory::splitWords(" a \"b c\"\td\\ e f\\\"g "));
         self::assertSame([], ConfigFactory::splitWords('   '));
+    }
+
+    public function testLoggingKeys(): void
+    {
+        $default = $this->create();
+        self::assertNull($default->logTarget, 'auto');
+        self::assertSame(SyslogFacility::Daemon, $default->syslogFacility);
+
+        self::assertNull($this->create(['LOG_TARGET' => 'auto'])->logTarget);
+        $syslog = $this->create(['LOG_TARGET' => 'syslog', 'SYSLOG_FACILITY' => 'local5']);
+        self::assertSame(LogTarget::Syslog, $syslog->logTarget);
+        self::assertSame(SyslogFacility::Local5, $syslog->syslogFacility);
+        self::assertSame([], $syslog->unknownKeys);
+
+        $this->assertInvalid(
+            ['LOG_TARGET' => 'file', 'SYSLOG_FACILITY' => 'kern'],
+            'LOG_TARGET must be auto, stderr, journal or syslog, got "file"',
+            'SYSLOG_FACILITY must be user, daemon or local0 to local7, got "kern"',
+        );
     }
 
     public function testInvalidResticValues(): void

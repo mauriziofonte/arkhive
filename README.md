@@ -198,6 +198,9 @@ arkhive self-update --allow-major    # needed to cross a major version (read the
    SMTP_PASSWORD=change-me
    SMTP_FROM=arkhive@example.com
    SMTP_TO=admin@example.com
+   # Where log events go: auto (the journal under systemd), stderr, journal or syslog
+   #LOG_TARGET=auto
+   #SYSLOG_FACILITY=daemon
    ```
 
    The repository ships the same example as `.arkhive-config.example`.
@@ -271,6 +274,8 @@ Syntax: one `KEY=value` per line, optionally prefixed by `export`. `'single quot
 | `SMTP_USER`, `SMTP_PASSWORD` | no | | Leave both empty for an unauthenticated relay; the mechanism is negotiated automatically |
 | `SMTP_FROM` | with `NOTIFY` | | A valid e-mail address |
 | `SMTP_TO` | with `NOTIFY` | | One or more addresses, comma-separated |
+| `LOG_TARGET` | no | `auto` | Where log events go: `auto` (the journal when stderr is connected to it, as in a systemd unit; stderr otherwise), `stderr`, `journal` or `syslog`. `--log-target` overrides it. See [Logging](#logging) |
+| `SYSLOG_FACILITY` | no | `daemon` | Facility for `LOG_TARGET=syslog`: `user`, `daemon`, `local0` ... `local7` |
 
 A notification failure never turns a successful run into a failure: it is logged and the exit code becomes 3. A temporary refusal (a 4xx answer such as greylisting) or a server that cannot be reached is tried twice more first, about 15 and 45 seconds later.
 
@@ -301,6 +306,7 @@ Every command accepts:
 | `--interactive` | Force interactive mode (refused without a terminal on stdin) |
 | `--log-format text\|json` | `json`: one JSON object per log event |
 | `--log-file <path>` | Also append the log lines to this file, rotated by size |
+| `--log-target auto\|stderr\|journal\|syslog` | Where log events go (default `auto`, or `LOG_TARGET`): see [Logging](#logging) |
 | `-v`, `-vv`, `-vvv` | Also show debug events |
 
 Commands that read the configuration accept `--config <path>`. The commands that only read the repository (`restore`, `ls`, `find`, `mount`, `status`, `drill`, `doctor`) also work on a host with no configuration at all:
@@ -506,6 +512,47 @@ The same events in each log format:
 Levels and their journald priorities: `error` `<3>`, `warning` `<4>`, `notice` `<5>`, `info` and `success` `<6>`, `debug` `<7>` (debug only with `-v`), so `journalctl -p warning -u arkhive-backup.service` shows the problems. `--log-file <path>` appends the plain format (JSON with `--log-format json`) in every mode; at 10 MiB the file is rotated to `<path>.1` ... `<path>.5`, the oldest dropped.
 
 SIGINT and SIGTERM during a run stop restic cleanly, remove temporary files and the dump staging, release the lock and exit 130 or 143.
+
+## Logging
+
+Log events go to one target, chosen by `--log-target`, else `LOG_TARGET` in the configuration, else `auto`:
+
+| Target | Where | When `auto` picks it |
+|---|---|---|
+| `journal` | the systemd journal, through its native protocol (`/run/systemd/journal/socket`), with structured fields | stderr is the stream systemd connected to the journal (`$JOURNAL_STREAM` names stderr's device and inode): any unit, including the ones `arkhive schedule` writes |
+| `syslog` | the local syslog daemon (`/dev/log`: rsyslog, syslog-ng, busybox), as `arkhive[PID]` with facility `SYSLOG_FACILITY` (default `daemon`), the fields appended as `key=value` | never: for hosts without systemd (OpenRC, runit, cron) |
+| `stderr` | stderr, in the formats above | anything else |
+
+A journal or syslog daemon that cannot be reached is not an error: the events go to stderr. A terminal shows the events whatever the target. `--log-file` works with every target. `arkhive doctor` reports the target, why it was chosen, and warns when its socket is missing.
+
+Every event in the journal carries `MESSAGE`, `PRIORITY`, `SYSLOG_IDENTIFIER=arkhive` and:
+
+| Field | Value |
+|---|---|
+| `ARKHIVE_COMMAND` | `backup`, `maintain`, `drill`, `restore`, ... |
+| `ARKHIVE_RUN_ID` | 128-bit id of this run (all its events, also outside systemd) |
+| `ARKHIVE_VERSION` | ArkHive's version |
+| `ARKHIVE_LEVEL` | `debug`, `info`, `success`, `notice`, `warning` or `error` (`success` is priority 6, like `info`) |
+| `ARKHIVE_PHASE` | the current step (`Backing up /srv/www /etc`, `Dumping MySQL database shop`) |
+| `ARKHIVE_<KEY>` | the event's own data, as in `--log-format json`: `ARKHIVE_SNAPSHOT_ID`, `ARKHIVE_DATA_ADDED`, `ARKHIVE_FILES`... |
+
+`backup`, `maintain`, `drill` and `restore` open with a "started" event and close with a "succeeded" (exit 0 or 3) or "failed" event carrying `ARKHIVE_EXIT_STATUS` and, for a backup, `ARKHIVE_SNAPSHOT`. These events have a `MESSAGE_ID`, written only to the journal and syslog:
+
+| Event | `MESSAGE_ID` |
+|---|---|
+| backup started / succeeded / failed | `038e5a6f18f6184144c8b36819606286` / `763619ea04f7dbbf790ad973e212db7a` / `0dca6b902c5ac3d8b27d93e0ffcc4c5e` |
+| maintain started / succeeded / failed | `bedaa88476b29d5823188e7b4166a770` / `6dc1eccd2541e9f90d03624658f290b5` / `4d903cbc18aebe5d3f5104e8ffafb680` |
+| drill started / succeeded / failed | `4ab9cf2c02c5ec5cec9909a01e690f8d` / `9a5fe499bf6fa3dd1568b001e32b99bd` / `f7cdf89ae28a1c3f76aa4e8eb6dafb68` |
+| restore started / succeeded / failed | `7c93417303d1095eb82437b0d94fb351` / `45d7795db9c8033e2dad8ea399e8952b` / `0786ecc48c256aa9399d4030f793119c` |
+
+```sh
+journalctl MESSAGE_ID=0dca6b902c5ac3d8b27d93e0ffcc4c5e          # every failed backup
+journalctl ARKHIVE_RUN_ID=<id> -o verbose                        # one run, with all its fields
+journalctl -t arkhive -p warning --since yesterday               # the problems of the last day
+journalctl -t arkhive ARKHIVE_COMMAND=maintain -o json           # for a monitoring script
+```
+
+[`contrib/systemd/arkhive.catalog`](contrib/systemd/arkhive.catalog) explains each event (what the exit status means, how to find the run's error): copy it to `/usr/lib/systemd/catalog/` and run `journalctl --update-catalog`; then `journalctl -x` shows the explanation under each event.
 
 ## Scheduling
 

@@ -6,6 +6,7 @@ namespace Tests;
 
 use Illuminate\Contracts\Console\Kernel;
 use LaravelZero\Framework\Testing\TestCase as BaseTestCase;
+use Mfonte\Arkhive\Application\Port\EventLogs;
 use Mfonte\Arkhive\Application\Port\Pause;
 use Mfonte\Arkhive\Application\Port\RunStateStore;
 use Mfonte\Arkhive\Application\Port\ServiceManager;
@@ -16,12 +17,13 @@ use Symfony\Component\Console\Command\Command;
 use Tests\Support\FakeTerminal;
 use Tests\Support\FixedClock;
 use Tests\Support\InMemoryRunStateStore;
+use Tests\Support\RecordingEventLogs;
 use Tests\Support\RecordingPause;
 use Tests\Support\RecordingServiceManager;
 
 /**
  * In-process command tests: the terminal, the log stream, the clock, the waits between retries and
- * the run state store and systemd's notify socket are fakes.
+ * the run state store, systemd's notify socket, the journal and syslog are fakes.
  */
 abstract class TestCase extends BaseTestCase
 {
@@ -32,6 +34,8 @@ abstract class TestCase extends BaseTestCase
     protected InMemoryRunStateStore $runs;
     /** systemd's notify socket; not listening unless a test turns it on */
     protected RecordingServiceManager $systemd;
+    /** the journal and syslog */
+    protected RecordingEventLogs $events;
 
     protected function setUp(): void
     {
@@ -49,6 +53,8 @@ abstract class TestCase extends BaseTestCase
         $this->app->instance(RunStateStore::class, $this->runs);
         $this->systemd = new RecordingServiceManager(listening: false);
         $this->app->instance(ServiceManager::class, $this->systemd);
+        $this->events = new RecordingEventLogs();
+        $this->app->instance(EventLogs::class, $this->events);
     }
 
     protected function registerCommand(Command $command): void

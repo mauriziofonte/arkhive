@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Mfonte\Arkhive\Domain\Configuration;
 
+use Mfonte\Arkhive\Domain\Execution\LogTarget;
+use Mfonte\Arkhive\Domain\Execution\SyslogFacility;
+
 /**
  * A validated 2.0 configuration.
  */
@@ -15,6 +18,7 @@ final readonly class Config
      * @param list<string> $resticExcludes    converted restic patterns
      * @param list<string> $unknownKeys
      * @param bool         $dumpRequired a failed dump fails the run (DUMP_REQUIRED), instead of a warning
+     * @param LogTarget|null $logTarget  LOG_TARGET; null: auto
      */
     public function __construct(
         public string $source,
@@ -32,6 +36,8 @@ final readonly class Config
         public ?NotifyConfig $notify,
         public array $unknownKeys,
         public bool $dumpRequired = false,
+        public ?LogTarget $logTarget = null,
+        public SyslogFacility $syslogFacility = SyslogFacility::Daemon,
     ) {
     }
 

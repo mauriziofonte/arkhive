@@ -26,6 +26,8 @@ use Mfonte\Arkhive\Domain\Configuration\ResticSettings;
 use Mfonte\Arkhive\Domain\Diagnostics\Check;
 use Mfonte\Arkhive\Domain\Diagnostics\CheckStatus;
 use Mfonte\Arkhive\Domain\Execution\ExecutionContext;
+use Mfonte\Arkhive\Domain\Execution\LogTarget;
+use Mfonte\Arkhive\Domain\Execution\SyslogFacility;
 use Mfonte\Arkhive\Domain\Repository\ResticCapabilities;
 use Mfonte\Arkhive\Domain\Repository\Snapshot;
 use Mfonte\Arkhive\Domain\Repository\Snapshots;
@@ -92,6 +94,8 @@ final class Doctor
         private readonly string $phpVersion = PHP_VERSION,
         private readonly string $selinuxEnforce = '/sys/fs/selinux/enforce',
         private readonly ?RunJournal $runs = null,
+        /** @var array<string, string> log target => socket, instead of LogTarget::socket() (tests) */
+        private readonly array $logSockets = [],
     ) {
         $this->extensionLoaded = $extensionLoaded ?? static fn (string $extension): bool => extension_loaded($extension);
         $this->processExists = $processExists ?? static fn (int $pid): bool => function_exists('posix_kill') && posix_kill($pid, 0);
@@ -122,6 +126,7 @@ final class Doctor
         $this->dumpSpace();
         $this->clockSkew();
         $this->add('execution context', CheckStatus::Info, $this->context->describe());
+        $this->logTarget();
         $this->selinux();
 
         return $this->checks;
@@ -171,6 +176,24 @@ final class Doctor
             return;
         }
         $this->add('PHP', CheckStatus::Ok, "PHP {$this->phpVersion} with " . implode(', ', $loaded));
+    }
+
+    /**
+     * Where this command's events go, with the configuration's LOG_TARGET unless --log-target was given.
+     */
+    private function logTarget(): void
+    {
+        [$target, $reason] = $this->config?->logTarget === null || $this->context->logTargetReason === '--log-target'
+            ? [$this->context->logTarget, $this->context->logTargetReason]
+            : [$this->config->logTarget, 'LOG_TARGET'];
+        $what = $target === LogTarget::Syslog ? 'syslog, facility ' . ($this->config->syslogFacility ?? SyslogFacility::Daemon)->value : $target->value;
+        $socket = $this->logSockets[$target->value] ?? $target->socket();
+        if ($socket !== null && !file_exists($socket)) {
+            $this->add('log target', CheckStatus::Warning, "{$what} ({$reason}), but {$socket} does not exist: events go to stderr", $target === LogTarget::Syslog ? 'Start a syslog daemon (rsyslog, syslog-ng), or set LOG_TARGET=stderr' : 'The journal is only there under systemd: set LOG_TARGET=auto or stderr');
+
+            return;
+        }
+        $this->add('log target', CheckStatus::Info, "{$what} ({$reason})" . ($target === LogTarget::Stderr ? '' : ", via {$socket}"));
     }
 
     private function distro(): void

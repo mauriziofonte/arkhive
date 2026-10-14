@@ -17,6 +17,7 @@ use Mfonte\Arkhive\Domain\Diagnostics\Check;
 use Mfonte\Arkhive\Domain\Diagnostics\CheckStatus;
 use Mfonte\Arkhive\Domain\Execution\ExecutionContext;
 use Mfonte\Arkhive\Domain\Execution\LogFormat;
+use Mfonte\Arkhive\Domain\Execution\LogTarget;
 use Mfonte\Arkhive\Infrastructure\Restic\ResticFactory;
 use PHPUnit\Framework\TestCase;
 use Tests\Support\FakeBinaries;
@@ -35,7 +36,7 @@ final class DoctorTest extends TestCase
     use TempDir;
     use WritesConfig;
 
-    private const ORDER = ['PHP', 'distribution', 'restic', 'configuration', 'removed 1.x keys', 'password file', 'SSH', 'repository', 'latest snapshot', 'last runs', 'dump space', 'clock', 'execution context', 'SELinux'];
+    private const ORDER = ['PHP', 'distribution', 'restic', 'configuration', 'removed 1.x keys', 'password file', 'SSH', 'repository', 'latest snapshot', 'last runs', 'dump space', 'clock', 'execution context', 'log target', 'SELinux'];
 
     private FakeProcessRunner $runner;
     private FakeRestic $restic;
@@ -64,9 +65,11 @@ final class DoctorTest extends TestCase
     }
 
     /**
+     * @param array<string, string> $logSockets
+     *
      * @return array<string, Check>
      */
-    private function diagnose(?string $config = null, ?ResticSettings $bareMetal = null, ?string $selinux = null): array
+    private function diagnose(?string $config = null, ?ResticSettings $bareMetal = null, ?string $selinux = null, ?ExecutionContext $context = null, array $logSockets = []): array
     {
         $dependencies = $this->dependencies();
         $doctor = new Doctor(
@@ -75,7 +78,7 @@ final class DoctorTest extends TestCase
             $this->runner,
             $this->cleanup,
             $this->clock,
-            new ExecutionContext(false, false, false, LogFormat::Plain, 'no terminal'),
+            $context ?? new ExecutionContext(false, false, false, LogFormat::Plain, 'no terminal'),
             ['ARKHIVE_LOCK_DIR' => "{$this->dir}/locks"],
             0,
             'web1.example.com',
@@ -83,6 +86,7 @@ final class DoctorTest extends TestCase
             static fn (int $pid): bool => $pid === 4242,
             $this->phpVersion,
             $selinux ?? "{$this->dir}/no-selinux",
+            logSockets: $logSockets,
         );
         $checks = $doctor->run(new ConfigLocator("{$this->dir}/cwd", "{$this->dir}/home"), $config, $bareMetal);
         self::assertSame(self::ORDER, array_map(static fn (Check $c): string => $c->name, $checks), 'the order of spec §10.6');
@@ -115,7 +119,7 @@ final class DoctorTest extends TestCase
 
         self::assertSame([
             'PHP' => 'ok', 'distribution' => 'ok', 'restic' => 'ok', 'configuration' => 'ok', 'removed 1.x keys' => 'ok', 'password file' => 'ok',
-            'SSH' => 'skipped', 'repository' => 'ok', 'latest snapshot' => 'ok', 'last runs' => 'info', 'dump space' => 'skipped', 'clock' => 'ok', 'execution context' => 'info', 'SELinux' => 'skipped',
+            'SSH' => 'skipped', 'repository' => 'ok', 'latest snapshot' => 'ok', 'last runs' => 'info', 'dump space' => 'skipped', 'clock' => 'ok', 'execution context' => 'info', 'log target' => 'info', 'SELinux' => 'skipped',
         ], self::statuses($checks));
         self::assertSame('PHP 8.4.1 with phar, json, mbstring, posix, pcntl, curl', $checks['PHP']->message);
         self::assertSame('not recorded: no state directory', $checks['last runs']->message, 'no RunJournal given');
@@ -126,8 +130,36 @@ final class DoctorTest extends TestCase
         self::assertSame('/srv/restic-repo is reachable, the password opens it, no lock', $checks['repository']->message);
         self::assertSame('e82340a7 of web1.example.com at 2026-10-12 14:17 UTC (6 h ago)', $checks['latest snapshot']->message);
         self::assertSame('unattended (no terminal), log format plain', $checks['execution context']->message);
+        self::assertSame('stderr (default)', $checks['log target']->message);
         self::assertSame(CheckStatus::Ok, Doctor::overall(array_values($checks)));
         self::assertSame([], $this->cleanup->runAll());
+    }
+
+    public function testTheLogTargetOfTheConfigurationAndOfTheCommandLine(): void
+    {
+        touch("{$this->dir}/dev-log");
+        $sockets = ['syslog' => "{$this->dir}/dev-log", 'journal' => "{$this->dir}/no-journal"];
+        $config = $this->writeConfig(['LOG_TARGET' => 'syslog', 'SYSLOG_FACILITY' => 'local3']);
+
+        $checks = $this->diagnose($config, logSockets: $sockets);
+        self::assertSame(CheckStatus::Info, $checks['log target']->status);
+        self::assertSame("syslog, facility local3 (LOG_TARGET), via {$this->dir}/dev-log", $checks['log target']->message);
+
+        // --log-target wins over the configuration; a journal that is not there is a warning
+        $journal = (new ExecutionContext(false, false, false, LogFormat::Plain, 'no terminal'))->withLogTarget(LogTarget::Journal, '--log-target');
+        $checks = $this->diagnose($config, context: $journal, logSockets: $sockets);
+        self::assertSame(CheckStatus::Warning, $checks['log target']->status);
+        self::assertSame("journal (--log-target), but {$this->dir}/no-journal does not exist: events go to stderr", $checks['log target']->message);
+        self::assertSame('The journal is only there under systemd: set LOG_TARGET=auto or stderr', $checks['log target']->hint);
+
+        unlink("{$this->dir}/dev-log");
+        $checks = $this->diagnose($config, logSockets: $sockets);
+        self::assertSame(CheckStatus::Warning, $checks['log target']->status);
+        self::assertSame('Start a syslog daemon (rsyslog, syslog-ng), or set LOG_TARGET=stderr', $checks['log target']->hint);
+
+        $auto = (new ExecutionContext(false, true, false, LogFormat::Journald, 'systemd'))->withLogTarget(LogTarget::Journal, 'stderr is the journal');
+        touch("{$this->dir}/no-journal");
+        self::assertSame("journal (stderr is the journal), via {$this->dir}/no-journal", $this->diagnose($this->writeConfig(), context: $auto, logSockets: $sockets)['log target']->message);
     }
 
     public function testMissingResticNamesTheInstallCommandAndSkipsTheRepository(): void

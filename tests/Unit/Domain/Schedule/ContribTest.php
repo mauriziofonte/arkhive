@@ -4,14 +4,15 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Domain\Schedule;
 
+use Mfonte\Arkhive\Domain\Execution\MessageId;
 use Mfonte\Arkhive\Domain\Schedule\CronTable;
 use Mfonte\Arkhive\Domain\Schedule\Schedule;
 use Mfonte\Arkhive\Domain\Schedule\SystemdUnits;
 use PHPUnit\Framework\TestCase;
 
 /**
- * contrib/ holds what `arkhive schedule` prints for /usr/local/bin/arkhive and /etc/arkhive/config:
- * the examples cannot drift from the generator.
+ * contrib/ holds what `arkhive schedule` prints for /usr/local/bin/arkhive and /etc/arkhive/config,
+ * and the journal message catalog: the examples cannot drift from the generator.
  */
 final class ContribTest extends TestCase
 {
@@ -23,6 +24,7 @@ final class ContribTest extends TestCase
         foreach (SystemdUnits::render(self::schedule()) as $path => $unit) {
             $expected[basename($path)] = $unit;
         }
+        $expected['arkhive.catalog'] = MessageId::catalog();
         $actual = [];
         foreach (glob(self::CONTRIB . '/systemd/*') ?: [] as $file) {
             $actual[basename($file)] = (string) file_get_contents($file);

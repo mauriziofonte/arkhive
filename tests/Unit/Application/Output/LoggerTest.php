@@ -9,11 +9,15 @@ use Mfonte\Arkhive\Application\Service\ServiceStatus;
 use Mfonte\Arkhive\Domain\Execution\ExecutionContext;
 use Mfonte\Arkhive\Domain\Execution\LogFormat;
 use Mfonte\Arkhive\Domain\Execution\LogLevel;
+use Mfonte\Arkhive\Domain\Execution\LogTarget;
+use Mfonte\Arkhive\Domain\Execution\MessageId;
+use Mfonte\Arkhive\Domain\Execution\SyslogFacility;
 use Mfonte\Arkhive\Infrastructure\Logging\LogFile;
 use Mfonte\Arkhive\Infrastructure\Logging\LogStream;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Tests\Support\FixedClock;
+use Tests\Support\RecordingEventLogs;
 use Tests\Support\RecordingServiceManager;
 use Tests\Support\TempDir;
 
@@ -160,6 +164,85 @@ final class LoggerTest extends TestCase
         self::assertStringNotContainsString('42.0%', $stream->contents(), 'never drawn when unattended');
         self::assertFalse($this->logger(self::context(LogFormat::Journald), LogStream::memory())->wantsProgress());
         self::assertTrue($this->logger(self::context(LogFormat::Human, interactive: true), LogStream::memory())->wantsProgress());
+    }
+
+    public function testAnEventLogReplacesStderrAndKeepsStructuredFields(): void
+    {
+        $stream = LogStream::memory();
+        $events = new RecordingEventLogs();
+        $log = new Logger(self::context(LogFormat::Journald), $stream->resource(), null, new FixedClock(), false, null, $events->open(LogTarget::Journal, SyslogFacility::Daemon), ['ARKHIVE_COMMAND' => 'backup', 'ARKHIVE_RUN_ID' => 'r1']);
+
+        $log->info('Backing up /srv');
+        $log->warning('Skipped a file', ['path' => '/srv/a b', 'snapshot-id' => 'e82340a7', 'retried' => false, 'size' => 12, 'none' => null, '!!!' => 'dropped']);
+        $log->success('Backup done', ['ok' => true]);
+
+        self::assertSame('', $stream->contents(), 'delivered events are not written to stderr too');
+        self::assertSame(['Backing up /srv', 'Skipped a file', 'Backup done'], $events->messages());
+        self::assertSame(['ARKHIVE_COMMAND' => 'backup', 'ARKHIVE_RUN_ID' => 'r1', 'ARKHIVE_LEVEL' => 'info', 'ARKHIVE_PHASE' => 'Backing up /srv'], $events->events[0]['fields']);
+        self::assertSame([
+            'ARKHIVE_COMMAND' => 'backup',
+            'ARKHIVE_RUN_ID' => 'r1',
+            'ARKHIVE_LEVEL' => 'warning',
+            'ARKHIVE_PHASE' => 'Backing up /srv',
+            'ARKHIVE_PATH' => '/srv/a b',
+            'ARKHIVE_SNAPSHOT_ID' => 'e82340a7',
+            'ARKHIVE_RETRIED' => 'false',
+            'ARKHIVE_SIZE' => '12',
+        ], $events->events[1]['fields']);
+        self::assertSame(['ARKHIVE_COMMAND' => 'backup', 'ARKHIVE_RUN_ID' => 'r1', 'ARKHIVE_LEVEL' => 'success', 'ARKHIVE_OK' => 'true'], $events->events[2]['fields'], 'a step ends with success');
+        self::assertSame(['info', 'warning', 'success'], array_column($events->events, 'level'));
+        self::assertSame(1, $log->warningCount());
+    }
+
+    public function testAnUnreachableEventLogFallsBackToStderr(): void
+    {
+        $stream = LogStream::memory();
+        $events = new RecordingEventLogs(reachable: false);
+        $log = new Logger(self::context(LogFormat::Journald), $stream->resource(), null, new FixedClock(), false, null, $events->open(LogTarget::Journal, SyslogFacility::Daemon));
+
+        $log->error('restic failed');
+
+        self::assertSame("<3>restic failed\n", $stream->contents());
+    }
+
+    public function testATerminalStillShowsTheEvents(): void
+    {
+        $stream = LogStream::memory();
+        $events = new RecordingEventLogs();
+        $log = new Logger(self::context(LogFormat::Human, interactive: true), $stream->resource(), null, new FixedClock(), false, null, $events->open(LogTarget::Syslog, SyslogFacility::Daemon));
+
+        $log->info('Restoring');
+
+        self::assertSame("• Restoring\n", $stream->contents());
+        self::assertSame(['Restoring'], $events->messages());
+    }
+
+    public function testRunEventsGoOnlyToTheEventLogWithTheirMessageId(): void
+    {
+        $stream = LogStream::memory();
+        $path = $this->tempDir() . '/arkhive.log';
+        $log = new Logger(self::context(LogFormat::Plain), $stream->resource(), new LogFile($path), new FixedClock(), false, null, null, ['ARKHIVE_COMMAND' => 'backup']);
+
+        $log->opening(MessageId::BackupStarted, 'arkhive backup started');
+        $log->event(MessageId::BackupFailed, LogLevel::Error, 'arkhive backup failed with exit 69 (UNAVAILABLE)', ['exit_status' => 69]);
+        self::assertSame('', $stream->contents(), 'stderr has no message ids');
+
+        // the configuration chose syslog: the opening event is sent there, then everything else
+        $events = new RecordingEventLogs();
+        $log->useEvents($events->open(LogTarget::Syslog, SyslogFacility::Local3));
+        $log->event(MessageId::BackupSucceeded, LogLevel::Success, 'arkhive backup succeeded', ['exit_status' => 0, 'snapshot' => 'e82340a7']);
+
+        self::assertSame(['arkhive backup started', 'arkhive backup succeeded'], $events->messages());
+        self::assertSame(['syslog/local3', 'syslog/local3'], array_column($events->events, 'target'));
+        self::assertSame(['MESSAGE_ID' => MessageId::BackupStarted->value, 'ARKHIVE_COMMAND' => 'backup', 'ARKHIVE_LEVEL' => 'info'], $events->events[0]['fields']);
+        self::assertSame(['MESSAGE_ID' => MessageId::BackupSucceeded->value, 'ARKHIVE_COMMAND' => 'backup', 'ARKHIVE_LEVEL' => 'success', 'ARKHIVE_EXIT_STATUS' => '0', 'ARKHIVE_SNAPSHOT' => 'e82340a7'], $events->events[1]['fields']);
+        self::assertSame('', $stream->contents());
+        self::assertSame('', (string) @file_get_contents($path), 'nor does the log file');
+
+        $log->useEvents(null);
+        $log->info('back on stderr');
+        self::assertStringEndsWith(" info back on stderr\n", $stream->contents());
+        self::assertCount(2, $events->events);
     }
 
     public function testCountsWarningsAndErrors(): void

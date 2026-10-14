@@ -33,6 +33,9 @@ abstract class ConfiguredCommand extends ArkhiveCommand
     /** whether this run sent a notification (the OnFailure unit then does not send another) */
     private bool $runNotified = false;
 
+    /** the snapshot of the run that just ended, for the event closing it */
+    private ?string $endedSnapshot = null;
+
     /** why the last notification could not be sent */
     protected ?ArkhiveException $notificationFailure = null;
 
@@ -48,6 +51,7 @@ abstract class ConfiguredCommand extends ArkhiveCommand
         $environment = $this->terminal->environment();
         $loader = new ConfigLoader(ConfigLocator::fromEnvironment($environment), self::hostname());
         $config = $loader->load(self::stringOption($this->option('config')), $checkSecrets);
+        $this->configureLogging($config->logTarget, $config->syslogFacility);
         $this->log->debug("Configuration: {$config->source}");
         if ($config->unknownKeys !== []) {
             $this->log->warning("Unknown keys in {$config->source}, ignored: " . implode(', ', $config->unknownKeys));
@@ -73,6 +77,7 @@ abstract class ConfiguredCommand extends ArkhiveCommand
         $job = $this->recordedJob();
         // a command object serves every call in the process: nothing of this run may leak into the next
         [$snapshot, $warnings, $notified] = [$this->runSnapshot, $this->runWarnings, $this->runNotified];
+        $this->endedSnapshot = $snapshot;
         $this->runSnapshot = null;
         $this->runWarnings = [];
         $this->runNotified = false;
@@ -88,6 +93,12 @@ abstract class ConfiguredCommand extends ArkhiveCommand
         } catch (Throwable $e) {
             $this->log->warning("Could not record the outcome of this {$job}: {$e->getMessage()}");
         }
+    }
+
+    #[\Override]
+    protected function outcomeData(): array
+    {
+        return ['snapshot' => $this->endedSnapshot];
     }
 
     protected static function hostname(): string

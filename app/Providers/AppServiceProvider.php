@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Mfonte\Arkhive\Providers;
 
 use Illuminate\Support\ServiceProvider;
+use Mfonte\Arkhive\Application\Port\EventLogs;
 use Mfonte\Arkhive\Application\Port\HttpClient;
 use Mfonte\Arkhive\Application\Port\Notifier;
 use Mfonte\Arkhive\Application\Port\Pause;
@@ -28,6 +29,7 @@ use Mfonte\Arkhive\Infrastructure\Console\SystemTerminal;
 use Mfonte\Arkhive\Infrastructure\Http\CurlHttpClient;
 use Mfonte\Arkhive\Infrastructure\Http\StreamHttpClient;
 use Mfonte\Arkhive\Infrastructure\Logging\LogStream;
+use Mfonte\Arkhive\Infrastructure\Logging\SocketEventLogs;
 use Mfonte\Arkhive\Infrastructure\Mail\SmtpNotifier;
 use Mfonte\Arkhive\Infrastructure\Process\SignalAwarePause;
 use Mfonte\Arkhive\Infrastructure\Process\Signals;
@@ -50,6 +52,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(Signals::class);
         $this->app->singleton(Cleanup::class);
         // systemd's notify protocol: the unit's status, more time while progress is made, watchdog pings
+        $this->app->bind(EventLogs::class, static fn ($app): EventLogs => new SocketEventLogs($app->make(Clock::class), (int) getmypid()));
         $this->app->singleton(ServiceManager::class, static fn ($app): ServiceManager => NotifySocket::fromEnvironment($app->make(Terminal::class)->environment(), (int) getmypid()));
         $this->app->singleton(ServiceStatus::class);
         $this->app->singleton(ProcessRunner::class, static fn ($app): ProcessRunner => new SystemProcessRunner(

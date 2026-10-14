@@ -54,6 +54,7 @@ final class DoctorCommandTest extends TestCase
         self::assertSame('ok    latest snapshot    e82340a7 of web1.example.com at 2026-10-12 14:17 UTC (6 h ago)', $lines[8]);
         self::assertSame('info  last runs          none recorded yet in /var/lib/arkhive', $lines[9]);
         self::assertSame('info  execution context  unattended (no terminal), log format plain', $lines[12]);
+        self::assertSame('info  log target         stderr (default)', $lines[13]);
         self::assertStringContainsString('success Doctor: everything looks fine', $this->logOutput());
     }
 
@@ -68,7 +69,7 @@ final class DoctorCommandTest extends TestCase
             . '                         hint: Check that the backup timer or cron job runs',
             Artisan::output(),
         );
-        self::assertStringContainsString('warning Doctor: 0 failed, 1 warning(s), 14 checks', $this->logOutput());
+        self::assertStringContainsString('warning Doctor: 0 failed, 1 warning(s), 15 checks', $this->logOutput());
     }
 
     public function testAFailureIsExit1(): void
@@ -81,7 +82,7 @@ final class DoctorCommandTest extends TestCase
         $output = Artisan::output();
         self::assertStringContainsString("FAIL  password file      RESTIC_PASSWORD_FILE {$this->dir}/password is readable by group or others (mode 0644)\n                         hint: Run: chmod 600 {$this->dir}/password\n", $output);
         self::assertStringContainsString('skip  repository         needs restic and a valid password file', $output);
-        self::assertStringContainsString('error Doctor: 1 failed, 0 warning(s), 14 checks', $this->logOutput());
+        self::assertStringContainsString('error Doctor: 1 failed, 0 warning(s), 15 checks', $this->logOutput());
     }
 
     public function testMultiLineMessagesAreIndented(): void
@@ -98,7 +99,7 @@ final class DoctorCommandTest extends TestCase
         $json = json_decode(Artisan::output(), true);
         self::assertIsArray($json);
         self::assertSame('ok', $json['status']);
-        self::assertCount(14, $json['checks']);
+        self::assertCount(15, $json['checks']);
         self::assertSame(['check' => 'repository', 'status' => 'ok', 'message' => '/srv/restic-repo is reachable, the password opens it, no lock', 'hint' => null], $json['checks'][7]);
     }
 

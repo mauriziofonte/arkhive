@@ -1,0 +1,138 @@
+# ArkHive message catalog: install as /usr/lib/systemd/catalog/arkhive.catalog,
+# then run journalctl --update-catalog. journalctl -x shows these explanations.
+
+-- 038e5a6f18f6184144c8b36819606286
+Subject: ArkHive backup started
+Defined-By: arkhive
+Documentation: https://github.com/mauriziofonte/arkhive#logging
+
+The backup of the configured paths and database dumps to the restic repository started (arkhive backup, run @ARKHIVE_RUN_ID@).
+Every event of this run carries ARKHIVE_RUN_ID=@ARKHIVE_RUN_ID@; the run ends with a
+succeeded or a failed event.
+
+-- 763619ea04f7dbbf790ad973e212db7a
+Subject: ArkHive backup succeeded
+Defined-By: arkhive
+Documentation: https://github.com/mauriziofonte/arkhive#logging
+
+The backup of the configured paths and database dumps to the restic repository ended with exit status @ARKHIVE_EXIT_STATUS@:
+0 is a success, 3 a success with warnings (logged before this event).
+
+-- 0dca6b902c5ac3d8b27d93e0ffcc4c5e
+Subject: ArkHive backup failed
+Defined-By: arkhive
+Documentation: https://github.com/mauriziofonte/arkhive#logging
+
+The backup of the configured paths and database dumps to the restic repository failed with exit status @ARKHIVE_EXIT_STATUS@.
+
+The status is a sysexits(3) code: 64 usage, 65 data error (a check or a drill
+found damage), 66 missing input, 69 unavailable (repository, server or tool
+unreachable), 73 output refused, 74 I/O error (disk full), 75 temporary (lock
+held, deadline passed: the next run may succeed), 77 permission denied,
+78 configuration error, 130 or 143 interrupted, 1 any other failure.
+
+The error and its hint are the events before this one with the same
+ARKHIVE_RUN_ID=@ARKHIVE_RUN_ID@: journalctl ARKHIVE_RUN_ID=@ARKHIVE_RUN_ID@.
+`arkhive doctor` checks the whole setup.
+
+-- bedaa88476b29d5823188e7b4166a770
+Subject: ArkHive maintenance started
+Defined-By: arkhive
+Documentation: https://github.com/mauriziofonte/arkhive#logging
+
+The maintenance of the restic repository (retention, prune, structure check and data read back) started (arkhive maintain, run @ARKHIVE_RUN_ID@).
+Every event of this run carries ARKHIVE_RUN_ID=@ARKHIVE_RUN_ID@; the run ends with a
+succeeded or a failed event.
+
+-- 6dc1eccd2541e9f90d03624658f290b5
+Subject: ArkHive maintenance succeeded
+Defined-By: arkhive
+Documentation: https://github.com/mauriziofonte/arkhive#logging
+
+The maintenance of the restic repository (retention, prune, structure check and data read back) ended with exit status @ARKHIVE_EXIT_STATUS@:
+0 is a success, 3 a success with warnings (logged before this event).
+
+-- 4d903cbc18aebe5d3f5104e8ffafb680
+Subject: ArkHive maintenance failed
+Defined-By: arkhive
+Documentation: https://github.com/mauriziofonte/arkhive#logging
+
+The maintenance of the restic repository (retention, prune, structure check and data read back) failed with exit status @ARKHIVE_EXIT_STATUS@.
+
+The status is a sysexits(3) code: 64 usage, 65 data error (a check or a drill
+found damage), 66 missing input, 69 unavailable (repository, server or tool
+unreachable), 73 output refused, 74 I/O error (disk full), 75 temporary (lock
+held, deadline passed: the next run may succeed), 77 permission denied,
+78 configuration error, 130 or 143 interrupted, 1 any other failure.
+
+The error and its hint are the events before this one with the same
+ARKHIVE_RUN_ID=@ARKHIVE_RUN_ID@: journalctl ARKHIVE_RUN_ID=@ARKHIVE_RUN_ID@.
+`arkhive doctor` checks the whole setup.
+
+-- 4ab9cf2c02c5ec5cec9909a01e690f8d
+Subject: ArkHive restore drill started
+Defined-By: arkhive
+Documentation: https://github.com/mauriziofonte/arkhive#logging
+
+The restore drill (a sample of the latest snapshot restored and verified) started (arkhive drill, run @ARKHIVE_RUN_ID@).
+Every event of this run carries ARKHIVE_RUN_ID=@ARKHIVE_RUN_ID@; the run ends with a
+succeeded or a failed event.
+
+-- 9a5fe499bf6fa3dd1568b001e32b99bd
+Subject: ArkHive restore drill succeeded
+Defined-By: arkhive
+Documentation: https://github.com/mauriziofonte/arkhive#logging
+
+The restore drill (a sample of the latest snapshot restored and verified) ended with exit status @ARKHIVE_EXIT_STATUS@:
+0 is a success, 3 a success with warnings (logged before this event).
+
+-- f7cdf89ae28a1c3f76aa4e8eb6dafb68
+Subject: ArkHive restore drill failed
+Defined-By: arkhive
+Documentation: https://github.com/mauriziofonte/arkhive#logging
+
+The restore drill (a sample of the latest snapshot restored and verified) failed with exit status @ARKHIVE_EXIT_STATUS@.
+
+The status is a sysexits(3) code: 64 usage, 65 data error (a check or a drill
+found damage), 66 missing input, 69 unavailable (repository, server or tool
+unreachable), 73 output refused, 74 I/O error (disk full), 75 temporary (lock
+held, deadline passed: the next run may succeed), 77 permission denied,
+78 configuration error, 130 or 143 interrupted, 1 any other failure.
+
+The error and its hint are the events before this one with the same
+ARKHIVE_RUN_ID=@ARKHIVE_RUN_ID@: journalctl ARKHIVE_RUN_ID=@ARKHIVE_RUN_ID@.
+`arkhive doctor` checks the whole setup.
+
+-- 7c93417303d1095eb82437b0d94fb351
+Subject: ArkHive restore started
+Defined-By: arkhive
+Documentation: https://github.com/mauriziofonte/arkhive#logging
+
+A restore from the restic repository started (arkhive restore, run @ARKHIVE_RUN_ID@).
+Every event of this run carries ARKHIVE_RUN_ID=@ARKHIVE_RUN_ID@; the run ends with a
+succeeded or a failed event.
+
+-- 45d7795db9c8033e2dad8ea399e8952b
+Subject: ArkHive restore succeeded
+Defined-By: arkhive
+Documentation: https://github.com/mauriziofonte/arkhive#logging
+
+A restore from the restic repository ended with exit status @ARKHIVE_EXIT_STATUS@:
+0 is a success, 3 a success with warnings (logged before this event).
+
+-- 0786ecc48c256aa9399d4030f793119c
+Subject: ArkHive restore failed
+Defined-By: arkhive
+Documentation: https://github.com/mauriziofonte/arkhive#logging
+
+A restore from the restic repository failed with exit status @ARKHIVE_EXIT_STATUS@.
+
+The status is a sysexits(3) code: 64 usage, 65 data error (a check or a drill
+found damage), 66 missing input, 69 unavailable (repository, server or tool
+unreachable), 73 output refused, 74 I/O error (disk full), 75 temporary (lock
+held, deadline passed: the next run may succeed), 77 permission denied,
+78 configuration error, 130 or 143 interrupted, 1 any other failure.
+
+The error and its hint are the events before this one with the same
+ARKHIVE_RUN_ID=@ARKHIVE_RUN_ID@: journalctl ARKHIVE_RUN_ID=@ARKHIVE_RUN_ID@.
+`arkhive doctor` checks the whole setup.

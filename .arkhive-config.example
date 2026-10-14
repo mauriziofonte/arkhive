@@ -64,3 +64,9 @@ SMTP_USER=smtp_user
 SMTP_PASSWORD=smtp_password
 SMTP_FROM=arkhive@example.com
 SMTP_TO=admin@example.com
+
+# Where log events go: auto (the journal when run by systemd, stderr otherwise), stderr, journal
+# or syslog (for hosts without systemd); --log-target overrides it.
+#LOG_TARGET=auto
+# Facility for LOG_TARGET=syslog: user, daemon, local0 ... local7
+#SYSLOG_FACILITY=daemon

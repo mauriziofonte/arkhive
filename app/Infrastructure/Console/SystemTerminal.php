@@ -18,6 +18,13 @@ final class SystemTerminal implements Terminal
         return self::isTty(STDOUT);
     }
 
+    public function stderrIdentity(): ?string
+    {
+        $stat = @fstat(STDERR);
+
+        return $stat === false ? null : $stat['dev'] . ':' . $stat['ino'];
+    }
+
     public function environment(): array
     {
         $env = [];

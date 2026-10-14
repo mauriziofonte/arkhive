@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Mfonte\Arkhive\Infrastructure\Systemd;
 
 use Mfonte\Arkhive\Application\Port\ServiceManager;
+use Mfonte\Arkhive\Infrastructure\Socket\UnixDatagram;
 
 /**
  * systemd's notify protocol (sd_notify(3)) in PHP: one datagram per message, "KEY=value" lines, to
@@ -13,9 +14,7 @@ use Mfonte\Arkhive\Application\Port\ServiceManager;
  */
 final class NotifySocket implements ServiceManager
 {
-    /** @var resource|null */
-    private $socket;
-    private bool $broken = false;
+    private readonly ?UnixDatagram $socket;
 
     /**
      * @param string|null $address        $NOTIFY_SOCKET
@@ -23,6 +22,7 @@ final class NotifySocket implements ServiceManager
      */
     public function __construct(private readonly ?string $address, private readonly ?int $watchdogMicros = null)
     {
+        $this->socket = $address === null ? null : new UnixDatagram($address);
     }
 
     /**
@@ -46,7 +46,7 @@ final class NotifySocket implements ServiceManager
 
     public function notify(array $state): bool
     {
-        if ($this->address === null || $this->broken || $state === []) {
+        if ($this->socket === null || $state === []) {
             return false;
         }
         $message = '';
@@ -54,36 +54,11 @@ final class NotifySocket implements ServiceManager
             // one line per field: a newline inside a value would start a field of its own
             $message .= $key . '=' . str_replace(["\r", "\n"], ' ', $value) . "\n";
         }
-        $socket = $this->socket();
-        if ($socket === null) {
-            return false;
-        }
-
-        return @fwrite($socket, $message) === strlen($message);
+        return $this->socket->send($message);
     }
 
     public function watchdogInterval(): ?float
     {
         return $this->watchdogMicros === null ? null : $this->watchdogMicros / 2e6;
-    }
-
-    /**
-     * @return resource|null
-     */
-    private function socket()
-    {
-        if ($this->socket !== null) {
-            return $this->socket;
-        }
-        $path = str_starts_with((string) $this->address, '@') ? "\0" . substr((string) $this->address, 1) : (string) $this->address;
-        $socket = @stream_socket_client('udg://' . $path, $code, $error, 1.0);
-        if ($socket === false) {
-            // a socket that cannot be reached stays so for this run: do not retry on every message
-            $this->broken = true;
-
-            return null;
-        }
-
-        return $this->socket = $socket;
     }
 }
