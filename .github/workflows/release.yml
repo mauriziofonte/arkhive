@@ -1,0 +1,114 @@
+name: Release
+
+# spec §8: a v* tag pushed by the maintainer becomes a GitHub Release with arkhive.phar, its sha256
+# and a build provenance attestation. Tags are never created by CI or by an agent.
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    name: Full CI
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+
+  build:
+    name: Build the PHAR
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2.37.2
+        with:
+          php-version: '8.3'
+          coverage: none
+          ini-values: phar.readonly=0
+      - name: The tag equals the version in config/app.php
+        run: |
+          version="$(php -r 'echo (require "config/app.php")["version"];')"
+          if [ "v${version}" != "${GITHUB_REF_NAME}" ]; then
+              echo "::error::The tag ${GITHUB_REF_NAME} does not match config/app.php version ${version} (expected tag v${version})"
+              exit 1
+          fi
+      - run: composer install --no-interaction --no-progress --prefer-dist --no-dev
+      - name: Build with box
+        run: |
+          php -d phar.readonly=0 arkhive app:build --build-version "${GITHUB_REF_NAME#v}" --no-interaction arkhive.phar
+          mkdir release
+          mv builds/arkhive.phar release/arkhive.phar
+      - name: The PHAR prints the tag
+        run: |
+          printed="$(php release/arkhive.phar --version)"
+          echo "$printed"
+          test "$printed" = "ArkHive ${GITHUB_REF_NAME#v}"
+      - name: Checksum
+        working-directory: release
+        run: |
+          sha256sum arkhive.phar > arkhive.phar.sha256
+          sha256sum -c arkhive.phar.sha256
+      - name: Release notes from CHANGELOG.md
+        run: php .github/scripts/changelog-section.php CHANGELOG.md "${GITHUB_REF_NAME#v}" > release/notes.md
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release
+          path: release
+          if-no-files-found: error
+
+  distro-arm64:
+    name: Distro matrix on arm64
+    needs: build
+    permissions:
+      contents: read
+    uses: ./.github/workflows/distro.yml
+    with:
+      platform: linux/arm64
+      artifact: release
+
+  distro-amd64:
+    name: Distro matrix on the release PHAR
+    needs: build
+    permissions:
+      contents: read
+    uses: ./.github/workflows/distro.yml
+    with:
+      platform: linux/amd64
+      artifact: release
+
+  publish:
+    name: Publish the GitHub Release
+    needs: [ci, build, distro-arm64, distro-amd64]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release
+          path: release
+      - name: The artifact is the one that was checked
+        working-directory: release
+        run: sha256sum -c arkhive.phar.sha256
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: release/arkhive.phar
+      - name: Create the release (tags with a "-" are pre-releases)
+        working-directory: release
+        run: |
+          case "$GITHUB_REF_NAME" in
+              *-*) kind=--prerelease ;;
+              *) kind=--latest ;;
+          esac
+          gh release create "$GITHUB_REF_NAME" arkhive.phar arkhive.phar.sha256 \
+              --repo "$GITHUB_REPOSITORY" --verify-tag --title "ArkHive $GITHUB_REF_NAME" \
+              --notes-file notes.md "$kind"
+        env:
+          GH_TOKEN: ${{ github.token }}
