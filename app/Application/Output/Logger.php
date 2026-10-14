@@ -178,14 +178,14 @@ final class Logger
         if (!$this->context->interactive) {
             return;
         }
-        fwrite($this->stream, "\r\033[2K" . $line);
+        $this->emit("\r\033[2K" . $line);
         $this->progressActive = true;
     }
 
     public function endProgress(): void
     {
         if ($this->progressActive) {
-            fwrite($this->stream, "\r\033[2K");
+            $this->emit("\r\033[2K");
             $this->progressActive = false;
         }
     }
@@ -206,7 +206,7 @@ final class Logger
         }
         $delivered = $this->events !== null && $this->events->write($level, $message, $this->eventFields($level, $data));
         if (!$delivered || $this->context->interactive) {
-            fwrite($this->stream, $this->format($this->context->logFormat, $level, $message, $data) . "\n");
+            $this->emit($this->format($this->context->logFormat, $level, $message, $data) . "\n");
         }
 
         if ($this->sink !== null) {
@@ -229,6 +229,15 @@ final class Logger
                 JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE | JSON_THROW_ON_ERROR,
             ),
         };
+    }
+
+    /**
+     * Writes to stderr, ignoring a reader that went away (a closed pipe, journald restarted): a lost
+     * log line must never turn a run that worked into a failure.
+     */
+    private function emit(string $text): void
+    {
+        @fwrite($this->stream, $text);
     }
 
     /**

@@ -117,4 +117,30 @@ final class ExecutionModeTest extends TestCase
             self::assertStringContainsString("\"log_target\":\"{$target}\"", $stdout);
         }
     }
+
+    public function testAStderrReaderThatWentAwayDoesNotFailTheRun(): void
+    {
+        $dir = $this->tempDir();
+        file_put_contents("{$dir}/password", "secret\n");
+        chmod("{$dir}/password", 0600);
+        file_put_contents("{$dir}/config", "BACKUP_PATHS={$dir}\nRESTIC_REPOSITORY=/srv/restic-repo\nRESTIC_PASSWORD_FILE={$dir}/password\n");
+        chmod("{$dir}/config", 0600);
+
+        // `arkhive ... 2>&1 | grep -q`, or journald restarted: stderr is a pipe nobody reads any more
+        $process = proc_open(
+            [PHP_BINARY, dirname(__DIR__, 2) . '/arkhive', 'schedule', '--systemd', '--config', "{$dir}/config"],
+            [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+            $pipes,
+            null,
+            ['PATH' => (string) getenv('PATH'), 'LC_ALL' => 'C'],
+        );
+        self::assertIsResource($process);
+        fclose($pipes[0]);
+        fclose($pipes[2]);
+        $stdout = (string) stream_get_contents($pipes[1]);
+        fclose($pipes[1]);
+
+        self::assertSame(ExitCode::SUCCESS, proc_close($process), 'the warning about notifications cannot be written, the units still are');
+        self::assertStringContainsString('[Service]', $stdout);
+    }
 }
