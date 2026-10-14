@@ -290,7 +290,7 @@ final class BackupTest extends E2eTestCase
 
         self::assertSame(0, $firstResult->exitCode, $firstResult->output());
         self::assertSame(0, $second->exitCode, $second->output());
-        self::assertMatchesRegularExpression('/warning Waiting for the repository: Another ArkHive run holds the lock for this repository \(PID \d+.*\); trying again in \d+s \(waiting up to 300s in all, \d+s so far\)/', $second->stderr);
+        self::assertMatchesRegularExpression('/warning Waiting for the repository: Another ArkHive run holds the lock for this repository \(PID \d+.*; trying again in \d+s \(waiting up to 300s in all, \d+s so far\)/', $second->stderr);
         self::assertCount(2, $this->snapshots());
     }
 

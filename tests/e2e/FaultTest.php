@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Tests\e2e;
 
+use DateTimeImmutable;
+use DateTimeZone;
 use Mfonte\Arkhive\ExitCode;
 use Tests\Support\CliResult;
 
@@ -158,6 +160,70 @@ final class FaultTest extends E2eTestCase
         self::assertCount(1, $this->snapshots());
         self::assertSame([], glob("{$this->dir}/dumps/*/*") ?: []);
         $this->assertCleanAfterFailure();
+    }
+
+    public function testAClockThatJumpedBack(): void
+    {
+        $this->arkhiveInit($this->dir, $this->repository, $this->sftpCommand);
+        // a snapshot written while the clock was two days ahead, as after an NTP correction
+        $ahead = (new DateTimeImmutable('now', new DateTimeZone('UTC')))->modify('+2 days')->format('Y-m-d H:i:s');
+        $future = self::restic(['backup', '--host', 'e2e.example.com', '--tag', 'arkhive', '--time', $ahead, $this->tree], $this->repository, $this->sftpCommand);
+        self::assertSame(0, $future->exitCode, $future->stderr);
+
+        $backup = self::arkhive(['backup', '--config', $this->config(), '--json'], $this->runEnv());
+        self::assertSame(0, $backup->exitCode, $backup->output());
+        self::assertCount(2, $this->snapshots());
+
+        $doctor = self::arkhive(['doctor', '--config', $this->config()], $this->runEnv());
+        self::assertSame(ExitCode::FAILURE, $doctor->exitCode, $doctor->output());
+        self::assertMatchesRegularExpression('/FAIL\s+clock\s+This clock is behind: the repository has an entry dated \S+ \S+ UTC, 4[78] h in the future/', $doctor->stdout);
+        self::assertStringContainsString('hint: Synchronise the clock (timedatectl set-ntp true, or chrony/ntpd)', $doctor->stdout);
+
+        // maintain keeps both: the future snapshot is not mistaken for an old one
+        $maintain = self::arkhive(['maintain', '--config', $this->config()], $this->runEnv());
+        self::assertSame(0, $maintain->exitCode, $maintain->output());
+        self::assertCount(2, $this->snapshots());
+    }
+
+    private static function root(): bool
+    {
+        return function_exists('posix_geteuid') && posix_geteuid() === 0;
+    }
+
+    private function needsPause(): void
+    {
+        if ((getenv('E2E_SFTP_PAUSE') ?: '') === '' || (getenv('E2E_SFTP_RESUME') ?: '') === '') {
+            self::markTestSkipped('E2E_SFTP_PAUSE / E2E_SFTP_RESUME are not set (run.sh sets them to docker compose pause/unpause)');
+        }
+    }
+
+    /**
+     * Freezes the SFTP server, runs $wait, and always resumes it.
+     *
+     * @param callable(): CliResult $wait
+     */
+    private function whilePaused(callable $wait): CliResult
+    {
+        $pause = self::exec(['sh', '-c', self::env('E2E_SFTP_PAUSE')]);
+        self::assertSame(0, $pause->exitCode, $pause->output());
+        try {
+            return $wait();
+        } finally {
+            $resume = self::exec(['sh', '-c', self::env('E2E_SFTP_RESUME')]);
+            self::assertSame(0, $resume->exitCode, $resume->output());
+        }
+    }
+
+    /**
+     * restic behind a bandwidth limit, so that a transfer is still running when the server freezes.
+     */
+    private function throttledRestic(string $limit): string
+    {
+        $path = "{$this->dir}/throttled-restic";
+        file_put_contents($path, sprintf("#!/bin/sh\nexec %s %s 512 \"\$@\"\n", escapeshellarg(self::env('E2E_RESTIC')), $limit));
+        chmod($path, 0755);
+
+        return $path;
     }
 
     private function assertCleanAfterFailure(): void
