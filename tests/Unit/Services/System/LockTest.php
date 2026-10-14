@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Unit\Services\System;
 
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
+use Mfonte\Arkhive\ExitCode;
 use Mfonte\Arkhive\Services\System\Lock;
 use PHPUnit\Framework\TestCase;
 use Tests\Support\FixedClock;
@@ -47,7 +48,7 @@ final class LockTest extends TestCase
                 'Another ArkHive run holds the lock for this repository (PID ' . getmypid() . ', maintain, started 2026-10-12T10:20:30+02:00): ' . $path,
                 $e->getMessage(),
             );
-            self::assertSame(1, $e->exitCode());
+            self::assertSame(ExitCode::TEMPORARY, $e->exitCode());
         }
         self::assertFalse($second->held());
 

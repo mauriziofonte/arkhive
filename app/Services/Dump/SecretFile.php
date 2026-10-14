@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace Mfonte\Arkhive\Services\Dump;
 
-use Mfonte\Arkhive\Exceptions\ArkhiveException;
+use Mfonte\Arkhive\Exceptions\IoException;
+use Mfonte\Arkhive\Exceptions\RefusedException;
 
 /**
  * A temporary file readable only by the running user, for credentials that must not appear on a
@@ -30,13 +31,13 @@ final class SecretFile
             $path = false;
         }
         if ($path === false || !is_file($path)) {
-            throw new ArkhiveException("Cannot create a temporary credentials file in {$directory}", hint: 'Check that the temp directory (TMPDIR) exists and is writable');
+            throw new RefusedException("Cannot create a temporary credentials file in {$directory}", hint: 'Check that the temp directory (TMPDIR) exists and is writable');
         }
         $file = new self($path);
         if (!@chmod($path, 0600) || @file_put_contents($path, $content) !== strlen($content)) {
             $file->remove();
 
-            throw new ArkhiveException("Cannot write the temporary credentials file {$path}");
+            throw new IoException("Cannot write the temporary credentials file {$path}");
         }
 
         return $file;

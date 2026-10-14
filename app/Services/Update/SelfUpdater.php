@@ -5,7 +5,13 @@ declare(strict_types=1);
 namespace Mfonte\Arkhive\Services\Update;
 
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
+use Mfonte\Arkhive\Exceptions\DataException;
+use Mfonte\Arkhive\Exceptions\NoInputException;
+use Mfonte\Arkhive\Exceptions\PermissionException;
+use Mfonte\Arkhive\Exceptions\ProtocolException;
 use Mfonte\Arkhive\Exceptions\RefusedException;
+use Mfonte\Arkhive\Exceptions\UnavailableException;
+use Mfonte\Arkhive\Exceptions\UsageException;
 use Mfonte\Arkhive\Services\Output\Logger;
 use Mfonte\Arkhive\Services\Process\Cleanup;
 use Mfonte\Arkhive\Services\Process\Command;
@@ -75,7 +81,7 @@ final class SelfUpdater
     {
         $this->assertPhar();
         if ($this->crossesMajor($release) && !$allowMajor) {
-            throw new RefusedException(
+            throw new UsageException(
                 sprintf('%s is a different major version than the running %s: its configuration is not compatible', $release->tag, $this->currentVersion),
                 'Read the migration notes first (' . self::MIGRATION_URL . '), then run again with --allow-major',
             );
@@ -98,17 +104,17 @@ final class SelfUpdater
         $log->info("Downloading {$release->tag} ({$phar['url']})");
         $status = $this->http->download($phar['url'], $download, $size, $this->downloadHeaders());
         if ($status < 200 || $status >= 300) {
-            throw new ArkhiveException("Downloading {$phar['url']} failed (HTTP {$status})");
+            throw new UnavailableException("Downloading {$phar['url']} failed (HTTP {$status})");
         }
         $actual = (string) hash_file('sha256', $download);
         if (!hash_equals($expected, $actual)) {
-            throw new ArkhiveException("The downloaded {$release->tag} PHAR does not match its published sha256 (expected {$expected}, got {$actual}): not installed", hint: 'Try again later; if it persists, report it at https://github.com/' . self::REPOSITORY . '/issues');
+            throw new DataException("The downloaded {$release->tag} PHAR does not match its published sha256 (expected {$expected}, got {$actual}): not installed", hint: 'Try again later; if it persists, report it at https://github.com/' . self::REPOSITORY . '/issues');
         }
         $log->info('Checksum verified (sha256 ' . substr($actual, 0, 16) . '…)');
         $provenance = $this->verifyProvenance($download, $log);
         $mode = fileperms($this->pharPath) & 0777;
         if (!@chmod($download, $mode)) {
-            throw new ArkhiveException("Cannot set the mode of {$download}");
+            throw new PermissionException("Cannot set the mode of {$download}");
         }
         $this->smokeTest($download, $release->version);
 
@@ -131,11 +137,11 @@ final class SelfUpdater
         $this->assertPhar();
         $previous = $this->previous();
         if ($previous === null) {
-            throw new ArkhiveException("There is no previous version next to {$this->pharPath} (no {$this->pharPath}.bak-*): nothing to roll back to", hint: 'Install a specific release with: arkhive self-update <tag>');
+            throw new NoInputException("There is no previous version next to {$this->pharPath} (no {$this->pharPath}.bak-*): nothing to roll back to", hint: 'Install a specific release with: arkhive self-update <tag>');
         }
         [$path, $version] = $previous;
         if (Version::compare($version, $this->currentVersion) === 0) {
-            throw new ArkhiveException("The kept binary {$path} is the running version {$this->currentVersion}: nothing to roll back to");
+            throw new NoInputException("The kept binary {$path} is the running version {$this->currentVersion}: nothing to roll back to");
         }
         $this->assertWritable(dirname($this->pharPath));
         $log->info("Rolling back to {$version} ({$path})");
@@ -177,14 +183,14 @@ final class SelfUpdater
     private function assertPhar(): void
     {
         if ($this->pharPath === '') {
-            throw new RefusedException('self-update works only for the PHAR installation; this ArkHive runs from source', 'Update a source checkout with git pull and composer install');
+            throw new UnavailableException('self-update works only for the PHAR installation; this ArkHive runs from source', 'Update a source checkout with git pull and composer install');
         }
     }
 
     private function assertWritable(string $directory): void
     {
         if (!is_writable($directory)) {
-            throw new RefusedException(
+            throw new PermissionException(
                 "{$directory} is not writable by this user, so {$this->pharPath} cannot be replaced: nothing was changed",
                 'Run the update as the owner of ' . $this->pharPath . ' (for example with sudo)',
             );
@@ -195,10 +201,10 @@ final class SelfUpdater
     {
         $response = $this->http->get($url, $this->downloadHeaders());
         if (!$response->ok()) {
-            throw new ArkhiveException("Downloading the checksum of {$tag} failed (HTTP {$response->status})");
+            throw new UnavailableException("Downloading the checksum of {$tag} failed (HTTP {$response->status})");
         }
         if (preg_match('/^\s*([0-9a-fA-F]{64})\b/', $response->body, $match) !== 1) {
-            throw new ArkhiveException("The checksum file of {$tag} does not start with a sha256: not installed");
+            throw new ProtocolException("The checksum file of {$tag} does not start with a sha256: not installed");
         }
 
         return strtolower($match[1]);
@@ -228,7 +234,7 @@ final class SelfUpdater
             return 'not verified (gh not logged in)';
         }
 
-        throw new ArkhiveException($result->failure('Verifying the build provenance') . ': not installed', hint: 'The download does not carry the attestation of ' . self::REPOSITORY . '; report it at https://github.com/' . self::REPOSITORY . '/issues');
+        throw new DataException($result->failure('Verifying the build provenance') . ': not installed', hint: 'The download does not carry the attestation of ' . self::REPOSITORY . '; report it at https://github.com/' . self::REPOSITORY . '/issues');
     }
 
     private function smokeTest(string $file, string $version): void
@@ -236,7 +242,7 @@ final class SelfUpdater
         $result = $this->runner->run((new Command([$this->php, $file, '--version']))->withTimeout(60.0));
         $printed = trim($result->stdout);
         if (!$result->succeeded() || preg_match('/(^|\s)v?' . preg_quote($version, '/') . '$/', $printed) !== 1) {
-            throw new ArkhiveException(
+            throw new DataException(
                 sprintf('%s --version printed "%s" instead of %s%s: not installed', basename($file), $printed, $version, $result->succeeded() ? '' : ' (exit ' . $result->exitCode . ')'),
                 hint: $result->stderrTail() === '' ? null : $result->stderrTail(),
             );
@@ -257,7 +263,7 @@ final class SelfUpdater
         if (!@copy($this->pharPath, $backup) || !@chmod($backup, fileperms($this->pharPath) & 0777)) {
             @unlink($backup);
 
-            throw new ArkhiveException("Cannot keep a copy of {$this->pharPath} as {$backup}: nothing was changed");
+            throw new RefusedException("Cannot keep a copy of {$this->pharPath} as {$backup}: nothing was changed");
         }
     }
 

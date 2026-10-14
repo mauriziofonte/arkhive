@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Mfonte\Arkhive\Services\Process;
 
-use Mfonte\Arkhive\Exceptions\ArkhiveException;
 use Mfonte\Arkhive\Exceptions\InterruptedException;
+use Mfonte\Arkhive\Exceptions\NoInputException;
+use Mfonte\Arkhive\Exceptions\OsException;
+use Mfonte\Arkhive\Exceptions\UnavailableException;
 
 /**
  * Runs commands with proc_open and an argv array: no shell, no pipelines, LC_ALL=C, stderr kept,
@@ -34,11 +36,11 @@ final class SystemProcessRunner implements ProcessRunner
         $this->signals->check();
         $binary = $command->argv[0];
         if (str_contains($binary, '/') && (!is_file($binary) || !is_executable($binary))) {
-            throw new ArkhiveException("Cannot run {$binary}: it is not an executable file");
+            throw new UnavailableException("Cannot run {$binary}: it is not an executable file");
         }
 
         if ($command->inputFile !== null && (!is_file($command->inputFile) || !is_readable($command->inputFile))) {
-            throw new ArkhiveException("Cannot run {$command->name()}: its input {$command->inputFile} is not a readable file");
+            throw new NoInputException("Cannot run {$command->name()}: its input {$command->inputFile} is not a readable file");
         }
         $descriptors = [
             0 => match (true) {
@@ -53,7 +55,7 @@ final class SystemProcessRunner implements ProcessRunner
         $process = @proc_open($command->argv, $descriptors, $pipes, $command->cwd, $this->environmentFor($command));
         if (!is_resource($process)) {
             $error = error_get_last()['message'] ?? 'unknown error';
-            throw new ArkhiveException("Cannot start {$command->name()}: {$error}");
+            throw new OsException("Cannot start {$command->name()}: {$error}");
         }
 
         $listener = $this->signals->listen(static function (int $signal) use ($process): void {

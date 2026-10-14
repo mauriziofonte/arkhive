@@ -5,6 +5,10 @@ declare(strict_types=1);
 namespace Mfonte\Arkhive\Services\Update;
 
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
+use Mfonte\Arkhive\Exceptions\NoInputException;
+use Mfonte\Arkhive\Exceptions\ProtocolException;
+use Mfonte\Arkhive\Exceptions\TemporaryException;
+use Mfonte\Arkhive\Exceptions\UnavailableException;
 use Mfonte\Arkhive\Exceptions\UsageException;
 
 /**
@@ -49,7 +53,7 @@ final class ReleaseSource
     {
         $list = $this->json('/releases?per_page=100', 'the list of releases');
         if (!is_array($list) || !array_is_list($list)) {
-            throw new ArkhiveException('The releases API answered something that is not a list of releases');
+            throw new ProtocolException('The releases API answered something that is not a list of releases');
         }
         $newest = null;
         foreach ($list as $item) {
@@ -63,7 +67,7 @@ final class ReleaseSource
             }
         }
         if ($newest === null) {
-            throw new ArkhiveException('No release is published yet');
+            throw new NoInputException('No release is published yet');
         }
 
         return $newest;
@@ -83,7 +87,7 @@ final class ReleaseSource
             $response = $this->request('/releases/tags/' . rawurlencode($version));
         }
         if ($response->status === 404) {
-            throw new ArkhiveException("There is no release v{$version}", hint: 'The releases are listed at https://github.com/mauriziofonte/arkhive/releases');
+            throw new NoInputException("There is no release v{$version}", hint: 'The releases are listed at https://github.com/mauriziofonte/arkhive/releases');
         }
 
         return Release::fromArray($this->decode($response, "the release v{$version}"));
@@ -93,7 +97,7 @@ final class ReleaseSource
     {
         $response = $this->request($path);
         if ($response->status === 404) {
-            throw new ArkhiveException("Not found on the releases API: {$what} (HTTP 404)", hint: 'The releases are listed at https://github.com/mauriziofonte/arkhive/releases');
+            throw new NoInputException("Not found on the releases API: {$what} (HTTP 404)", hint: 'The releases are listed at https://github.com/mauriziofonte/arkhive/releases');
         }
 
         return $this->decode($response, $what);
@@ -116,18 +120,18 @@ final class ReleaseSource
     private function decode(HttpResponse $response, string $what): mixed
     {
         if ($response->status === 403 || $response->status === 429) {
-            throw new ArkhiveException(
+            throw new TemporaryException(
                 "The GitHub API refused to list {$what} (HTTP {$response->status}, usually the rate limit for unauthenticated requests)",
                 hint: $this->token === null ? 'Wait an hour, or set GITHUB_TOKEN to a token (no scopes needed) and run again' : 'Wait for the rate limit to reset, or check GITHUB_TOKEN',
             );
         }
         if (!$response->ok()) {
-            throw new ArkhiveException("The releases API answered HTTP {$response->status} for {$what}");
+            throw new UnavailableException("The releases API answered HTTP {$response->status} for {$what}");
         }
         try {
             return json_decode($response->body, true, 32, JSON_THROW_ON_ERROR);
         } catch (\JsonException $e) {
-            throw new ArkhiveException("The releases API answered invalid JSON for {$what}: {$e->getMessage()}");
+            throw new ProtocolException("The releases API answered invalid JSON for {$what}: {$e->getMessage()}");
         }
     }
 }

@@ -90,7 +90,7 @@ final class InitCommandTest extends TestCase
     {
         $config = $this->writeConfig(['RESTIC_PASSWORD_FILE' => "{$this->dir}/nope/password"]);
 
-        self::assertSame(ExitCode::USAGE, Artisan::call('init', ['--config' => $config]));
+        self::assertSame(ExitCode::NO_INPUT, Artisan::call('init', ['--config' => $config]));
         self::assertStringContainsString("error RESTIC_PASSWORD_FILE {$this->dir}/nope/password does not exist and neither does its directory", $this->logOutput());
         self::assertStringContainsString("notice Create the directory (mkdir -p {$this->dir}/nope), then run arkhive init again", $this->logOutput());
         self::assertSame([], $this->restic->calls);
@@ -101,7 +101,7 @@ final class InitCommandTest extends TestCase
         $config = $this->writeConfig();
         chmod("{$this->dir}/password", 0640);
 
-        self::assertSame(ExitCode::USAGE, Artisan::call('init', ['--config' => $config]));
+        self::assertSame(ExitCode::NO_PERMISSION, Artisan::call('init', ['--config' => $config]));
         self::assertStringContainsString("error RESTIC_PASSWORD_FILE {$this->dir}/password is readable by group or others (mode 0640)", $this->logOutput());
         self::assertSame([], $this->restic->calls);
     }
@@ -122,7 +122,7 @@ final class InitCommandTest extends TestCase
         $this->restic->on['init'] = static fn (): array => [1, '', self::EXISTS . "\n"];
         $this->restic->catConfig = [12, '', FakeRestic::fixture('wrong-password-0.19.stderr')];
 
-        self::assertSame(ExitCode::FAILURE, Artisan::call('init', ['--config' => $this->writeConfig()]));
+        self::assertSame(ExitCode::NO_PERMISSION, Artisan::call('init', ['--config' => $this->writeConfig()]));
         self::assertStringContainsString('error Wrong password for the restic repository /srv/restic-repo', $this->logOutput());
     }
 
@@ -131,7 +131,7 @@ final class InitCommandTest extends TestCase
         $this->restic->on['init'] = static fn (): array => [1, '', self::EXISTS . "\n"];
         $config = $this->writeConfig(['RESTIC_PASSWORD_FILE' => "{$this->dir}/new-password"]);
 
-        self::assertSame(ExitCode::FAILURE, Artisan::call('init', ['--config' => $config]));
+        self::assertSame(ExitCode::CONFIG, Artisan::call('init', ['--config' => $config]));
 
         self::assertFileDoesNotExist("{$this->dir}/new-password");
         self::assertStringContainsString("error A restic repository already exists at /srv/restic-repo, and RESTIC_PASSWORD_FILE {$this->dir}/new-password did not exist", $this->logOutput());

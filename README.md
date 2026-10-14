@@ -8,7 +8,7 @@ Contents: [Requirements](#requirements) | [Install](#install) | [Quick start](#q
 
 ## Requirements
 
-- **PHP 8.3 or newer** (CLI) with the extensions `phar`, `json`, `mbstring`, `posix` and `pcntl`, plus `curl` or `openssl` for `self-update`. The PHAR checks this at startup and, if something is missing, prints the install command for your distribution and exits 1.
+- **PHP 8.3 or newer** (CLI) with the extensions `phar`, `json`, `mbstring`, `posix` and `pcntl`, plus `curl` or `openssl` for `self-update`. The PHAR checks this at startup and, if something is missing, prints the install command for your distribution and exits 69.
 - **restic 0.14.0 or newer** (repository format 2 and compression), checked before every repository operation.
 - `ssh` for an SFTP repository; `mariadb-dump`/`mysqldump` and `mariadb`/`mysql` for MySQL dumps; `pg_dump` and `psql` for PostgreSQL dumps; `fusermount3` (FUSE) for `mount`; `openssl`, `tar` and `xz` only for `decrypt-legacy`; `gh` (optional) to verify release provenance. `arkhive doctor` reports each missing tool with the install command for your distribution.
 
@@ -126,7 +126,7 @@ arkhive self-update --rollback       # put back the binary kept by the last upda
 arkhive self-update --allow-major    # needed to cross a major version (read the migration notes first)
 ```
 
-`self-update` downloads `arkhive.phar` and `arkhive.phar.sha256` from the release and refuses a checksum mismatch. When `gh` is installed and logged in it also runs `gh attestation verify ... --repo mauriziofonte/arkhive` and refuses a mismatch; otherwise it says that provenance was not verified. The new PHAR must print the expected version (`php <new file> --version`) before it atomically replaces the running one, with the same file mode; the previous binary is kept next to it as `<path>.bak-<old version>` (only the most recent is kept) for `--rollback`. It refuses (exit 4) when the PHAR's directory is not writable, when ArkHive runs from a source checkout, and when the release is a different major version without `--allow-major`. It honours `HTTPS_PROXY`; set `GITHUB_TOKEN` (no scopes needed) if you hit the GitHub API rate limit. `--json` prints the result as JSON.
+`self-update` downloads `arkhive.phar` and `arkhive.phar.sha256` from the release and refuses a checksum mismatch. When `gh` is installed and logged in it also runs `gh attestation verify ... --repo mauriziofonte/arkhive` and refuses a mismatch; otherwise it says that provenance was not verified. The new PHAR must print the expected version (`php <new file> --version`) before it atomically replaces the running one, with the same file mode; the previous binary is kept next to it as `<path>.bak-<old version>` (only the most recent is kept) for `--rollback`. It refuses when the PHAR's directory is not writable (exit 77), when ArkHive runs from a source checkout (69), and when the release is a different major version without `--allow-major` (64). It honours `HTTPS_PROXY`; set `GITHUB_TOKEN` (no scopes needed) if you hit the GitHub API rate limit. `--json` prints the result as JSON.
 
 ## Quick start
 
@@ -228,7 +228,7 @@ For scheduled runs, pass `--config` explicitly (`arkhive schedule` does).
 
 ## Configuration
 
-Syntax: one `KEY=value` per line, optionally prefixed by `export`. `'single quotes'` keep everything literally; `"double quotes"` accept the escapes `\\ \" \$ \n \t`; an unquoted value ends at ` #`; lines starting with `#` are comments; there is no variable expansion. A line that cannot be parsed, an unterminated quote or a key set twice is an error naming the line. Unknown keys produce a warning listing them. Only `WITH_MYSQL`, `WITH_PGSQL` and `NOTIFY` are booleans (`true/false`, `yes/no`, `1/0`, `on/off`); every other value stays a string. All problems in a configuration are reported at once (exit 2).
+Syntax: one `KEY=value` per line, optionally prefixed by `export`. `'single quotes'` keep everything literally; `"double quotes"` accept the escapes `\\ \" \$ \n \t`; an unquoted value ends at ` #`; lines starting with `#` are comments; there is no variable expansion. A line that cannot be parsed, an unterminated quote or a key set twice is an error naming the line. Unknown keys produce a warning listing them. Only `WITH_MYSQL`, `WITH_PGSQL` and `NOTIFY` are booleans (`true/false`, `yes/no`, `1/0`, `on/off`); every other value stays a string. All problems in a configuration are reported at once (exit 78).
 
 | Key | Required | Default | Meaning |
 |---|---|---|---|
@@ -338,7 +338,7 @@ arkhive restore --snapshot latest --include /var/www/shop --in-place --force --y
 6. Summary (snapshot, selection, target, size, owners) and confirmation, then the restore with progress, verified with `restic restore --verify`.
 7. Report and next step: the exact `rsync` command to put the files in place, or the command to import a dump.
 
-**Unattended restore.** Without a terminal the wizard never starts and a missing required choice is exit 2 naming its flag:
+**Unattended restore.** Without a terminal the wizard never starts and a missing required choice is exit 64 naming its flag:
 
 | Option | Meaning |
 |---|---|
@@ -356,7 +356,7 @@ arkhive restore --snapshot latest --include /var/www/shop --in-place --force --y
 | `--yes` | The final confirmation (required unattended) |
 | `--json` | The result as JSON (not with `--to-stdout`) |
 
-`--include/--exclude`, `--db` and `--to-stdout` are alternative kinds of selection; `--in-place` cannot be combined with `--target`, `--db` or `--to-stdout`. A non-empty target without `--force`, insufficient space and `--in-place` without `--force` are refused with exit 4 and nothing written. On a host without configuration add `--repo`, `--password-file` and `--sftp-command` ([My server is gone](#my-server-is-gone)). The 1.x positional destination is refused with a pointer to `--target`.
+`--include/--exclude`, `--db` and `--to-stdout` are alternative kinds of selection; `--in-place` cannot be combined with `--target`, `--db` or `--to-stdout`. A non-empty target without `--force` and insufficient space are refused with exit 73, `--in-place` without `--force` with exit 64, and nothing is written. On a host without configuration add `--repo`, `--password-file` and `--sftp-command` ([My server is gone](#my-server-is-gone)). The 1.x positional destination is refused with a pointer to `--target`.
 
 ### ls
 
@@ -391,7 +391,7 @@ Mounts the repository read-only with FUSE (`restic mount`): snapshots appear und
 arkhive maintain [--json]
 ```
 
-Applies the retention policy to this host's `arkhive` snapshots (`restic forget --prune` with `RESTIC_KEEP_DAILY/WEEKLY/MONTHLY`; safety snapshots are never selected), then `restic check`, then `restic check --read-data-subset RESTIC_CHECK_SUBSET`. Holds the repository lock, so it never overlaps a backup. Errors found by the check are exit 1 with the repair hint; the notification reports kept and removed snapshots, the check results and the repository size.
+Applies the retention policy to this host's `arkhive` snapshots (`restic forget --prune` with `RESTIC_KEEP_DAILY/WEEKLY/MONTHLY`; safety snapshots are never selected), then `restic check`, then `restic check --read-data-subset RESTIC_CHECK_SUBSET`. Holds the repository lock, so it never overlaps a backup. Errors found by the check are exit 65 with the repair hint; the notification reports kept and removed snapshots, the check results and the repository size.
 
 ### status
 
@@ -416,7 +416,7 @@ Creates the repository of the configuration. If `RESTIC_PASSWORD_FILE` does not 
 arkhive drill [--sample <n>] [--db] [--host <name>] [--json]
 ```
 
-A restore test: restores `--sample` random files (default 50, at most 100000) of the latest snapshot into a private temporary directory, verifies them against the repository, with `--db` also restores one database dump and imports it into a throw-away database, removes everything and reports PASSED (exit 0) or FAILED (exit 1). Scheduled weekly by `arkhive schedule`, so restores are proven, not assumed.
+A restore test: restores `--sample` random files (default 50, at most 100000) of the latest snapshot into a private temporary directory, verifies them against the repository, with `--db` also restores one database dump and imports it into a throw-away database, removes everything and reports PASSED (exit 0) or FAILED (exit 65). Scheduled weekly by `arkhive schedule`, so restores are proven, not assumed.
 
 ### doctor
 
@@ -468,7 +468,7 @@ ArkHive decides once, at startup, how it is running:
 
 | Behaviour | Interactive | Unattended |
 |---|---|---|
-| Prompts, wizard | yes | never: a missing answer is exit 2 with `... is required in unattended mode: pass --<flag>` |
+| Prompts, wizard | yes | never: a missing answer is exit 64 with `... is required in unattended mode: pass --<flag>` |
 | Colours, progress | yes (no colour with `NO_COLOR` set or `TERM=dumb`) | never |
 | Destructive confirmations | typed (`overwrite`) or asked | only through `--yes` / `--force` as documented per command |
 | Log format | human sentences | one line per event |
@@ -506,16 +506,30 @@ A scheduled run that fails must not go unnoticed. Either set `NOTIFY=true` (with
 
 ## Exit codes
 
-| Code | Meaning |
-|---|---|
-| 0 | Success |
-| 1 | Failure (including a failed `drill`, a `maintain` check that found errors, `status --max-age` exceeded, `doctor` with a failed check) |
-| 2 | Configuration or usage error, including a removed 1.x key and a required answer missing in unattended mode |
-| 3 | Completed with warnings: unreadable files in a backup, a notification that could not be sent, `doctor` warnings |
-| 4 | Refused for safety: non-empty restore target, insufficient space, in-place restore without `--force`, existing database for `--import-as` without `--force`, `self-update` across a major version without `--allow-major` or into a directory that is not writable |
-| 10 | `self-update --check`: an update is available |
-| 130 | Interrupted by SIGINT (cleanup done, lock released) |
-| 143 | Interrupted by SIGTERM (cleanup done, lock released) |
+ArkHive follows the `sysexits.h` convention, so scripts and systemd can tell a configuration mistake from a server that is down or a lock held by another run: `systemctl status arkhive-backup` shows the name (`status=75/TEMPFAIL`).
+
+| Code | Name | Meaning |
+|---|---|---|
+| 0 | OK | Success |
+| 1 | FAILURE | Failure not classified below (a restic or dump error without a more precise cause), `status --max-age` exceeded, `doctor` with a failed check, `find` with no match, a confirmation the operator declined |
+| 3 | WARNING | Completed with warnings: unreadable files in a backup (the snapshot is saved), a notification that could not be sent, `doctor` warnings |
+| 10 | UPDATE | `self-update --check`: an update is available |
+| 64 | USAGE | Bad option or argument, a required answer missing in unattended mode, `--in-place` without `--force`, `self-update` across a major version without `--allow-major` |
+| 65 | DATAERR | Data verified and found wrong: `maintain` check errors, a failed `drill`, a damaged 1.x archive, a download that does not match its checksum |
+| 66 | NOINPUT | Something named does not exist: configuration file, password file, snapshot, path in a snapshot, dump, release |
+| 69 | UNAVAILABLE | A service or dependency is unavailable: repository unreachable or missing, restic or a dump tool missing or too old, database server down, PHP too old or missing an extension |
+| 70 | SOFTWARE | Internal error, or output of restic that ArkHive cannot understand |
+| 71 | OSERR | The operating system refused to start a process |
+| 73 | CANTCREAT | An output cannot be created: non-empty restore target, not enough space, an existing database for `--import-as`, an unwritable log file |
+| 74 | IOERR | A write failed because a filesystem is full (repository, dump staging, extraction) |
+| 75 | TEMPFAIL | Temporary, retry later: another ArkHive run or restic holds the repository lock, a timeout, the GitHub API rate limit |
+| 76 | PROTOCOL | The releases API answered something that is not a valid release |
+| 77 | NOPERM | Wrong repository or archive password, permission denied, a password file readable by others or owned by another user |
+| 78 | CONFIG | Configuration missing or invalid, including removed 1.x keys |
+| 130 | SIGINT | Interrupted by SIGINT (cleanup done, lock released) |
+| 143 | SIGTERM | Interrupted by SIGTERM (cleanup done, lock released) |
+
+64, 65, 66, 77 and 78 cannot succeed by running again unchanged; the systemd units list them in `RestartPreventExitStatus`. 2.0.0-rc.1 used 2 for usage and configuration errors and 4 for refusals: they are now 64 or 78, and 73 or 64.
 
 ## My server is gone
 
@@ -574,7 +588,7 @@ ArkHive 1.x built `tar | gzip/xz | openssl enc -aes-256-cbc` and streamed one fu
 
 ### Removed keys
 
-A configuration that still contains any of these keys is refused (exit 2) with a message listing each key, its replacement and a link to this section. There is no silent fallback.
+A configuration that still contains any of these keys is refused (exit 78) with a message listing each key, its replacement and a link to this section. There is no silent fallback.
 
 | Removed key | Replaced by |
 |---|---|

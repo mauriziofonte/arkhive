@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace Mfonte\Arkhive\Services\Restore;
 
-use Mfonte\Arkhive\Exceptions\ArkhiveException;
+use Mfonte\Arkhive\Exceptions\DataException;
+use Mfonte\Arkhive\Exceptions\NoInputException;
+use Mfonte\Arkhive\Exceptions\RefusedException;
+use Mfonte\Arkhive\Exceptions\SoftwareException;
 use Mfonte\Arkhive\Exceptions\UsageException;
 use Mfonte\Arkhive\Services\Config\Config;
 use Mfonte\Arkhive\Services\Dump\DumpStaging;
@@ -47,7 +50,7 @@ final class RestoreRunner
     /**
      * Checks the target and the free space; returns the bytes the restore will write.
      *
-     * @throws \Mfonte\Arkhive\Exceptions\RefusedException exit 4
+     * @throws \Mfonte\Arkhive\Exceptions\RefusedException exit 73
      */
     public function preflight(Restic $restic, RestorePlan $plan, ?Config $config): int
     {
@@ -204,7 +207,7 @@ final class RestoreRunner
             $file = $directory . '/' . basename($dump->path);
             $handle = @fopen($file, 'xb');
             if ($handle === false) {
-                throw new ArkhiveException("Cannot create {$file} for the dump to import");
+                throw new RefusedException("Cannot create {$file} for the dump to import");
             }
             try {
                 $log->info(sprintf('Restoring the %s dump of %s (%s) from snapshot %s', $dump->engineLabel(), $dump->database, Bytes::format($dump->size), $plan->snapshot->shortId()));
@@ -214,7 +217,7 @@ final class RestoreRunner
             }
             $restored = (int) filesize($file);
             if ($restored !== $dump->size) {
-                throw new ArkhiveException(sprintf('The restored dump %s has %d bytes, the snapshot records %d', $dump->path, $restored, $dump->size));
+                throw new DataException(sprintf('The restored dump %s has %d bytes, the snapshot records %d', $dump->path, $restored, $dump->size));
             }
 
             $log->info(($created ? "Created the database {$name}; importing" : "Importing into the existing database {$name} (--force)") . " {$dump->label()}");
@@ -256,7 +259,7 @@ final class RestoreRunner
             },
         );
         if (!$summary instanceof BackupSummary || $summary->snapshotId === '') {
-            throw new ArkhiveException('The safety snapshot reported no snapshot id: nothing was restored');
+            throw new SoftwareException('The safety snapshot reported no snapshot id: nothing was restored');
         }
         $log->success("Safety snapshot {$summary->shortId()} saved (tag " . Snapshots::SAFETY_TAG . "); undo the restore with: arkhive restore --snapshot {$summary->shortId()} --in-place --force", ['safety_snapshot' => $summary->snapshotId]);
 
@@ -391,7 +394,7 @@ final class RestoreRunner
             }
         });
         if (!$found instanceof Node) {
-            throw new UsageException("{$file} is not in snapshot {$plan->snapshot->shortId()}", "Find it with: arkhive find '" . basename($file) . "'");
+            throw new NoInputException("{$file} is not in snapshot {$plan->snapshot->shortId()}", "Find it with: arkhive find '" . basename($file) . "'");
         }
         if (!$found->isFile()) {
             throw new UsageException("{$file} is a {$found->type}, not a file: --to-stdout writes a single file", "Restore it with: arkhive restore --snapshot {$plan->snapshot->shortId()} --include '{$file}' --target <new directory>");

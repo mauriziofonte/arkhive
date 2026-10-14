@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use Mfonte\Arkhive\ExitCode;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 use Tests\Support\Cli;
@@ -85,7 +86,7 @@ final class RestoreModesTest extends TestCase
         foreach ([[[], '--snapshot'], [['--snapshot', 'latest'], '--target']] as [$args, $flag]) {
             $result = Cli::run(['restore', ...$this->repoFlags(), ...$args], $this->cliEnv());
 
-            self::assertSame(2, $result->exitCode, $result->output());
+            self::assertSame(ExitCode::USAGE, $result->exitCode, $result->output());
             self::assertStringContainsString("is required in unattended mode: pass {$flag}", $result->stderr);
             self::assertStringNotContainsString('[Y/n]', $result->output());
             self::assertStringNotContainsString('Choice [', $result->output());
@@ -98,7 +99,7 @@ final class RestoreModesTest extends TestCase
     {
         $result = Cli::run(['restore', '-n', ...$this->repoFlags()], $this->cliEnv(), pty: true);
 
-        self::assertSame(2, $result->exitCode, $result->output());
+        self::assertSame(ExitCode::USAGE, $result->exitCode, $result->output());
         self::assertStringContainsString('pass --snapshot', $result->stdout);
         self::assertStringNotContainsString('Choice [', $result->stdout);
     }

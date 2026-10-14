@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Mfonte\Arkhive\Services\System;
 
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
+use Mfonte\Arkhive\Exceptions\UnavailableException;
 
 /**
  * Locates dependencies and fails with the distro-specific install hint when one is missing.
@@ -32,7 +33,7 @@ final class Dependencies
             return $path;
         }
 
-        throw new ArkhiveException(
+        throw new UnavailableException(
             "{$dependency->label()} is needed {$purpose} but was not found in PATH or the standard directories",
             hint: InstallHints::forDependency($dependency, $this->distro),
         );
@@ -51,7 +52,7 @@ final class Dependencies
         }
         $where = str_contains($binary, '/') ? "{$binary} is not an executable file" : "{$binary} was not found in PATH or the standard directories";
 
-        throw new ArkhiveException(
+        throw new UnavailableException(
             "{$dependency->label()} is needed {$purpose} but {$where} (from {$key})",
             hint: InstallHints::forDependency($dependency, $this->distro),
         );

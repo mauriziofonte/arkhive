@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace Tests\Unit\Services\Drill;
 
 use DateTimeImmutable;
+use Mfonte\Arkhive\Exceptions\ConfigException;
 use Mfonte\Arkhive\Exceptions\InterruptedException;
 use Mfonte\Arkhive\Exceptions\RefusedException;
-use Mfonte\Arkhive\Exceptions\UsageException;
 use Mfonte\Arkhive\Services\Config\Config;
 use Mfonte\Arkhive\Services\Config\ResticSettings;
 use Mfonte\Arkhive\Services\Context\ExecutionContext;
@@ -210,7 +210,7 @@ final class DrillRunnerTest extends TestCase
 
     public function testDbNeedsAConfigurationWithADatabase(): void
     {
-        $this->expectException(UsageException::class);
+        $this->expectException(ConfigException::class);
         $this->expectExceptionMessage('--db needs a configuration with WITH_MYSQL or WITH_PGSQL');
         $this->drill()->run($this->restic, $this->snapshot, 50, Configs::make(), true, $this->log());
     }

@@ -139,7 +139,7 @@ jobs:
           status=$?
           set -e
           cat err.txt
-          test "$status" -eq 1
+          test "$status" -eq 69
           test ! -s out.txt
           grep -q '^ArkHive needs PHP 8.3 or newer; this is PHP ${{ matrix.php }}' err.txt
           grep -q 'ppa:ondrej/php' err.txt

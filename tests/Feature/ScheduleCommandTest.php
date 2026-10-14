@@ -161,7 +161,7 @@ final class ScheduleCommandTest extends TestCase
         $config = $this->writeConfig();
         chmod("{$this->dir}/password", 0644);
 
-        self::assertSame(ExitCode::USAGE, Artisan::call('schedule', ['--config' => $config, '--cron' => true]));
+        self::assertSame(ExitCode::CONFIG, Artisan::call('schedule', ['--config' => $config, '--cron' => true]));
         self::assertSame('', Artisan::output());
     }
 

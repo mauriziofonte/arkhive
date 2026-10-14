@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Integration;
 
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
+use Mfonte\Arkhive\Exceptions\DataException;
 use Mfonte\Arkhive\Exceptions\RefusedException;
 use Mfonte\Arkhive\ExitCode;
 use Mfonte\Arkhive\Services\Context\ExecutionContext;
@@ -114,7 +115,7 @@ final class LegacyExtractorTest extends TestCase
             self::fail('a wrong password was accepted');
         } catch (ArkhiveException $e) {
             self::assertSame('Cannot decrypt the archive: the password is wrong (openssl: bad decrypt)', $e->getMessage());
-            self::assertSame(ExitCode::FAILURE, $e->exitCode());
+            self::assertSame(ExitCode::NO_PERMISSION, $e->exitCode());
         }
         self::assertDirectoryDoesNotExist("{$this->dir}/out");
         $this->assertNoLeftovers();
@@ -200,7 +201,7 @@ final class LegacyExtractorTest extends TestCase
         try {
             $this->extractor()->extract(LegacyArchive::open("{$this->dir}/evil.tar"), new TargetDirectory("{$this->dir}/out"), null, $this->logger());
             self::fail('a path outside the target was accepted');
-        } catch (RefusedException $e) {
+        } catch (DataException $e) {
             self::assertSame('The archive contains the path ../escaped.txt, which would be written outside the target: not extracted', $e->getMessage());
         }
         self::assertFileDoesNotExist("{$this->dir}/escaped.txt");
@@ -257,13 +258,13 @@ final class LegacyExtractorTest extends TestCase
         self::assertSame('backup.bin.extracted', LegacyArchive::open("{$this->dir}/backup.bin")->baseName());
 
         touch("{$this->dir}/empty.arbk");
-        foreach (["{$this->dir}/missing.arbk" => 'does not exist', $this->dir => 'is not a regular file', "{$this->dir}/empty.arbk" => 'is empty'] as $path => $problem) {
+        foreach (["{$this->dir}/missing.arbk" => ['does not exist', ExitCode::NO_INPUT], $this->dir => ['is not a regular file', ExitCode::NO_INPUT], "{$this->dir}/empty.arbk" => ['is empty', ExitCode::DATA_ERROR]] as $path => [$problem, $exit]) {
             try {
                 LegacyArchive::open($path);
                 self::fail("{$path} was accepted");
             } catch (ArkhiveException $e) {
                 self::assertSame("The archive {$path} {$problem}", $e->getMessage());
-                self::assertSame(ExitCode::USAGE, $e->exitCode());
+                self::assertSame($exit, $e->exitCode());
             }
         }
     }

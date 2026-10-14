@@ -6,7 +6,9 @@ namespace Tests\Unit\Services\Restore;
 
 use DateTimeImmutable;
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
+use Mfonte\Arkhive\Exceptions\NoInputException;
 use Mfonte\Arkhive\Exceptions\UsageException;
+use Mfonte\Arkhive\ExitCode;
 use Mfonte\Arkhive\Services\Restic\Snapshot;
 use Mfonte\Arkhive\Services\Restore\Snapshots;
 use PHPUnit\Framework\TestCase;
@@ -41,9 +43,9 @@ final class SnapshotsTest extends TestCase
         try {
             self::list()->resolve('latest', null, 'new-server.example.com');
             self::fail('expected a usage error');
-        } catch (UsageException $e) {
+        } catch (UsageException|NoInputException $e) {
             self::assertSame("The repository holds snapshots of several hosts (web1.example.com, web2.example.com): 'latest' needs --host", $e->getMessage());
-            self::assertSame(2, $e->exitCode());
+            self::assertSame(ExitCode::USAGE, $e->exitCode());
         }
     }
 
@@ -72,7 +74,7 @@ final class SnapshotsTest extends TestCase
             try {
                 self::list()->resolve($reference);
                 self::fail("{$reference} should be refused");
-            } catch (UsageException $e) {
+            } catch (UsageException|NoInputException $e) {
                 self::assertSame($message, $e->getMessage());
             }
         }
@@ -91,7 +93,7 @@ final class SnapshotsTest extends TestCase
         try {
             $safety->resolve('latest');
             self::fail('expected a usage error');
-        } catch (UsageException $e) {
+        } catch (UsageException|NoInputException $e) {
             self::assertStringContainsString('only safety snapshots', $e->getMessage());
         }
 

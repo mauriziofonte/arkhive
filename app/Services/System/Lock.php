@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace Mfonte\Arkhive\Services\System;
 
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
+use Mfonte\Arkhive\Exceptions\PermissionException;
+use Mfonte\Arkhive\Exceptions\RefusedException;
+use Mfonte\Arkhive\Exceptions\TemporaryException;
 use Mfonte\Arkhive\Support\Clock;
 
 /**
@@ -76,24 +79,24 @@ final class Lock
         }
         // lock directories can be world-writable: never follow a planted symlink or use another user's file
         if (is_link($this->path)) {
-            throw new ArkhiveException("Refusing the lock file {$this->path}: it is a symbolic link", hint: 'Remove it, or set ARKHIVE_LOCK_DIR to a private directory');
+            throw new PermissionException("Refusing the lock file {$this->path}: it is a symbolic link", hint: 'Remove it, or set ARKHIVE_LOCK_DIR to a private directory');
         }
         $handle = @fopen($this->path, 'c+');
         if ($handle === false) {
-            throw new ArkhiveException("Cannot open the lock file {$this->path}", hint: 'Check that its directory is writable, or set ARKHIVE_LOCK_DIR');
+            throw new RefusedException("Cannot open the lock file {$this->path}", hint: 'Check that its directory is writable, or set ARKHIVE_LOCK_DIR');
         }
         $owner = fstat($handle)['uid'] ?? -1;
         if ($owner !== posix_geteuid()) {
             fclose($handle);
 
-            throw new ArkhiveException("Refusing the lock file {$this->path}: it belongs to uid {$owner}, not to the running user", hint: 'Remove it, or set ARKHIVE_LOCK_DIR to a private directory');
+            throw new PermissionException("Refusing the lock file {$this->path}: it belongs to uid {$owner}, not to the running user", hint: 'Remove it, or set ARKHIVE_LOCK_DIR to a private directory');
         }
         @chmod($this->path, 0600);
         if (!flock($handle, LOCK_EX | LOCK_NB)) {
             $holder = self::describe(self::read($handle));
             fclose($handle);
 
-            throw new ArkhiveException("Another ArkHive run holds the lock for this repository{$holder}: {$this->path}");
+            throw new TemporaryException("Another ArkHive run holds the lock for this repository{$holder}: {$this->path}");
         }
 
         $previous = self::read($handle);

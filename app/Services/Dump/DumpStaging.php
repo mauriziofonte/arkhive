@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace Mfonte\Arkhive\Services\Dump;
 
-use Mfonte\Arkhive\Exceptions\ArkhiveException;
+use Mfonte\Arkhive\Exceptions\PermissionException;
+use Mfonte\Arkhive\Exceptions\RefusedException;
 
 /**
  * DUMP_DIRECTORY: one plain file per database in mysql/<db>.sql and pgsql/<db>.sql. A dump is written
@@ -34,10 +35,10 @@ final class DumpStaging
         foreach (['', ...self::ENGINES] as $sub) {
             $dir = $sub === '' ? $this->directory : "{$this->directory}/{$sub}";
             if (!is_dir($dir) && !@mkdir($dir, 0700, true) && !is_dir($dir)) {
-                throw new ArkhiveException("Cannot create the dump directory {$dir}", hint: 'Check DUMP_DIRECTORY and the permissions of its parent');
+                throw new RefusedException("Cannot create the dump directory {$dir}", hint: 'Check DUMP_DIRECTORY and the permissions of its parent');
             }
             if (!is_writable($dir)) {
-                throw new ArkhiveException("The dump directory {$dir} is not writable");
+                throw new PermissionException("The dump directory {$dir} is not writable");
             }
             if ($sub !== '') {
                 foreach (self::dumpFiles($dir) as $file) {

@@ -70,7 +70,7 @@ final class DrillCommandTest extends TestCase
     {
         $this->restic->on['restore'] = static fn (): array => [1, '', "Fatal: failed to restore: ciphertext verification failed\n"];
 
-        self::assertSame(ExitCode::FAILURE, Artisan::call('drill', ['--config' => $this->writeConfig(self::notify('failure'))]));
+        self::assertSame(ExitCode::DATA_ERROR, Artisan::call('drill', ['--config' => $this->writeConfig(self::notify('failure'))]));
 
         self::assertStringContainsString('error Drill: the restore failed: restic restore (drill) failed (restic exit 1): Fatal: failed to restore: ciphertext verification failed', $this->logOutput());
         self::assertStringContainsString('error Restore drill FAILED on snapshot e82340a7: 1 problem(s)', $this->logOutput());
@@ -83,7 +83,7 @@ final class DrillCommandTest extends TestCase
     {
         $this->restic->catConfig = [12, '', FakeRestic::fixture('wrong-password-0.19.stderr')];
 
-        self::assertSame(ExitCode::FAILURE, Artisan::call('drill', ['--config' => $this->writeConfig(self::notify('failure'))]));
+        self::assertSame(ExitCode::NO_PERMISSION, Artisan::call('drill', ['--config' => $this->writeConfig(self::notify('failure'))]));
 
         self::assertSame('[ArkHive] restore drill FAILED on web1.example.com', $this->mail->sent[0]->getSubject());
         self::assertStringStartsWith('The restore drill could not run: Wrong password', (string) $this->mail->sent[0]->getTextBody());
@@ -109,7 +109,7 @@ final class DrillCommandTest extends TestCase
 
     public function testDbWithoutADatabaseInTheConfigurationIsAUsageError(): void
     {
-        self::assertSame(ExitCode::USAGE, Artisan::call('drill', ['--config' => $this->writeConfig(self::notify()), '--db' => true]));
+        self::assertSame(ExitCode::CONFIG, Artisan::call('drill', ['--config' => $this->writeConfig(self::notify()), '--db' => true]));
         self::assertStringContainsString('error --db needs a configuration with WITH_MYSQL or WITH_PGSQL', $this->logOutput());
         self::assertSame([], $this->mail->sent, 'a usage error is not a drill result');
     }

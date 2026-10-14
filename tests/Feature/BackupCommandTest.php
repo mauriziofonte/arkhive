@@ -95,7 +95,7 @@ final class BackupCommandTest extends TestCase
     {
         $this->restic->catConfig = [12, '', FakeRestic::fixture('wrong-password-0.19.stderr')];
 
-        self::assertSame(ExitCode::FAILURE, Artisan::call('backup', ['--config' => $this->writeConfig(self::notify())]));
+        self::assertSame(ExitCode::NO_PERMISSION, Artisan::call('backup', ['--config' => $this->writeConfig(self::notify())]));
         self::assertStringContainsString('error Wrong password for the restic repository /srv/restic-repo', $this->logOutput());
         $mail = $this->mail->sent[0];
         self::assertSame('[ArkHive] backup FAILED on web1.example.com', $mail->getSubject());
@@ -106,7 +106,7 @@ final class BackupCommandTest extends TestCase
     {
         $config = $this->writeConfig(['SSH_HOST' => 'backup.example.com', 'WITH_CRYPT' => 'true', 'BACKUP_DIRECTORY' => '/srv/www']);
 
-        self::assertSame(ExitCode::USAGE, Artisan::call('backup', ['--config' => $config]));
+        self::assertSame(ExitCode::CONFIG, Artisan::call('backup', ['--config' => $config]));
         self::assertStringContainsString("error The configuration {$config} uses keys removed in ArkHive 2.0:", $this->logOutput());
         self::assertSame([], $this->runner->commands, 'nothing ran');
     }
@@ -116,7 +116,7 @@ final class BackupCommandTest extends TestCase
         $config = $this->writeConfig();
         chmod("{$this->dir}/password", 0644);
 
-        self::assertSame(ExitCode::USAGE, Artisan::call('backup', ['--config' => $config]));
+        self::assertSame(ExitCode::CONFIG, Artisan::call('backup', ['--config' => $config]));
         self::assertStringContainsString("RESTIC_PASSWORD_FILE {$this->dir}/password is readable by group or others (mode 0644) (Run: chmod 600 {$this->dir}/password)", $this->logOutput());
         self::assertSame([], $this->runner->commands);
     }
@@ -136,7 +136,7 @@ final class BackupCommandTest extends TestCase
 
     public function testAMissingConfigIsExit2(): void
     {
-        self::assertSame(ExitCode::USAGE, Artisan::call('backup', ['--config' => "{$this->dir}/nope"]));
+        self::assertSame(ExitCode::NO_INPUT, Artisan::call('backup', ['--config' => "{$this->dir}/nope"]));
         self::assertStringContainsString("error Configuration file {$this->dir}/nope (from --config) does not exist or is not readable", $this->logOutput());
     }
 
@@ -144,7 +144,7 @@ final class BackupCommandTest extends TestCase
     {
         $this->app->instance(Dependencies::class, FakeBinaries::dependencies("{$this->dir}/empty", [], "ID=alpine\n"));
 
-        self::assertSame(ExitCode::FAILURE, Artisan::call('backup', ['--config' => $this->writeConfig()]));
+        self::assertSame(ExitCode::UNAVAILABLE, Artisan::call('backup', ['--config' => $this->writeConfig()]));
         self::assertStringContainsString('error restic is needed to back up but was not found in PATH or the standard directories', $this->logOutput());
         self::assertStringContainsString('notice Run: apk add restic', $this->logOutput());
     }

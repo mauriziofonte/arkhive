@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Services\Config;
 
-use Mfonte\Arkhive\Exceptions\UsageException;
+use Mfonte\Arkhive\Exceptions\ConfigException;
+use Mfonte\Arkhive\Exceptions\NoInputException;
 use Mfonte\Arkhive\Services\Config\ConfigParser;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -67,9 +68,9 @@ final class ConfigParserTest extends TestCase
     }
 
     #[DataProvider('malformed')]
-    public function testMalformedContentIsAUsageErrorNamingTheFileAndLine(string $content, string $problem): void
+    public function testMalformedContentIsAConfigurationErrorNamingTheFileAndLine(string $content, string $problem): void
     {
-        $this->expectExceptionObject(new UsageException("Cannot parse the configuration file /etc/arkhive/config, {$problem}"));
+        $this->expectExceptionObject(new ConfigException("Cannot parse the configuration file /etc/arkhive/config, {$problem}"));
 
         ConfigParser::parse($content, '/etc/arkhive/config');
     }
@@ -95,9 +96,9 @@ final class ConfigParserTest extends TestCase
         self::assertSame(['A' => 'b'], ConfigParser::parseFile($path));
     }
 
-    public function testUnreadableFileIsAUsageError(): void
+    public function testUnreadableFileIsNoInput(): void
     {
-        $this->expectExceptionObject(new UsageException('Cannot read the configuration file /nonexistent/config'));
+        $this->expectExceptionObject(new NoInputException('Cannot read the configuration file /nonexistent/config'));
 
         ConfigParser::parseFile('/nonexistent/config');
     }
@@ -148,7 +149,7 @@ final class ConfigParserTest extends TestCase
                     self::assertIsString($key);
                     self::assertIsString($value);
                 }
-            } catch (UsageException) {
+            } catch (ConfigException) {
                 self::addToAssertionCount(1);
             }
         }

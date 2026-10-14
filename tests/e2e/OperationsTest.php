@@ -6,6 +6,7 @@ namespace Tests\e2e;
 
 use DateTimeImmutable;
 use DateTimeZone;
+use Mfonte\Arkhive\ExitCode;
 
 /**
  * spec §13.2 steps 2 and 7, §13.5 drill and §13.6 corrupted pack: init, maintain with the 7/4/6
@@ -263,16 +264,16 @@ final class OperationsTest extends E2eTestCase
 
         $pack = self::corruptLargestPack($repository);
 
-        $drill = $this->json(['drill'], 1, $config);
+        $drill = $this->json(['drill'], ExitCode::DATA_ERROR, $config);
         self::assertFalse($drill['passed']);
         self::assertNotSame([], $drill['failures']);
         self::assertSame([], glob("{$this->dir}/tmp/*") ?: []);
 
-        $maintain = $this->json(['maintain'], 1, $config);
+        $maintain = $this->json(['maintain'], ExitCode::DATA_ERROR, $config);
         self::assertFalse($maintain['healthy']);
         self::assertContains($pack, $maintain['broken_packs']);
         $log = self::arkhive(['maintain', '--config', $config], $this->runEnv());
-        self::assertSame(1, $log->exitCode);
+        self::assertSame(ExitCode::DATA_ERROR, $log->exitCode);
         self::assertStringContainsString("error The repository check found errors: pack {$pack}", $log->stderr);
         self::assertStringContainsString("restic repair packs {$pack}", $log->stderr);
         foreach (glob("{$this->dir}/locks/*") ?: [] as $lock) {

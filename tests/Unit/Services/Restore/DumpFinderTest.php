@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Unit\Services\Restore;
 
 use DateTimeImmutable;
+use Mfonte\Arkhive\Exceptions\NoInputException;
 use Mfonte\Arkhive\Exceptions\UsageException;
 use Mfonte\Arkhive\Services\Config\ResticSettings;
 use Mfonte\Arkhive\Services\Restic\Node;
@@ -67,7 +68,7 @@ final class DumpFinderTest extends TestCase
             try {
                 DumpFinder::select($list, $name);
                 self::fail("{$name} should be refused");
-            } catch (UsageException $e) {
+            } catch (UsageException|NoInputException $e) {
                 self::assertStringStartsWith($message, $e->getMessage());
             }
         }

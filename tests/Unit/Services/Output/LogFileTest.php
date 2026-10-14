@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Services\Output;
 
-use Mfonte\Arkhive\Exceptions\UsageException;
+use Mfonte\Arkhive\Exceptions\RefusedException;
 use Mfonte\Arkhive\Services\Output\LogFile;
 use PHPUnit\Framework\TestCase;
 use Tests\Support\TempDir;
@@ -51,18 +51,18 @@ final class LogFileTest extends TestCase
         self::assertFileDoesNotExist("{$path}.1");
     }
 
-    public function testAMissingDirectoryIsAUsageError(): void
+    public function testAMissingDirectoryCannotBeCreated(): void
     {
         $path = $this->tempDir() . '/missing/a.log';
 
-        $this->expectExceptionObject(new UsageException(
+        $this->expectExceptionObject(new RefusedException(
             "Cannot write the log file {$path}: check that its directory exists and is writable",
         ));
 
         new LogFile($path);
     }
 
-    public function testAnUnwritableFileIsAUsageError(): void
+    public function testAnUnwritableFileCannotBeCreated(): void
     {
         if (posix_geteuid() === 0) {
             self::markTestSkipped('root can write read-only files');
@@ -71,7 +71,7 @@ final class LogFileTest extends TestCase
         touch($path);
         chmod($path, 0400);
 
-        $this->expectException(UsageException::class);
+        $this->expectException(RefusedException::class);
 
         new LogFile($path);
     }

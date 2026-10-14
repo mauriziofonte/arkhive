@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Mfonte\Arkhive\Services\Restore;
 
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
+use Mfonte\Arkhive\Exceptions\ConfigException;
 use Mfonte\Arkhive\Exceptions\RefusedException;
+use Mfonte\Arkhive\Exceptions\UnavailableException;
 use Mfonte\Arkhive\Exceptions\UsageException;
 use Mfonte\Arkhive\Services\Config\Config;
 use Mfonte\Arkhive\Services\Config\MysqlConfig;
@@ -39,10 +41,10 @@ final class DatabaseImporter
         private readonly Cleanup $cleanup,
     ) {
         if ($engine === 'mysql' && $config->mysql === null) {
-            throw new UsageException('Importing a MySQL/MariaDB dump needs the MYSQL_* connection settings, and the configuration has none', 'Pass --config with a configuration that has WITH_MYSQL=true, or restore the dump file without --import-as');
+            throw new ConfigException('Importing a MySQL/MariaDB dump needs the MYSQL_* connection settings, and the configuration has none', 'Pass --config with a configuration that has WITH_MYSQL=true, or restore the dump file without --import-as');
         }
         if ($engine === 'pgsql' && $config->pgsql === null) {
-            throw new UsageException('Importing a PostgreSQL dump needs the PGSQL_* connection settings, and the configuration has none', 'Pass --config with a configuration that has WITH_PGSQL=true, or restore the dump file without --import-as');
+            throw new ConfigException('Importing a PostgreSQL dump needs the PGSQL_* connection settings, and the configuration has none', 'Pass --config with a configuration that has WITH_PGSQL=true, or restore the dump file without --import-as');
         }
     }
 
@@ -172,7 +174,7 @@ final class DatabaseImporter
         }
         $result = $this->runner->run($command);
         if (!$result->succeeded()) {
-            throw new ArkhiveException($result->failure($what), hint: $hint);
+            throw new UnavailableException($result->failure($what), hint: $hint);
         }
 
         return $result->stdout;

@@ -5,8 +5,9 @@ declare(strict_types=1);
 namespace Tests\Unit\Services\Restore;
 
 use DateTimeImmutable;
-use Mfonte\Arkhive\Exceptions\RefusedException;
+use Mfonte\Arkhive\Exceptions\CancelledException;
 use Mfonte\Arkhive\Exceptions\UsageException;
+use Mfonte\Arkhive\ExitCode;
 use Mfonte\Arkhive\Services\Config\Config;
 use Mfonte\Arkhive\Services\Config\ResticSettings;
 use Mfonte\Arkhive\Services\Restic\Restic;
@@ -165,7 +166,7 @@ final class RestorePlannerTest extends TestCase
         $plan = $this->planner(new FakePrompter(['', '', '', 'full', 'overwrite']))->plan(new RestoreOptions(), $this->snapshots);
         self::assertTrue($plan->force);
 
-        $this->expectException(RefusedException::class);
+        $this->expectException(CancelledException::class);
         $this->expectExceptionMessage("The restore target {$this->cwd}/full is not empty and the restore was not confirmed: nothing was restored");
         $this->planner(new FakePrompter(['', '', '', 'full', 'yes']))->plan(new RestoreOptions(), $this->snapshots);
     }
@@ -176,7 +177,7 @@ final class RestorePlannerTest extends TestCase
         $planner = $this->planner($prompter);
         $plan = $planner->plan(new RestoreOptions(), $this->snapshots);
 
-        $this->expectException(UsageException::class);
+        $this->expectException(CancelledException::class);
         $this->expectExceptionMessage('Restore cancelled: nothing was restored');
         $planner->confirm($plan, 1, null, false);
     }
@@ -202,7 +203,7 @@ final class RestorePlannerTest extends TestCase
         self::assertTrue($plan->force);
         self::assertSame('/', $plan->target);
 
-        $this->expectException(RefusedException::class);
+        $this->expectException(CancelledException::class);
         $this->expectExceptionMessage('In-place restore not confirmed: nothing was restored');
         $this->planner(new FakePrompter(['no']))->plan(new RestoreOptions(snapshot: 'latest', inPlace: true), $this->snapshots);
     }
@@ -218,7 +219,7 @@ final class RestorePlannerTest extends TestCase
                 self::fail('expected a usage error');
             } catch (UsageException $e) {
                 self::assertSame($message, $e->getMessage());
-                self::assertSame(2, $e->exitCode());
+                self::assertSame(ExitCode::USAGE, $e->exitCode());
             }
         }
 
@@ -247,9 +248,9 @@ final class RestorePlannerTest extends TestCase
     {
         try {
             $this->planner(null)->plan(new RestoreOptions(snapshot: 'latest', inPlace: true), $this->snapshots);
-            self::fail('expected a refusal');
-        } catch (RefusedException $e) {
-            self::assertSame(4, $e->exitCode());
+            self::fail('expected a usage error');
+        } catch (UsageException $e) {
+            self::assertSame(ExitCode::USAGE, $e->exitCode());
             self::assertSame('An in-place restore overwrites the original files and needs --force', $e->getMessage());
         }
 

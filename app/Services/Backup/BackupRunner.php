@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Mfonte\Arkhive\Services\Backup;
 
-use Mfonte\Arkhive\Exceptions\ArkhiveException;
+use Mfonte\Arkhive\Exceptions\SoftwareException;
 use Mfonte\Arkhive\Services\Config\Config;
 use Mfonte\Arkhive\Services\Dump\DatabaseDumps;
 use Mfonte\Arkhive\Services\Dump\DumpRun;
@@ -130,7 +130,7 @@ final class BackupRunner
         }
 
         if (!$summary instanceof BackupSummary || $summary->snapshotId === '') {
-            throw new ArkhiveException('restic backup ended without reporting a snapshot' . ($result->stderrTail() === '' ? '' : ': ' . $result->stderrTail()));
+            throw new SoftwareException('restic backup ended without reporting a snapshot' . ($result->stderrTail() === '' ? '' : ': ' . $result->stderrTail()));
         }
 
         $warnings = [];

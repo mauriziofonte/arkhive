@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use Mfonte\Arkhive\ExitCode;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 use Tests\Support\Cli;
@@ -81,7 +82,7 @@ final class ExecutionModeTest extends TestCase
     {
         $result = Cli::run(['internal:context', '--interactive']);
 
-        self::assertSame(2, $result->exitCode);
+        self::assertSame(ExitCode::USAGE, $result->exitCode);
         self::assertStringContainsString('error --interactive needs a terminal on stdin', $result->stderr);
     }
 }

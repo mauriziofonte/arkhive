@@ -49,7 +49,7 @@ abstract class ArkhiveCommand extends Command
 
     /**
      * Options and arguments are bound before handle(): an unknown option, a missing or an extra
-     * argument is a usage error (exit 2), not the console's generic failure (exit 1).
+     * argument is a usage error (exit 64), not the console's generic failure (exit 1).
      */
     #[\Override]
     public function run(InputInterface $input, OutputInterface $output): int
@@ -90,7 +90,7 @@ abstract class ArkhiveCommand extends Command
         try {
             $logFile = self::stringOption($this->option('log-file'));
             $file = $logFile === null ? null : new LogFile($logFile);
-        } catch (UsageException $e) {
+        } catch (ArkhiveException $e) {
             $file = null;
             $this->log = new Logger($this->context, $stream->resource(), null, $clock);
             $this->log->error($e->getMessage());
@@ -113,7 +113,7 @@ abstract class ArkhiveCommand extends Command
         } catch (Throwable $e) {
             $this->log->error(sprintf('Unexpected error: %s (%s:%d)', $e->getMessage(), $e->getFile(), $e->getLine()));
 
-            return ExitCode::FAILURE;
+            return ExitCode::SOFTWARE;
         } finally {
             foreach ($cleanup->runAll() as $failure) {
                 $this->log->warning("Cleanup failed: {$failure}");

@@ -6,6 +6,8 @@ namespace Tests\Unit\Services\Restore;
 
 use DateTimeImmutable;
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
+use Mfonte\Arkhive\Exceptions\ConfigException;
+use Mfonte\Arkhive\Exceptions\NoInputException;
 use Mfonte\Arkhive\Exceptions\RefusedException;
 use Mfonte\Arkhive\Exceptions\UsageException;
 use Mfonte\Arkhive\Services\Config\Config;
@@ -361,7 +363,7 @@ final class RestoreRunnerTest extends TestCase
             try {
                 $this->runner()->run($this->restic, $this->plan(Selection::stdout($file), null), null, 'h', $this->log(), self::sink());
                 self::fail("{$file} should be refused");
-            } catch (UsageException $e) {
+            } catch (UsageException|NoInputException $e) {
                 self::assertSame($message, $e->getMessage());
             }
         }
@@ -533,8 +535,8 @@ final class RestoreRunnerTest extends TestCase
         foreach ([[null, '--import-as needs the database connection settings of a configuration file'], [Configs::make(), 'Importing a MySQL/MariaDB dump needs the MYSQL_* connection settings, and the configuration has none']] as [$config, $message]) {
             try {
                 $this->runner()->run($this->restic, $this->shopPlan(), $config, 'h', $this->log(), self::sink());
-                self::fail('expected a usage error');
-            } catch (UsageException $e) {
+                self::fail('expected a usage or configuration error');
+            } catch (UsageException|ConfigException $e) {
                 self::assertSame($message, $e->getMessage());
             }
         }

@@ -6,7 +6,7 @@ namespace Mfonte\Arkhive\Services\Restore;
 
 use DateTimeImmutable;
 use FilesystemIterator;
-use Mfonte\Arkhive\Exceptions\ArkhiveException;
+use Mfonte\Arkhive\Exceptions\PermissionException;
 use Mfonte\Arkhive\Exceptions\RefusedException;
 use Mfonte\Arkhive\Exceptions\UsageException;
 use Mfonte\Arkhive\Support\Bytes;
@@ -95,7 +95,7 @@ final class TargetDirectory
         }
         $parent = $this->existingAncestor();
         if (!is_writable($parent)) {
-            throw new ArkhiveException("Cannot restore into {$this->path}: {$parent} is not writable by this user");
+            throw new PermissionException("Cannot restore into {$this->path}: {$parent} is not writable by this user");
         }
     }
 
@@ -147,7 +147,7 @@ final class TargetDirectory
             }
         }
 
-        throw new ArkhiveException("Cannot create a private directory in {$parent} for {$purpose}");
+        throw new RefusedException("Cannot create a private directory in {$parent} for {$purpose}");
     }
 
     /**

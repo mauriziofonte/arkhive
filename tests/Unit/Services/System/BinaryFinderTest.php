@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Unit\Services\System;
 
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
+use Mfonte\Arkhive\ExitCode;
 use Mfonte\Arkhive\Services\System\BinaryFinder;
 use Mfonte\Arkhive\Services\System\Dependencies;
 use Mfonte\Arkhive\Services\System\Dependency;
@@ -90,7 +91,7 @@ final class BinaryFinderTest extends TestCase
         } catch (ArkhiveException $e) {
             self::assertSame('pg_dump is needed to dump PostgreSQL but was not found in PATH or the standard directories', $e->getMessage());
             self::assertSame('Run: apt install postgresql-client', $e->hint());
-            self::assertSame(1, $e->exitCode());
+            self::assertSame(ExitCode::UNAVAILABLE, $e->exitCode());
         }
         self::assertNull($dependencies->find(Dependency::Restic));
         self::assertSame('debian', $dependencies->distro()->id);

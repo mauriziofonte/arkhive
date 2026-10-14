@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace Mfonte\Arkhive\Services\Config;
 
-use Mfonte\Arkhive\Exceptions\UsageException;
+use Mfonte\Arkhive\Exceptions\ConfigException;
+use Mfonte\Arkhive\Exceptions\NoInputException;
 
 /**
  * Parses the .env-style configuration into raw strings. Values are never interpreted here: typing
@@ -62,7 +63,7 @@ final class ConfigParser
     {
         $content = @file_get_contents($path);
         if ($content === false) {
-            throw new UsageException("Cannot read the configuration file {$path}");
+            throw new NoInputException("Cannot read the configuration file {$path}");
         }
 
         return self::parse($content, $path);
@@ -122,8 +123,8 @@ final class ConfigParser
         }
     }
 
-    private static function error(string $source, int $line, string $problem): UsageException
+    private static function error(string $source, int $line, string $problem): ConfigException
     {
-        return new UsageException("Cannot parse the configuration file {$source}, line {$line}: {$problem}");
+        return new ConfigException("Cannot parse the configuration file {$source}, line {$line}: {$problem}");
     }
 }

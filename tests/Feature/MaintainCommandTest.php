@@ -103,7 +103,7 @@ final class MaintainCommandTest extends TestCase
         $this->damaged();
         $config = $this->writeConfig(self::notify('failure'));
 
-        self::assertSame(ExitCode::FAILURE, Artisan::call('maintain', ['--config' => $config, '--json' => true]));
+        self::assertSame(ExitCode::DATA_ERROR, Artisan::call('maintain', ['--config' => $config, '--json' => true]));
 
         $log = $this->logOutput();
         self::assertStringContainsString('error The repository check found errors: pack ' . self::PACK . ' contains 2 errors', $log);
@@ -123,7 +123,7 @@ final class MaintainCommandTest extends TestCase
     {
         $this->restic->answers['check'] = [1, '', "Fatal: repository contains errors\nerror for tree 4b2a: tree 4b2a not found in repository\n"];
 
-        self::assertSame(ExitCode::FAILURE, Artisan::call('maintain', ['--config' => $this->writeConfig(), '--json' => true]));
+        self::assertSame(ExitCode::DATA_ERROR, Artisan::call('maintain', ['--config' => $this->writeConfig(), '--json' => true]));
 
         self::assertCount(1, $this->restic->callsOf('check'));
         self::assertStringContainsString('error The repository check found errors: error for tree 4b2a: tree 4b2a not found in repository', $this->logOutput());
@@ -137,7 +137,7 @@ final class MaintainCommandTest extends TestCase
     {
         $this->restic->answers['forget'] = [11, '', FakeRestic::fixture('locked-0.19.stderr')];
 
-        self::assertSame(ExitCode::FAILURE, Artisan::call('maintain', ['--config' => $this->writeConfig(self::notify())]));
+        self::assertSame(ExitCode::TEMPORARY, Artisan::call('maintain', ['--config' => $this->writeConfig(self::notify())]));
 
         self::assertStringContainsString('error The restic repository is locked', $this->logOutput());
         self::assertSame([], $this->restic->callsOf('check'));
@@ -151,7 +151,7 @@ final class MaintainCommandTest extends TestCase
         $backup = Lock::forRepository('/srv/restic-repo', ['ARKHIVE_LOCK_DIR' => "{$this->dir}/locks"], new FixedClock(), 0);
         $backup->acquire('backup');
         try {
-            self::assertSame(ExitCode::FAILURE, Artisan::call('maintain', ['--config' => $config]));
+            self::assertSame(ExitCode::TEMPORARY, Artisan::call('maintain', ['--config' => $config]));
         } finally {
             $backup->release();
         }
@@ -181,6 +181,6 @@ final class MaintainCommandTest extends TestCase
         $this->damaged();
         $this->mail->failWith = 'Connection refused';
 
-        self::assertSame(ExitCode::FAILURE, Artisan::call('maintain', ['--config' => $this->writeConfig(self::notify())]));
+        self::assertSame(ExitCode::DATA_ERROR, Artisan::call('maintain', ['--config' => $this->writeConfig(self::notify())]));
     }
 }

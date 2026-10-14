@@ -7,6 +7,7 @@ namespace Tests\Unit\Services\Dump;
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
 use Mfonte\Arkhive\Exceptions\InterruptedException;
 use Mfonte\Arkhive\Exceptions\RefusedException;
+use Mfonte\Arkhive\ExitCode;
 use Mfonte\Arkhive\Services\Config\Config;
 use Mfonte\Arkhive\Services\Config\ConfigFactory;
 use Mfonte\Arkhive\Services\Context\ExecutionContext;
@@ -181,7 +182,7 @@ final class DatabaseDumpsTest extends TestCase
             $this->dumps->run($this->config(), $this->log);
             self::fail('expected a refusal');
         } catch (RefusedException $e) {
-            self::assertSame(4, $e->exitCode());
+            self::assertSame(ExitCode::CANNOT_CREATE, $e->exitCode());
             self::assertMatchesRegularExpression('#^Not enough free space for the database dumps in ' . preg_quote($this->dumpDir, '#') . ': about 8192\.00 PiB needed, [0-9.]+ (B|KiB|MiB|GiB|TiB|PiB) available$#', $e->getMessage());
             self::assertSame('Free some space, or point DUMP_DIRECTORY to a larger filesystem', $e->hint());
         }

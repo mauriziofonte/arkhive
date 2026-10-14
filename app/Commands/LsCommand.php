@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Mfonte\Arkhive\Commands;
 
-use Mfonte\Arkhive\Exceptions\ArkhiveException;
+use Mfonte\Arkhive\Exceptions\NoInputException;
 use Mfonte\Arkhive\Exceptions\UsageException;
 use Mfonte\Arkhive\ExitCode;
 use Mfonte\Arkhive\Services\Restic\Node;
@@ -42,7 +42,7 @@ final class LsCommand extends RepositoryCommand
             $nodes[] = $node;
         });
         if ($nodes === []) {
-            throw new ArkhiveException("{$path} is not in snapshot {$snapshot->shortId()}", hint: 'Find it with: arkhive find ' . escapeshellarg(basename((string) $path)));
+            throw new NoInputException("{$path} is not in snapshot {$snapshot->shortId()}", hint: 'Find it with: arkhive find ' . escapeshellarg(basename((string) $path)));
         }
 
         if ((bool) $this->option('json')) {

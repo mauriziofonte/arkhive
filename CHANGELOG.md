@@ -6,6 +6,14 @@ All notable changes to ArkHive are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Exit codes follow `sysexits.h` (see "Exit codes" in the README): usage errors are 64 (were 2),
+  configuration errors 78 (were 2), refused outputs such as a non-empty restore target or not
+  enough space 73 (were 4), a lock held by another run 75, an unreachable repository or a missing
+  tool 69, a wrong password 77, a failed `drill` or repository check 65 (were 1). 0, 1, 3, 10, 130
+  and 143 keep their meaning. systemd shows the names (`status=75/TEMPFAIL`).
+
 ## [2.0.0-rc.1] - 2026-10-14
 
 ArkHive 2.0 replaces the 1.x archive pipeline (`tar | gzip/xz | openssl` streamed over SSH) with

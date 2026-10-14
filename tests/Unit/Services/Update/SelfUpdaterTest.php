@@ -5,7 +5,8 @@ declare(strict_types=1);
 namespace Tests\Unit\Services\Update;
 
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
-use Mfonte\Arkhive\Exceptions\RefusedException;
+use Mfonte\Arkhive\Exceptions\UnavailableException;
+use Mfonte\Arkhive\Exceptions\UsageException;
 use Mfonte\Arkhive\ExitCode;
 use Mfonte\Arkhive\Services\Context\ExecutionContext;
 use Mfonte\Arkhive\Services\Context\LogFormat;
@@ -132,7 +133,7 @@ final class SelfUpdaterTest extends TestCase
         try {
             $updater->install($release, false, $this->logger());
             self::fail('a major version was crossed');
-        } catch (RefusedException $e) {
+        } catch (UsageException $e) {
             self::assertSame('v3.0.0 is a different major version than the running 2.0.0: its configuration is not compatible', $e->getMessage());
             self::assertSame('Read the migration notes first (https://github.com/mauriziofonte/arkhive#migrating-from-1x), then run again with --allow-major', $e->hint());
         }
@@ -276,9 +277,9 @@ final class SelfUpdaterTest extends TestCase
             try {
                 $call();
                 self::fail('a source checkout was updated');
-            } catch (RefusedException $e) {
+            } catch (UnavailableException $e) {
                 self::assertSame('self-update works only for the PHAR installation; this ArkHive runs from source', $e->getMessage());
-                self::assertSame(ExitCode::REFUSED, $e->exitCode());
+                self::assertSame(ExitCode::UNAVAILABLE, $e->exitCode());
             }
         }
     }

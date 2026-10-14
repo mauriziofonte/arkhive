@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Unit\Services\Restic;
 
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
+use Mfonte\Arkhive\ExitCode;
 use Mfonte\Arkhive\Services\Config\ResticSettings;
 use Mfonte\Arkhive\Services\Process\Command;
 use Mfonte\Arkhive\Services\Process\ProcessResult;
@@ -113,25 +114,38 @@ final class ResticTest extends TestCase
     public static function failures(): iterable
     {
         $unlock = "If no other restic process is using the repository the lock is stale; remove it with: RESTIC_PASSWORD_FILE='/etc/arkhive/restic-password' restic -r 'sftp:backup-user@backup.example.com:/restic' unlock (ArkHive never does this automatically)";
-        yield 'wrong password 0.19' => ['wrong-password-0.19.stderr', 12, 'Wrong password for the restic repository sftp:backup-user@backup.example.com:/restic (RESTIC_PASSWORD_FILE /etc/arkhive/restic-password)', 'Put the repository password in that file; it is the password given to restic init, kept off the host as well'];
-        yield 'wrong password 0.16' => ['wrong-password-0.16.stderr', 1, 'Wrong password for the restic repository sftp:backup-user@backup.example.com:/restic (RESTIC_PASSWORD_FILE /etc/arkhive/restic-password)', 'Put the repository password in that file; it is the password given to restic init, kept off the host as well'];
-        yield 'no repository 0.19' => ['no-repository-0.19.stderr', 10, 'There is no restic repository at sftp:backup-user@backup.example.com:/restic', 'Check RESTIC_REPOSITORY, or create the repository with: arkhive init'];
-        yield 'no repository 0.16' => ['no-repository-0.16.stderr', 1, 'There is no restic repository at sftp:backup-user@backup.example.com:/restic', 'Check RESTIC_REPOSITORY, or create the repository with: arkhive init'];
-        yield 'locked 0.19' => ['locked-0.19.stderr', 11, 'The restic repository is locked by PID 25983 on host.example.com by root (UID 0, GID 0), created at 2026-10-12 13:58:02 (1.554904747s ago)', $unlock];
-        yield 'locked 0.16' => ['locked-0.19.stderr', 1, 'The restic repository is locked by PID 25983 on host.example.com by root (UID 0, GID 0), created at 2026-10-12 13:58:02 (1.554904747s ago)', $unlock];
-        yield 'sftp unreachable' => ['sftp-unreachable-0.19.stderr', 1, 'Opening the restic repository failed (restic exit 1): subprocess ssh: ssh: connect to host backup.example.com port 2299: Connection refused | Fatal: unable to open repository at sftp:e2e@backup.example.com:/nothere: unable to start the sftp session, error: error receiving version packet from server: server unexpectedly closed connection: unexpected EOF', 'Check that the SFTP server is up and accepts the SSH key of this user; for a non-standard port or key set RESTIC_SFTP_COMMAND'];
-        yield 'sftp unreachable, ssh stderr not relayed' => ['sftp-unreachable-no-ssh-line-0.19.stderr', 1, 'Opening the restic repository failed (restic exit 1): Fatal: unable to open repository at sftp:e2e@backup.example.com:/nothere: unable to start the sftp session, error: error receiving version packet from server: server unexpectedly closed connection: unexpected EOF', 'Check that the SFTP server is up and accepts the SSH key of this user; for a non-standard port or key set RESTIC_SFTP_COMMAND'];
+        yield 'wrong password 0.19' => ['wrong-password-0.19.stderr', 12, 'Wrong password for the restic repository sftp:backup-user@backup.example.com:/restic (RESTIC_PASSWORD_FILE /etc/arkhive/restic-password)', 'Put the repository password in that file; it is the password given to restic init, kept off the host as well', ExitCode::NO_PERMISSION];
+        yield 'wrong password 0.16' => ['wrong-password-0.16.stderr', 1, 'Wrong password for the restic repository sftp:backup-user@backup.example.com:/restic (RESTIC_PASSWORD_FILE /etc/arkhive/restic-password)', 'Put the repository password in that file; it is the password given to restic init, kept off the host as well', ExitCode::NO_PERMISSION];
+        yield 'no repository 0.19' => ['no-repository-0.19.stderr', 10, 'There is no restic repository at sftp:backup-user@backup.example.com:/restic', 'Check RESTIC_REPOSITORY, or create the repository with: arkhive init', ExitCode::UNAVAILABLE];
+        yield 'no repository 0.16' => ['no-repository-0.16.stderr', 1, 'There is no restic repository at sftp:backup-user@backup.example.com:/restic', 'Check RESTIC_REPOSITORY, or create the repository with: arkhive init', ExitCode::UNAVAILABLE];
+        yield 'locked 0.19' => ['locked-0.19.stderr', 11, 'The restic repository is locked by PID 25983 on host.example.com by root (UID 0, GID 0), created at 2026-10-12 13:58:02 (1.554904747s ago)', $unlock, ExitCode::TEMPORARY];
+        yield 'locked 0.16' => ['locked-0.19.stderr', 1, 'The restic repository is locked by PID 25983 on host.example.com by root (UID 0, GID 0), created at 2026-10-12 13:58:02 (1.554904747s ago)', $unlock, ExitCode::TEMPORARY];
+        yield 'sftp unreachable' => ['sftp-unreachable-0.19.stderr', 1, 'Opening the restic repository failed (restic exit 1): subprocess ssh: ssh: connect to host backup.example.com port 2299: Connection refused | Fatal: unable to open repository at sftp:e2e@backup.example.com:/nothere: unable to start the sftp session, error: error receiving version packet from server: server unexpectedly closed connection: unexpected EOF', 'Check that the SFTP server is up and accepts the SSH key of this user; for a non-standard port or key set RESTIC_SFTP_COMMAND', ExitCode::UNAVAILABLE];
+        yield 'sftp unreachable, ssh stderr not relayed' => ['sftp-unreachable-no-ssh-line-0.19.stderr', 1, 'Opening the restic repository failed (restic exit 1): Fatal: unable to open repository at sftp:e2e@backup.example.com:/nothere: unable to start the sftp session, error: error receiving version packet from server: server unexpectedly closed connection: unexpected EOF', 'Check that the SFTP server is up and accepts the SSH key of this user; for a non-standard port or key set RESTIC_SFTP_COMMAND', ExitCode::UNAVAILABLE];
     }
 
     #[DataProvider('failures')]
-    public function testFailuresAreExplainedWithTheFix(string $fixture, int $exit, string $message, string $hint): void
+    public function testFailuresAreExplainedWithTheFix(string $fixture, int $exit, string $message, string $hint, int $arkhiveExit): void
     {
         $result = new ProcessResult(new Command(['/usr/bin/restic', 'cat', 'config']), $exit, '', self::fixture($fixture));
         $e = ResticErrors::exception($result, 'Opening the restic repository', self::settings());
 
         self::assertSame($message, $e->getMessage());
         self::assertSame($hint, $e->hint());
-        self::assertSame(1, $e->exitCode());
+        self::assertSame($arkhiveExit, $e->exitCode());
+    }
+
+    public function testAFullRepositoryFilesystemIsAnIoErrorAndALostSshSessionUnavailable(): void
+    {
+        $command = new Command(['/usr/bin/restic', 'backup']);
+        $full = ResticErrors::exception(new ProcessResult($command, 1, '', "Fatal: unable to save snapshot: write /srv/restic-repo/data/ab/abcd: no space left on device\n"), 'restic backup', self::settings('/srv/restic-repo'));
+        self::assertSame(ExitCode::IO_ERROR, $full->exitCode());
+        self::assertSame('restic backup failed (restic exit 1): Fatal: unable to save snapshot: write /srv/restic-repo/data/ab/abcd: no space left on device', $full->getMessage());
+        self::assertSame('The filesystem holding the repository (or the restic cache) is full: free space, or prune old snapshots with arkhive maintain', $full->hint());
+
+        $lost = ResticErrors::exception(new ProcessResult($command, 1, '', "Fatal: unable to save snapshot: ssh command exited: signal: killed\n"), 'restic backup', self::settings());
+        self::assertSame(ExitCode::UNAVAILABLE, $lost->exitCode());
+        self::assertSame('Check that the SFTP server is up and accepts the SSH key of this user; for a non-standard port or key set RESTIC_SFTP_COMMAND', $lost->hint());
     }
 
     public function testUnknownFailuresKeepStderrAndTimeoutsPointAtTheServer(): void
@@ -140,10 +154,12 @@ final class ResticTest extends TestCase
         $other = ResticErrors::exception(new ProcessResult($command, 1, '', "Fatal: pack 1234 damaged\n"), 'Repository check', self::settings('/srv/restic-repo'));
         self::assertSame('Repository check failed (restic exit 1): Fatal: pack 1234 damaged', $other->getMessage());
         self::assertNull($other->hint());
+        self::assertSame(ExitCode::FAILURE, $other->exitCode());
 
         $timeout = ResticErrors::exception(new ProcessResult($command->withTimeout(300.0), 143, '', '', 300.0, true), 'Opening the restic repository', self::settings('sftp:x@backup.example.com:/r', 'ssh -p 23 x@backup.example.com -s sftp'));
         self::assertSame('Opening the restic repository timed out after 300s (restic)', $timeout->getMessage());
         self::assertSame('Check that the repository server is up and that this command works by hand: ssh -p 23 x@backup.example.com -s sftp', $timeout->hint());
+        self::assertSame(ExitCode::TEMPORARY, $timeout->exitCode());
 
         $local = ResticErrors::exception(new ProcessResult($command, 1, '', 'ssh: lost'), 'x', self::settings('/srv/restic-repo'));
         self::assertSame('Check that the repository location is reachable', $local->hint());

@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Mfonte\Arkhive\Commands;
 
 use FilesystemIterator;
-use Mfonte\Arkhive\Exceptions\ArkhiveException;
 use Mfonte\Arkhive\Exceptions\InterruptedException;
+use Mfonte\Arkhive\Exceptions\UnavailableException;
 use Mfonte\Arkhive\Exceptions\UsageException;
 use Mfonte\Arkhive\ExitCode;
 use Mfonte\Arkhive\Services\System\Dependencies;
@@ -35,7 +35,7 @@ final class MountCommand extends RepositoryCommand
         $fusermount = $dependencies->find(Dependency::Fuse);
         if (!file_exists(self::$fuseDevice) || $fusermount === null) {
             $missing = !file_exists(self::$fuseDevice) ? self::$fuseDevice . ' does not exist' : 'fusermount is not installed';
-            throw new ArkhiveException(
+            throw new UnavailableException(
                 "FUSE is not available on this host ({$missing}), so the repository cannot be mounted",
                 hint: 'Browse without FUSE: arkhive ls latest /path, arkhive find <name>, then arkhive restore --include /path --target <new directory>'
                     . (file_exists(self::$fuseDevice) ? '. To enable mounting: ' . InstallHints::forDependency(Dependency::Fuse, $dependencies->distro()) : ' (in a container FUSE needs --device /dev/fuse)'),

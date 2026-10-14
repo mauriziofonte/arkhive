@@ -7,6 +7,7 @@ namespace Tests\Unit\Services\Restore;
 use DateTimeImmutable;
 use Mfonte\Arkhive\Exceptions\RefusedException;
 use Mfonte\Arkhive\Exceptions\UsageException;
+use Mfonte\Arkhive\ExitCode;
 use Mfonte\Arkhive\Services\Restore\TargetDirectory;
 use PHPUnit\Framework\TestCase;
 use Tests\Support\TempDir;
@@ -59,7 +60,7 @@ final class TargetDirectoryTest extends TestCase
             $target->assertUsable(false);
             self::fail('expected a refusal');
         } catch (RefusedException $e) {
-            self::assertSame(4, $e->exitCode());
+            self::assertSame(ExitCode::CANNOT_CREATE, $e->exitCode());
             self::assertSame("The restore target {$dir}/full is not empty: ArkHive restores only into a new or empty directory", $e->getMessage());
             self::assertStringContainsString('--force', (string) $e->hint());
         }
@@ -94,7 +95,7 @@ final class TargetDirectoryTest extends TestCase
             self::fail('expected a refusal');
         } catch (RefusedException $e) {
             self::assertMatchesRegularExpression('/^Not enough free space in \/.+ for the restore: 8192\.00 PiB needed, \d+\.\d\d [KMGT]iB available$/', $e->getMessage());
-            self::assertSame(4, $e->exitCode());
+            self::assertSame(ExitCode::CANNOT_CREATE, $e->exitCode());
         }
     }
 

@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace Mfonte\Arkhive\Services\Config;
 
-use Mfonte\Arkhive\Exceptions\UsageException;
+use Mfonte\Arkhive\Exceptions\ArkhiveException;
+use Mfonte\Arkhive\Exceptions\ConfigException;
 use Mfonte\Arkhive\Services\Exclusion\ExclusionConverter;
 use Mfonte\Arkhive\Services\Exclusion\ResticPatternMatcher;
 
@@ -46,7 +47,7 @@ final class ConfigFactory
     {
         $removed = RemovedKeys::found($values);
         if ($removed !== []) {
-            throw new UsageException(RemovedKeys::message($removed, $source));
+            throw new ConfigException(RemovedKeys::message($removed, $source));
         }
 
         return (new self($values, $source))->build($defaultHost, $checkSecrets);
@@ -109,7 +110,7 @@ final class ConfigFactory
         } elseif ($passwordFile !== '' && $checkSecrets) {
             try {
                 PasswordFile::assertSafe($passwordFile);
-            } catch (UsageException $e) {
+            } catch (ArkhiveException $e) {
                 $this->errors[] = $e->getMessage() . ($e->hint() !== null ? " ({$e->hint()})" : '');
             }
         }
@@ -159,7 +160,7 @@ final class ConfigFactory
         );
 
         if ($this->errors !== []) {
-            throw new UsageException("Invalid configuration {$this->source}:\n  " . implode("\n  ", $this->errors));
+            throw new ConfigException("Invalid configuration {$this->source}:\n  " . implode("\n  ", $this->errors));
         }
 
         return $config;

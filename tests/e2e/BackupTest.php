@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\e2e;
 
+use Mfonte\Arkhive\ExitCode;
 use Mfonte\Arkhive\Services\Exclusion\ExclusionConverter;
 use Mfonte\Arkhive\Services\Exclusion\ResticPatternMatcher;
 
@@ -270,7 +271,7 @@ final class BackupTest extends E2eTestCase
         $second = self::arkhive(['backup', '--config', $config], $this->runEnv());
         $firstResult = self::finish($first);
 
-        self::assertSame(1, $second->exitCode, $second->output());
+        self::assertSame(ExitCode::TEMPORARY, $second->exitCode, $second->output());
         self::assertStringContainsString('error Another ArkHive run holds the lock for this repository (PID ', $second->stderr);
         self::assertSame(0, $firstResult->exitCode, $firstResult->output());
         self::assertCount(1, $this->snapshots());
@@ -287,7 +288,7 @@ final class BackupTest extends E2eTestCase
         proc_terminate($started[0], 15);
         $result = self::finish($started);
 
-        self::assertSame(143, $result->exitCode, $result->output());
+        self::assertSame(ExitCode::SIGTERM, $result->exitCode, $result->output());
         self::assertStringContainsString('error Interrupted by SIGTERM: cleaned up and released the lock', $result->stderr);
         self::assertFalse($this->lockHeld(), 'lock released');
         self::assertSame([], glob("{$this->dir}/dumps/*/*") ?: [], 'no dump left');
@@ -304,7 +305,7 @@ final class BackupTest extends E2eTestCase
 
         $result = self::arkhive(['backup', '--config', $this->config(['RESTIC_PASSWORD_FILE' => $password])], $this->runEnv());
 
-        self::assertSame(2, $result->exitCode, $result->output());
+        self::assertSame(ExitCode::CONFIG, $result->exitCode, $result->output());
         self::assertStringContainsString("RESTIC_PASSWORD_FILE {$password} is readable by group or others (mode 0644) (Run: chmod 600 {$password})", $result->stderr);
         self::assertSame([], $this->snapshots());
     }
@@ -317,7 +318,7 @@ final class BackupTest extends E2eTestCase
 
         $result = self::arkhive(['backup', '--config', $legacy], $this->runEnv());
 
-        self::assertSame(2, $result->exitCode, $result->output());
+        self::assertSame(ExitCode::CONFIG, $result->exitCode, $result->output());
         foreach (['BACKUP_DIRECTORY', 'BACKUP_RETENTION_DAYS', 'COMPRESSION_TYPE', 'SSH_HOST', 'SSH_PORT', 'SSH_USER', 'SSH_BACKUP_HOME', 'WITH_CRYPT', 'CRYPT_PASSWORD', 'SMTP_AUTH', 'SMTP_SSL'] as $key) {
             self::assertStringContainsString("{$key}: ", $result->stderr, $key);
         }

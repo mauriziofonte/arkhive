@@ -11,7 +11,7 @@ use Mfonte\Arkhive\Support\Clock;
 
 /**
  * A usage error found before a command runs (unknown command or option, missing argument): one
- * plain log line and its hint on stderr, exit 2, as for every other usage error (spec §6).
+ * plain log line and its hint on stderr, exit 64 (EX_USAGE), as for every other usage error.
  */
 final class UsageErrors
 {

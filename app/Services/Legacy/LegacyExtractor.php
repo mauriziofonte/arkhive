@@ -5,7 +5,12 @@ declare(strict_types=1);
 namespace Mfonte\Arkhive\Services\Legacy;
 
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
+use Mfonte\Arkhive\Exceptions\DataException;
+use Mfonte\Arkhive\Exceptions\IoException;
+use Mfonte\Arkhive\Exceptions\PermissionException;
 use Mfonte\Arkhive\Exceptions\RefusedException;
+use Mfonte\Arkhive\Exceptions\SoftwareException;
+use Mfonte\Arkhive\Exceptions\UnavailableException;
 use Mfonte\Arkhive\Services\Output\Logger;
 use Mfonte\Arkhive\Services\Process\Cleanup;
 use Mfonte\Arkhive\Services\Process\Command;
@@ -48,7 +53,7 @@ final class LegacyExtractor
             throw new RefusedException("{$target->path} exists and is not an empty directory: decrypt-legacy extracts only into a new or empty one", 'Choose a new directory with --to');
         }
         if (!is_writable($target->existingAncestor())) {
-            throw new ArkhiveException("Cannot extract into {$target->path}: {$target->existingAncestor()} is not writable by this user");
+            throw new PermissionException("Cannot extract into {$target->path}: {$target->existingAncestor()} is not writable by this user");
         }
         $tar = $this->dependencies->require(Dependency::Tar, 'to extract a 1.x archive');
         $openssl = null;
@@ -90,7 +95,7 @@ final class LegacyExtractor
 
             if ($created) {
                 if (!@mkdir($target->path, 0700, true) && !is_dir($target->path)) {
-                    throw new ArkhiveException("Cannot create the directory {$target->path}");
+                    throw new RefusedException("Cannot create the directory {$target->path}");
                 }
                 $path = $target->path;
                 $targetId = $this->cleanup->add('remove the partly extracted directory', static function () use ($path): void {
@@ -123,10 +128,10 @@ final class LegacyExtractor
         }
         $stderr = $result->stderr;
         if (preg_match('/(unknown|unrecognized) option.*pbkdf2|pbkdf2.*(unknown|not supported)/i', $stderr) === 1) {
-            throw new ArkhiveException($result->failure('Decrypting the archive'), hint: '1.x archives need OpenSSL 1.1.1 or later (-pbkdf2): run decrypt-legacy on a newer system');
+            throw new UnavailableException($result->failure('Decrypting the archive'), hint: '1.x archives need OpenSSL 1.1.1 or later (-pbkdf2): run decrypt-legacy on a newer system');
         }
         if (stripos($stderr, 'bad decrypt') !== false || stripos($stderr, 'wrong final block length') !== false) {
-            throw new ArkhiveException('Cannot decrypt the archive: the password is wrong (openssl: bad decrypt)', hint: 'Use the CRYPT_PASSWORD of the 1.x configuration that made this archive');
+            throw new PermissionException('Cannot decrypt the archive: the password is wrong (openssl: bad decrypt)', hint: 'Use the CRYPT_PASSWORD of the 1.x configuration that made this archive');
         }
 
         throw new ArkhiveException($result->failure('Decrypting the archive'));
@@ -139,13 +144,13 @@ final class LegacyExtractor
     private function gunzip(string $in, string $out, Logger $log): string
     {
         if (!extension_loaded('zlib')) {
-            throw new ArkhiveException('The PHP extension zlib is needed to decompress a gzip 1.x archive', hint: InstallHints::forPhpExtensions(['zlib'], $this->dependencies->distro()));
+            throw new UnavailableException('The PHP extension zlib is needed to decompress a gzip 1.x archive', hint: InstallHints::forPhpExtensions(['zlib'], $this->dependencies->distro()));
         }
         $log->info('Decompressing (gzip)');
         $source = @fopen($in, 'rb');
         $target = @fopen($out, 'xb');
         if ($source === false || $target === false) {
-            throw new ArkhiveException("Cannot decompress {$in} into {$out}");
+            throw new RefusedException("Cannot decompress {$in} into {$out}");
         }
         try {
             $context = self::inflater();
@@ -156,7 +161,7 @@ final class LegacyExtractor
                     error_clear_last();
                     $data = @inflate_add($context, $chunk, ZLIB_SYNC_FLUSH);
                     if ($data === false) {
-                        throw new ArkhiveException('The gzip data of the archive is corrupt (' . self::lastError() . '): the archive is damaged');
+                        throw new DataException('The gzip data of the archive is corrupt (' . self::lastError() . '): the archive is damaged');
                     }
                     self::write($target, $data, $out);
                     if (inflate_get_status($context) !== ZLIB_STREAM_END) {
@@ -170,7 +175,7 @@ final class LegacyExtractor
                     $context = self::inflater();
                     $consumed = 0;
                     if (strlen($chunk) >= 2 && !str_starts_with($chunk, "\x1f\x8b")) {
-                        throw new ArkhiveException('The archive has unexpected data after the end of its gzip data: it is damaged');
+                        throw new DataException('The archive has unexpected data after the end of its gzip data: it is damaged');
                     }
                     if ($chunk === '' && !feof($source)) {
                         continue 2;
@@ -181,7 +186,7 @@ final class LegacyExtractor
                 }
             }
             if (inflate_get_read_len($context) !== 0 || $consumed !== 0) {
-                throw new ArkhiveException('The gzip data of the archive ends too early: the archive is truncated');
+                throw new DataException('The gzip data of the archive ends too early: the archive is truncated');
             }
 
             return $out;
@@ -195,7 +200,7 @@ final class LegacyExtractor
     {
         $context = inflate_init(ZLIB_ENCODING_GZIP);
         if ($context === false) {
-            throw new ArkhiveException('Cannot start the gzip decompression');
+            throw new SoftwareException('Cannot start the gzip decompression');
         }
 
         return $context;
@@ -207,7 +212,7 @@ final class LegacyExtractor
     private static function write($target, string $data, string $path): void
     {
         if ($data !== '' && @fwrite($target, $data) !== strlen($data)) {
-            throw new RefusedException("Cannot write {$path}: the filesystem is full or not writable");
+            throw new IoException("Cannot write {$path}: the filesystem is full or not writable");
         }
     }
 
@@ -224,7 +229,7 @@ final class LegacyExtractor
         $log->info('Decompressing (xz)');
         $target = @fopen($out, 'xb');
         if ($target === false) {
-            throw new ArkhiveException("Cannot create {$out}");
+            throw new RefusedException("Cannot create {$out}");
         }
         try {
             $result = $this->runner->run((new Command([$xz, '-d', '-c']))->withInputFile($in)->withOutput($target));
@@ -232,7 +237,7 @@ final class LegacyExtractor
             fclose($target);
         }
         if (!$result->succeeded()) {
-            throw new ArkhiveException($result->failure('Decompressing the archive'), hint: 'The archive is damaged or truncated');
+            throw new DataException($result->failure('Decompressing the archive'), hint: 'The archive is damaged or truncated');
         }
 
         return $out;
@@ -247,12 +252,12 @@ final class LegacyExtractor
     {
         $result = $this->runner->run(new Command([$tar, '-t', '-f', $tarFile]));
         if (!$result->succeeded()) {
-            throw new ArkhiveException($result->failure('Reading the archive'), hint: 'The archive is damaged or truncated');
+            throw new DataException($result->failure('Reading the archive'), hint: 'The archive is damaged or truncated');
         }
         $entries = array_values(array_filter(explode("\n", $result->stdout), static fn (string $line): bool => $line !== ''));
         foreach ($entries as $entry) {
             if (in_array('..', explode('/', $entry), true)) {
-                throw new RefusedException("The archive contains the path {$entry}, which would be written outside the target: not extracted");
+                throw new DataException("The archive contains the path {$entry}, which would be written outside the target: not extracted");
             }
         }
 

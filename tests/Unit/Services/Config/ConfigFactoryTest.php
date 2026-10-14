@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Services\Config;
 
-use Mfonte\Arkhive\Exceptions\UsageException;
+use Mfonte\Arkhive\Exceptions\ConfigException;
+use Mfonte\Arkhive\ExitCode;
 use Mfonte\Arkhive\Services\Config\Config;
 use Mfonte\Arkhive\Services\Config\ConfigFactory;
 use Mfonte\Arkhive\Services\Config\ConfigLoader;
@@ -49,10 +50,10 @@ final class ConfigFactoryTest extends TestCase
     {
         try {
             $this->create($overrides);
-            self::fail('expected a usage error');
-        } catch (UsageException $e) {
+            self::fail('expected a configuration error');
+        } catch (ConfigException $e) {
             self::assertSame("Invalid configuration /etc/arkhive/config:\n  " . implode("\n  ", $errors), $e->getMessage());
-            self::assertSame(2, $e->exitCode());
+            self::assertSame(ExitCode::CONFIG, $e->exitCode());
         }
     }
 
@@ -129,15 +130,15 @@ final class ConfigFactoryTest extends TestCase
     {
         try {
             $this->create([$key => 'anything']);
-            self::fail('expected a usage error');
-        } catch (UsageException $e) {
+            self::fail('expected a configuration error');
+        } catch (ConfigException $e) {
             self::assertSame(
                 "The configuration /etc/arkhive/config uses keys removed in ArkHive 2.0:\n"
                 . "  {$key}: replaced by " . RemovedKeys::REPLACEMENTS[$key] . "\n"
                 . 'Migration guide: https://github.com/mauriziofonte/arkhive#migrating-from-1x',
                 $e->getMessage(),
             );
-            self::assertSame(2, $e->exitCode());
+            self::assertSame(ExitCode::CONFIG, $e->exitCode());
         }
     }
 
@@ -147,8 +148,8 @@ final class ConfigFactoryTest extends TestCase
 
         try {
             ConfigFactory::create(ConfigParser::parseFile($path), $path, 'web01');
-            self::fail('expected a usage error');
-        } catch (UsageException $e) {
+            self::fail('expected a configuration error');
+        } catch (ConfigException $e) {
             self::assertSame(
                 "The configuration {$path} uses keys removed in ArkHive 2.0:\n"
                 . "  SSH_HOST: replaced by RESTIC_REPOSITORY (e.g. sftp:user@host:/restic), plus RESTIC_SFTP_COMMAND for port and key\n"

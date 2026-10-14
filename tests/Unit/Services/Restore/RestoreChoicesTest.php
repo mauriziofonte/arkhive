@@ -6,6 +6,7 @@ namespace Tests\Unit\Services\Restore;
 
 use DateTimeImmutable;
 use Mfonte\Arkhive\Exceptions\UsageException;
+use Mfonte\Arkhive\ExitCode;
 use Mfonte\Arkhive\Services\Config\ResticSettings;
 use Mfonte\Arkhive\Services\Restic\Restic;
 use Mfonte\Arkhive\Services\Restic\Snapshot;
@@ -74,7 +75,7 @@ final class RestoreChoicesTest extends TestCase
             self::fail('expected a usage error');
         } catch (UsageException $e) {
             self::assertStringStartsWith($message, $e->getMessage());
-            self::assertSame(2, $e->exitCode());
+            self::assertSame(ExitCode::USAGE, $e->exitCode());
         }
     }
 

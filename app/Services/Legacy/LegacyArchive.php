@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace Mfonte\Arkhive\Services\Legacy;
 
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
+use Mfonte\Arkhive\Exceptions\DataException;
+use Mfonte\Arkhive\Exceptions\NoInputException;
+use Mfonte\Arkhive\Exceptions\PermissionException;
 use Mfonte\Arkhive\Exceptions\UsageException;
 
 /**
@@ -31,14 +34,14 @@ final class LegacyArchive
     {
         clearstatcache(true, $path);
         if (!is_file($path)) {
-            throw new UsageException("The archive {$path} " . (file_exists($path) ? 'is not a regular file' : 'does not exist'));
+            throw new NoInputException("The archive {$path} " . (file_exists($path) ? 'is not a regular file' : 'does not exist'));
         }
         if (!is_readable($path)) {
-            throw new UsageException("The archive {$path} is not readable by this user");
+            throw new PermissionException("The archive {$path} is not readable by this user");
         }
         $size = (int) filesize($path);
         if ($size === 0) {
-            throw new UsageException("The archive {$path} is empty");
+            throw new DataException("The archive {$path} is empty");
         }
 
         return new self($path, $size, self::head($path, strlen(self::OPENSSL_MAGIC)) === self::OPENSSL_MAGIC);
@@ -76,7 +79,7 @@ final class LegacyArchive
             return 'none';
         }
 
-        throw new ArkhiveException(
+        throw new DataException(
             $decrypted
                 ? 'The decrypted data is neither gzip, xz nor tar: the password is wrong, or this is not an ArkHive 1.x archive'
                 : 'The archive is neither encrypted nor gzip, xz or tar: this is not an ArkHive 1.x archive',
@@ -91,7 +94,7 @@ final class LegacyArchive
     {
         $handle = @fopen($path, 'rb');
         if ($handle === false) {
-            throw new UsageException("Cannot open {$path}");
+            throw new NoInputException("Cannot open {$path}");
         }
         $head = (string) fread($handle, $bytes);
         fclose($handle);

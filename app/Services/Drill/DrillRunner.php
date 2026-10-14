@@ -5,9 +5,10 @@ declare(strict_types=1);
 namespace Mfonte\Arkhive\Services\Drill;
 
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
+use Mfonte\Arkhive\Exceptions\ConfigException;
+use Mfonte\Arkhive\Exceptions\DataException;
 use Mfonte\Arkhive\Exceptions\InterruptedException;
 use Mfonte\Arkhive\Exceptions\RefusedException;
-use Mfonte\Arkhive\Exceptions\UsageException;
 use Mfonte\Arkhive\Services\Config\Config;
 use Mfonte\Arkhive\Services\Exclusion\ExclusionConverter;
 use Mfonte\Arkhive\Services\Output\Logger;
@@ -51,7 +52,7 @@ final class DrillRunner
     {
         $started = hrtime(true);
         if ($withDatabase && ($config === null || !$config->hasDumps())) {
-            throw new UsageException('--db needs a configuration with WITH_MYSQL or WITH_PGSQL: the test import uses its database connection', 'Pass --config, or run the drill without --db');
+            throw new ConfigException('--db needs a configuration with WITH_MYSQL or WITH_PGSQL: the test import uses its database connection', 'Pass --config, or run the drill without --db');
         }
 
         $files = [];
@@ -199,7 +200,7 @@ final class DrillRunner
             $file = $directory . '/' . basename($dump->path);
             $handle = @fopen($file, 'xb');
             if ($handle === false) {
-                throw new ArkhiveException("Cannot create {$file} for the dump to test");
+                throw new RefusedException("Cannot create {$file} for the dump to test");
             }
             try {
                 $log->info(sprintf('Restoring the %s dump of %s (%s) and importing it into the throw-away database %s', $dump->engineLabel(), $dump->database, Bytes::format($dump->size), $name));
@@ -209,7 +210,7 @@ final class DrillRunner
             }
             $restored = (int) filesize($file);
             if ($restored !== $dump->size) {
-                throw new ArkhiveException(sprintf('the restored dump %s has %d bytes, the snapshot records %d', $dump->path, $restored, $dump->size));
+                throw new DataException(sprintf('the restored dump %s has %d bytes, the snapshot records %d', $dump->path, $restored, $dump->size));
             }
             $importer->prepare($name, false);
             $dropId = $this->cleanup->add("drop the drill database {$name}", static function () use ($importer, $name): void {

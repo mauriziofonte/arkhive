@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Mfonte\Arkhive\Services\Restore;
 
-use Mfonte\Arkhive\Exceptions\ArkhiveException;
+use Mfonte\Arkhive\Exceptions\NoInputException;
 use Mfonte\Arkhive\Exceptions\UsageException;
 use Mfonte\Arkhive\Services\Restic\Snapshot;
 
@@ -64,7 +64,7 @@ final class Snapshots
     {
         $reference = trim($reference);
         if ($this->snapshots === []) {
-            throw new ArkhiveException('The repository has no snapshot yet', hint: 'Run a backup first: arkhive backup');
+            throw new NoInputException('The repository has no snapshot yet', hint: 'Run a backup first: arkhive backup');
         }
         if (strtolower($reference) === 'latest') {
             return $this->latest($host, $local);
@@ -77,7 +77,7 @@ final class Snapshots
             static fn (Snapshot $s): bool => str_starts_with($s->id, strtolower($reference)),
         ));
         if ($matches === []) {
-            throw new UsageException("There is no snapshot {$reference}" . ($host === null ? '' : " of host {$host}") . ' in the repository');
+            throw new NoInputException("There is no snapshot {$reference}" . ($host === null ? '' : " of host {$host}") . ' in the repository');
         }
         if (count($matches) > 1) {
             throw new UsageException("Snapshot id {$reference} is ambiguous: it matches " . implode(', ', array_map(static fn (Snapshot $s): string => $s->shortId(), $matches)), 'Give more characters of the id');
@@ -103,7 +103,7 @@ final class Snapshots
         }
         $candidates = $backups->forHost($host)->snapshots;
         if ($candidates === []) {
-            throw new UsageException($host === null ? 'The repository has only safety snapshots (pre-restore): give the snapshot id' : "There is no snapshot of host {$host} in the repository");
+            throw new NoInputException($host === null ? 'The repository has only safety snapshots (pre-restore): give the snapshot id' : "There is no snapshot of host {$host} in the repository");
         }
 
         return $candidates[0];

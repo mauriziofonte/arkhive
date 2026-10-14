@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace Mfonte\Arkhive\Services\Config;
 
-use Mfonte\Arkhive\Exceptions\UsageException;
+use Mfonte\Arkhive\Exceptions\ConfigException;
+use Mfonte\Arkhive\Exceptions\NoInputException;
 
 /**
  * Finds the configuration file. --config bypasses discovery; otherwise the first readable file of
@@ -67,7 +68,7 @@ final class ConfigLocator
     {
         if ($explicit !== null) {
             if (!is_file($explicit) || !is_readable($explicit)) {
-                throw new UsageException("Configuration file {$explicit} (from --config) does not exist or is not readable");
+                throw new NoInputException("Configuration file {$explicit} (from --config) does not exist or is not readable");
             }
 
             return $explicit;
@@ -80,7 +81,7 @@ final class ConfigLocator
             }
         }
 
-        throw new UsageException(
+        throw new ConfigException(
             "No ArkHive configuration file found. Looked for, in this order:\n  " . implode("\n  ", $candidates),
             'Create one from .arkhive-config.example, or pass --config <path>',
         );

@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Mfonte\Arkhive\Services\Restic;
 
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
+use Mfonte\Arkhive\Exceptions\SoftwareException;
+use Mfonte\Arkhive\Exceptions\UnavailableException;
 use Mfonte\Arkhive\Services\Config\ResticSettings;
 use Mfonte\Arkhive\Services\Process\Command;
 use Mfonte\Arkhive\Services\Process\ProcessResult;
@@ -97,7 +99,7 @@ final class Restic
         $result = $this->runner->run(new Command([$this->binary, 'version']));
         $version = self::parseVersion($result->stdout);
         if (!$result->succeeded() || $version === null) {
-            throw new ArkhiveException($result->failure("Running {$this->binary} version"));
+            throw new UnavailableException($result->failure("Running {$this->binary} version"));
         }
 
         return $this->version = $version;
@@ -120,7 +122,7 @@ final class Restic
     {
         $version = $this->version();
         if (version_compare($version, self::MINIMUM_VERSION, '<')) {
-            throw new ArkhiveException(
+            throw new UnavailableException(
                 "restic {$version} is too old: ArkHive needs restic " . self::MINIMUM_VERSION . ' or newer (repository format 2, compression)',
                 hint: 'Install a newer restic from your distribution, or the static binary from https://github.com/restic/restic/releases (then set RESTIC_BINARY)',
             );
@@ -184,7 +186,7 @@ final class Restic
         $result = $this->run($args, 'Listing the snapshots', timeout: self::REACH_TIMEOUT);
         $data = json_decode(trim($result->stdout), true);
         if (!is_array($data)) {
-            throw new ArkhiveException('restic snapshots returned something that is not a JSON list: ' . substr(trim($result->stdout), 0, 200));
+            throw new SoftwareException('restic snapshots returned something that is not a JSON list: ' . substr(trim($result->stdout), 0, 200));
         }
         $snapshots = [];
         foreach ($data as $item) {
@@ -243,7 +245,7 @@ final class Restic
             return [];
         }
         if (!is_array($data)) {
-            throw new ArkhiveException('restic find returned something that is not a JSON list: ' . substr(trim($result->stdout), 0, 200));
+            throw new SoftwareException('restic find returned something that is not a JSON list: ' . substr(trim($result->stdout), 0, 200));
         }
         $found = [];
         foreach ($data as $group) {
@@ -269,7 +271,7 @@ final class Restic
         $result = $this->run(['stats', '--json', '--mode', 'restore-size', '--', $snapshotId], "Measuring snapshot {$snapshotId}");
         $data = ResticJson::decode($result->stdout);
         if ($data === null || !array_key_exists('total_size', $data)) {
-            throw new ArkhiveException('restic stats did not report a size: ' . substr(trim($result->stdout), 0, 200));
+            throw new SoftwareException('restic stats did not report a size: ' . substr(trim($result->stdout), 0, 200));
         }
 
         return ResticJson::int($data, 'total_size');
@@ -359,7 +361,7 @@ final class Restic
         $result = $this->run(['stats', '--json', '--no-lock', '--mode', 'raw-data'], 'Measuring the repository', timeout: self::REACH_TIMEOUT);
         $data = ResticJson::decode($result->stdout);
         if ($data === null || !array_key_exists('total_size', $data)) {
-            throw new ArkhiveException('restic stats did not report a size: ' . substr(trim($result->stdout), 0, 200));
+            throw new SoftwareException('restic stats did not report a size: ' . substr(trim($result->stdout), 0, 200));
         }
 
         return RepositoryStats::fromJson($data);

@@ -4,7 +4,12 @@ declare(strict_types=1);
 
 namespace Mfonte\Arkhive\Services\Update;
 
-use Mfonte\Arkhive\Exceptions\ArkhiveException;
+use Mfonte\Arkhive\Exceptions\ConfigException;
+use Mfonte\Arkhive\Exceptions\DataException;
+use Mfonte\Arkhive\Exceptions\IoException;
+use Mfonte\Arkhive\Exceptions\RefusedException;
+use Mfonte\Arkhive\Exceptions\TemporaryException;
+use Mfonte\Arkhive\Exceptions\UnavailableException;
 
 /**
  * HttpClient on PHP's http:// and https:// stream wrappers, for hosts without the curl extension
@@ -27,7 +32,7 @@ final class StreamHttpClient implements HttpClient
         $body = stream_get_contents($stream);
         fclose($stream);
         if ($body === false) {
-            throw new ArkhiveException("Cannot read the answer of {$url}");
+            throw new UnavailableException("Cannot read the answer of {$url}");
         }
 
         return new HttpResponse($status, $body);
@@ -40,25 +45,25 @@ final class StreamHttpClient implements HttpClient
         if ($file === false) {
             fclose($stream);
 
-            throw new ArkhiveException("Cannot create {$path}");
+            throw new RefusedException("Cannot create {$path}");
         }
         $written = 0;
         try {
             while (!feof($stream)) {
                 $chunk = fread($stream, self::CHUNK);
                 if ($chunk === false) {
-                    throw new ArkhiveException("The download of {$url} was interrupted");
+                    throw new TemporaryException("The download of {$url} was interrupted");
                 }
                 $written += strlen($chunk);
                 if ($written > $maxBytes) {
-                    throw new ArkhiveException("The download of {$url} is larger than the expected {$maxBytes} bytes: stopped");
+                    throw new DataException("The download of {$url} is larger than the expected {$maxBytes} bytes: stopped");
                 }
                 if ($chunk !== '' && fwrite($file, $chunk) !== strlen($chunk)) {
-                    throw new ArkhiveException("Cannot write {$path}: the filesystem is full or not writable");
+                    throw new IoException("Cannot write {$path}: the filesystem is full or not writable");
                 }
             }
             if (stream_get_meta_data($stream)['timed_out']) {
-                throw new ArkhiveException("The download of {$url} timed out");
+                throw new TemporaryException("The download of {$url} timed out");
             }
         } finally {
             fclose($stream);
@@ -76,7 +81,7 @@ final class StreamHttpClient implements HttpClient
     private function open(string $url, array $headers): array
     {
         if (str_starts_with($url, 'https://') && !extension_loaded('openssl')) {
-            throw new ArkhiveException('self-update needs the PHP extension curl or openssl to reach ' . $url);
+            throw new UnavailableException('self-update needs the PHP extension curl or openssl to reach ' . $url);
         }
         $lines = [];
         foreach ($headers as $name => $value) {
@@ -101,7 +106,7 @@ final class StreamHttpClient implements HttpClient
         if ($stream === false) {
             $error = error_get_last();
 
-            throw new ArkhiveException("Cannot fetch {$url}" . ($error === null ? '' : ': ' . $error['message']), hint: 'Check the network connection, DNS and HTTPS_PROXY; GitHub must be reachable from this host');
+            throw new UnavailableException("Cannot fetch {$url}" . ($error === null ? '' : ': ' . $error['message']), hint: 'Check the network connection, DNS and HTTPS_PROXY; GitHub must be reachable from this host');
         }
 
         return [$stream, self::status(stream_get_meta_data($stream)['wrapper_data'] ?? [])];
@@ -114,7 +119,7 @@ final class StreamHttpClient implements HttpClient
     {
         $parts = parse_url(str_contains($proxy, '://') ? $proxy : 'http://' . $proxy);
         if (!is_array($parts) || !isset($parts['host'])) {
-            throw new ArkhiveException("The proxy {$proxy} is not a valid URL");
+            throw new ConfigException("The proxy {$proxy} is not a valid URL");
         }
 
         return 'tcp://' . $parts['host'] . ':' . ($parts['port'] ?? 80);

@@ -6,6 +6,7 @@ namespace Tests\e2e;
 
 use DateTimeImmutable;
 use DateTimeZone;
+use Mfonte\Arkhive\ExitCode;
 use Tests\Support\CliResult;
 
 /**
@@ -44,7 +45,7 @@ final class FaultTest extends E2eTestCase
         sleep(3);
         $result = $this->whilePaused(static fn (): CliResult => self::finish($started));
 
-        self::assertSame(1, $result->exitCode, $result->output());
+        self::assertSame(ExitCode::UNAVAILABLE, $result->exitCode, $result->output());
         self::assertMatchesRegularExpression('/error restic backup failed \(throttled-restic exit 1\): .*ssh command exited/', $result->stderr);
         self::assertStringContainsString('notice Check that the repository server is up and that this command works by hand: ' . $this->sftpCommand, $result->stderr);
         $this->assertCleanAfterFailure();
@@ -71,7 +72,7 @@ final class FaultTest extends E2eTestCase
         sleep(2);
         $result = $this->whilePaused(static fn (): CliResult => self::finish($started));
 
-        self::assertSame(1, $result->exitCode, $result->output());
+        self::assertSame(ExitCode::UNAVAILABLE, $result->exitCode, $result->output());
         self::assertStringContainsString('error ', $result->stderr);
         self::assertStringContainsString('notice Check that the repository server is up and that this command works by hand: ' . $this->sftpCommand, $result->stderr);
         self::assertFileDoesNotExist($target, 'the partial target is removed');
@@ -95,7 +96,7 @@ final class FaultTest extends E2eTestCase
 
             $result = self::arkhive(['backup', '--config', $this->config()], $this->runEnv());
 
-            self::assertSame(1, $result->exitCode, $result->output());
+            self::assertSame(ExitCode::IO_ERROR, $result->exitCode, $result->output());
             self::assertStringContainsString('no space left on device', $result->stderr);
             $this->assertCleanAfterFailure();
             self::assertSame([], $this->snapshots(), 'no snapshot on a full disk');
@@ -120,7 +121,7 @@ final class FaultTest extends E2eTestCase
 
         $result = self::arkhive(['backup', '--config', $config], $this->runEnv());
 
-        self::assertSame(1, $result->exitCode, $result->output());
+        self::assertSame(ExitCode::UNAVAILABLE, $result->exitCode, $result->output());
         self::assertMatchesRegularExpression('/error .*(MySQL|MariaDB|mariadb|mysql).*/', $result->stderr);
         self::assertStringContainsString("Can't connect", $result->stderr);
         $this->assertCleanAfterFailure();
@@ -141,7 +142,7 @@ final class FaultTest extends E2eTestCase
         self::assertCount(2, $this->snapshots());
 
         $doctor = self::arkhive(['doctor', '--config', $this->config()], $this->runEnv());
-        self::assertSame(1, $doctor->exitCode, $doctor->output());
+        self::assertSame(ExitCode::FAILURE, $doctor->exitCode, $doctor->output());
         self::assertMatchesRegularExpression('/FAIL\s+clock\s+This clock is behind: the repository has an entry dated \S+ \S+ UTC, 4[78] h in the future/', $doctor->stdout);
         self::assertStringContainsString('hint: Synchronise the clock (timedatectl set-ntp true, or chrony/ntpd)', $doctor->stdout);
 

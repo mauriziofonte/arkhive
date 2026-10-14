@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Mfonte\Arkhive\Commands;
 
-use Mfonte\Arkhive\Exceptions\ArkhiveException;
-use Mfonte\Arkhive\Exceptions\UsageException;
+use Mfonte\Arkhive\Exceptions\ConfigException;
+use Mfonte\Arkhive\Exceptions\IoException;
+use Mfonte\Arkhive\Exceptions\NoInputException;
+use Mfonte\Arkhive\Exceptions\RefusedException;
 use Mfonte\Arkhive\ExitCode;
 use Mfonte\Arkhive\Services\Config\PasswordFile;
 use Mfonte\Arkhive\Services\Restic\ResticFactory;
@@ -49,7 +51,7 @@ final class InitCommand extends ConfiguredCommand
         if ($id === null) {
             if ($generated) {
                 // the new random password cannot open the existing repository: do not leave it behind
-                throw new ArkhiveException(
+                throw new ConfigException(
                     "A restic repository already exists at {$settings->repository}, and RESTIC_PASSWORD_FILE {$passwordFile} did not exist",
                     hint: "Put that repository's password in {$passwordFile} (chmod 600); a new password cannot open it",
                 );
@@ -85,7 +87,7 @@ final class InitCommand extends ConfiguredCommand
     public static function generatePassword(string $path): void
     {
         if (!is_dir(dirname($path))) {
-            throw new UsageException("RESTIC_PASSWORD_FILE {$path} does not exist and neither does its directory", 'Create the directory (mkdir -p ' . dirname($path) . '), then run arkhive init again');
+            throw new NoInputException("RESTIC_PASSWORD_FILE {$path} does not exist and neither does its directory", 'Create the directory (mkdir -p ' . dirname($path) . '), then run arkhive init again');
         }
         $password = rtrim(strtr(base64_encode(random_bytes(self::PASSWORD_BYTES)), '+/', '-_'), '=');
         $umask = umask(0077);
@@ -95,7 +97,7 @@ final class InitCommand extends ConfiguredCommand
             umask($umask);
         }
         if ($handle === false) {
-            throw new ArkhiveException("Cannot create the password file {$path}", hint: 'Check that its directory is writable by this user');
+            throw new RefusedException("Cannot create the password file {$path}", hint: 'Check that its directory is writable by this user');
         }
         $written = fwrite($handle, $password . "\n");
         fclose($handle);
@@ -103,7 +105,7 @@ final class InitCommand extends ConfiguredCommand
         if ($written !== strlen($password) + 1) {
             @unlink($path);
 
-            throw new ArkhiveException("Cannot write the password file {$path}");
+            throw new IoException("Cannot write the password file {$path}");
         }
     }
 }

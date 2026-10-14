@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Mfonte\Arkhive\Commands;
 
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
+use Mfonte\Arkhive\Exceptions\ConfigException;
 use Mfonte\Arkhive\Exceptions\InterruptedException;
 use Mfonte\Arkhive\Exceptions\UsageException;
 use Mfonte\Arkhive\ExitCode;
@@ -32,7 +33,7 @@ final class DrillCommand extends RepositoryCommand
         {--host= : Test the latest snapshot of this host (default: RESTIC_HOST, or this machine)}
         {--json : Print the result as JSON on stdout}';
 
-    protected $description = 'Restore a random sample of the latest snapshot into a temporary directory and verify it (exit 0 pass, 1 fail)';
+    protected $description = 'Restore a random sample of the latest snapshot into a temporary directory and verify it (exit 0 pass, 65 fail)';
 
     protected function perform(): int
     {
@@ -53,7 +54,7 @@ final class DrillCommand extends RepositoryCommand
         } catch (InterruptedException $e) {
             throw $e;
         } catch (ArkhiveException $e) {
-            if ($config !== null && !$e instanceof UsageException) {
+            if ($config !== null && !$e instanceof UsageException && !$e instanceof ConfigException) {
                 $this->sendNotification($config, new Notification(
                     false,
                     "[ArkHive] restore drill FAILED on {$config->restic->host}",
@@ -73,7 +74,7 @@ final class DrillCommand extends RepositoryCommand
         } else {
             $this->log->error(sprintf('Restore drill FAILED on snapshot %s: %d problem(s)', $report->snapshot->shortId(), count($report->failures) + ($report->database !== null && !$report->database['ok'] ? 1 : 0)));
         }
-        $exit = $report->passed() ? ExitCode::SUCCESS : ExitCode::FAILURE;
+        $exit = $report->passed() ? ExitCode::SUCCESS : ExitCode::DATA_ERROR;
         if ($config !== null && !$this->sendNotification($config, $this->notification($config, $report)) && $exit === ExitCode::SUCCESS) {
             $exit = ExitCode::WARNING;
         }

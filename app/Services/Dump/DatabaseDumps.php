@@ -30,7 +30,7 @@ final class DatabaseDumps
 
     /**
      * @throws ArkhiveException     a dump or connection failed (dump directory emptied)
-     * @throws RefusedException     not enough free space for the dumps (exit 4)
+     * @throws RefusedException     not enough free space for the dumps (exit 73)
      * @throws InterruptedException SIGINT/SIGTERM (dump directory emptied by the cleanup registry)
      */
     public function run(Config $config, Logger $log): ?DumpRun

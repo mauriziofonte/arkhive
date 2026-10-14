@@ -155,10 +155,10 @@ check(is_dir($target . $tree) && state($tree) === state($target . $tree), 'the r
 $drill = json_decode($out, true);
 check($code === 0 && is_array($drill) && ($drill['passed'] ?? false) === true, 'drill passes', $out . $err);
 
-// unattended: no terminal, then as a systemd unit; a missing answer is exit 2 naming the flag
+// unattended: no terminal, then as a systemd unit; a missing answer is exit 64 naming the flag
 foreach (['no terminal' => [], 'INVOCATION_ID set' => ['INVOCATION_ID' => bin2hex(random_bytes(16))]] as $context => $env) {
     [$code, $out, $err] = arkhive(['restore', '--config', $config, '--target', "{$dir}/unattended"], $env);
-    check($code === 2 && str_contains($err, 'is required in unattended mode: pass --snapshot'), "unattended restore without --snapshot exits 2 naming the flag ({$context})", "exit {$code}\n{$out}{$err}");
+    check($code === 64 && str_contains($err, 'is required in unattended mode: pass --snapshot'), "unattended restore without --snapshot exits 64 naming the flag ({$context})", "exit {$code}\n{$out}{$err}");
     [$code, $out, $err] = arkhive(['backup', '--config', $config], $env);
     check($code === 0, "unattended backup ({$context})", $out . $err);
     check(!str_contains($out . $err, "\e") && !str_contains($out . $err, "\r"), "no colour, cursor movement or progress redraw ({$context})", json_encode($out . $err) ?: '');
@@ -167,7 +167,7 @@ foreach (['no terminal' => [], 'INVOCATION_ID set' => ['INVOCATION_ID' => bin2he
 // missing restic: not in PATH, not in the standard directories, no RESTIC_BINARY
 $bare = $writeConfig("{$dir}/config-bare", $values);
 [$code, $out, $err] = arkhive(['backup', '--config', $bare]);
-check($code === 1 && str_contains($err, 'restic is needed'), 'backup without restic fails', "exit {$code}\n{$out}{$err}");
+check($code === 69 && str_contains($err, 'restic is needed'), 'backup without restic exits 69 (EX_UNAVAILABLE)', "exit {$code}\n{$out}{$err}");
 check(str_contains($err, $hint), "the hint names this distribution's command: {$hint}", $err);
 
 run(['rm', '-rf', $dir]);

@@ -54,7 +54,7 @@ final class MaintainCommand extends ConfiguredCommand
         if (!$report->healthy()) {
             $this->log->error('The repository check found errors: ' . $this->failedCheck($report)->describe(), ['broken_packs' => implode(' ', $report->brokenPacks())]);
             $this->log->notice(MaintainRunner::repairHint($report->brokenPacks()));
-            $exit = ExitCode::FAILURE;
+            $exit = ExitCode::DATA_ERROR;
         } else {
             $this->log->success(sprintf('Maintenance done in %.1fs: the repository is healthy', $report->duration));
         }

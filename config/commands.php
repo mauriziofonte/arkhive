@@ -79,7 +79,7 @@ return [
     */
 
     'remove' => [
-        // replaced by Mfonte\Arkhive\Commands\SummaryCommand (unknown commands exit 2)
+        // replaced by Mfonte\Arkhive\Commands\SummaryCommand (unknown commands exit 64)
         NunoMaduro\LaravelConsoleSummary\SummaryCommand::class,
     ],
 

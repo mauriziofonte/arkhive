@@ -115,16 +115,16 @@ final class RestoreCommandTest extends TestCase
     {
         chmod("{$this->dir}/password", 0644);
         foreach ([
-            [['--repo' => '/srv/restic-repo'], '--repo needs --password-file'],
-            [['--password-file' => "{$this->dir}/password"], '--password-file goes with --repo'],
-            [['--sftp-command' => 'ssh x'], '--sftp-command goes with --repo'],
-            [['--repo' => '/srv/restic-repo', '--password-file' => "{$this->dir}/password"], "--password-file {$this->dir}/password is readable by group or others (mode 0644)"],
-            [['--repo' => '/srv/restic-repo', '--password-file' => "{$this->dir}/missing"], "--password-file {$this->dir}/missing does not exist"],
-        ] as [$args, $message]) {
+            [['--repo' => '/srv/restic-repo'], '--repo needs --password-file', ExitCode::USAGE],
+            [['--password-file' => "{$this->dir}/password"], '--password-file goes with --repo', ExitCode::USAGE],
+            [['--sftp-command' => 'ssh x'], '--sftp-command goes with --repo', ExitCode::USAGE],
+            [['--repo' => '/srv/restic-repo', '--password-file' => "{$this->dir}/password"], "--password-file {$this->dir}/password is readable by group or others (mode 0644)", ExitCode::NO_PERMISSION],
+            [['--repo' => '/srv/restic-repo', '--password-file' => "{$this->dir}/missing"], "--password-file {$this->dir}/missing does not exist", ExitCode::NO_INPUT],
+        ] as [$args, $message, $exit]) {
             $this->logStream = \Mfonte\Arkhive\Services\Output\LogStream::memory();
             $this->app->instance(\Mfonte\Arkhive\Services\Output\LogStream::class, $this->logStream);
 
-            self::assertSame(ExitCode::USAGE, $this->restore($args), $message);
+            self::assertSame($exit, $this->restore($args), $message);
             self::assertStringContainsString($message, $this->logOutput());
         }
         self::assertSame([], $this->runner->commands, 'restic never ran');
@@ -158,7 +158,7 @@ final class RestoreCommandTest extends TestCase
         mkdir("{$this->dir}/full");
         file_put_contents("{$this->dir}/full/keep", 'mine');
 
-        self::assertSame(ExitCode::REFUSED, $this->restore(['--config' => $this->writeConfig(), '--snapshot' => '6118', '--target' => "{$this->dir}/full", '--yes' => true]));
+        self::assertSame(ExitCode::CANNOT_CREATE, $this->restore(['--config' => $this->writeConfig(), '--snapshot' => '6118', '--target' => "{$this->dir}/full", '--yes' => true]));
         self::assertStringContainsString('is not empty: ArkHive restores only into a new or empty directory', $this->logOutput());
         self::assertSame(['keep'], array_values(array_diff(scandir("{$this->dir}/full") ?: [], ['.', '..'])));
         self::assertSame([], $this->restic->callsOf('restore'));
@@ -168,7 +168,7 @@ final class RestoreCommandTest extends TestCase
 
     public function testInPlaceWithoutForceIsExit4(): void
     {
-        self::assertSame(ExitCode::REFUSED, $this->restore(['--config' => $this->writeConfig(), '--snapshot' => '6118', '--in-place' => true, '--yes' => true]));
+        self::assertSame(ExitCode::USAGE, $this->restore(['--config' => $this->writeConfig(), '--snapshot' => '6118', '--in-place' => true, '--yes' => true]));
         self::assertStringContainsString('An in-place restore overwrites the original files and needs --force', $this->logOutput());
         self::assertSame([], $this->restic->callsOf('backup'));
         self::assertSame([], $this->restic->callsOf('restore'));
@@ -178,7 +178,7 @@ final class RestoreCommandTest extends TestCase
     {
         $this->restic->catConfig = [12, '', FakeRestic::fixture('wrong-password-0.19.stderr')];
 
-        self::assertSame(ExitCode::FAILURE, $this->restore(['--config' => $this->writeConfig(), '--snapshot' => 'latest', '--target' => "{$this->dir}/out", '--yes' => true]));
+        self::assertSame(ExitCode::NO_PERMISSION, $this->restore(['--config' => $this->writeConfig(), '--snapshot' => 'latest', '--target' => "{$this->dir}/out", '--yes' => true]));
         self::assertStringContainsString('error Wrong password for the restic repository /srv/restic-repo', $this->logOutput());
         self::assertFileDoesNotExist("{$this->dir}/out");
     }

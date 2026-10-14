@@ -124,7 +124,7 @@ final class StatusCommandTest extends TestCase
     {
         $this->restic->catConfig = [10, '', FakeRestic::fixture('no-repository-0.19.stderr')];
 
-        self::assertSame(ExitCode::FAILURE, Artisan::call('status', ['--config' => $this->writeConfig()]));
+        self::assertSame(ExitCode::UNAVAILABLE, Artisan::call('status', ['--config' => $this->writeConfig()]));
         self::assertStringContainsString('error There is no restic repository at /srv/restic-repo', $this->logOutput());
     }
 }

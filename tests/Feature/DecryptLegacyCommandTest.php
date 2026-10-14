@@ -63,7 +63,7 @@ final class DecryptLegacyCommandTest extends TestCase
         self::assertSame(ExitCode::SUCCESS, Artisan::call('decrypt-legacy', ['file' => $this->archive]), $this->logOutput());
         self::assertFileExists("{$this->dir}/cwd/2024-05-01-web-arkhive/srv/www/site/index.php");
 
-        self::assertSame(ExitCode::REFUSED, Artisan::call('decrypt-legacy', ['file' => $this->archive]));
+        self::assertSame(ExitCode::CANNOT_CREATE, Artisan::call('decrypt-legacy', ['file' => $this->archive]));
         self::assertStringContainsString("{$this->dir}/cwd/2024-05-01-web-arkhive exists and is not an empty directory", $this->logOutput());
     }
 
@@ -87,7 +87,7 @@ final class DecryptLegacyCommandTest extends TestCase
     {
         file_put_contents("{$this->dir}/pw", LegacyArchives::PASSWORD);
         chmod("{$this->dir}/pw", 0644);
-        self::assertSame(ExitCode::USAGE, Artisan::call('decrypt-legacy', ['file' => $this->archive, '--password-file' => "{$this->dir}/pw"]));
+        self::assertSame(ExitCode::NO_PERMISSION, Artisan::call('decrypt-legacy', ['file' => $this->archive, '--password-file' => "{$this->dir}/pw"]));
         self::assertStringContainsString("--password-file {$this->dir}/pw is readable by group or others (mode 0644)", $this->logOutput());
 
         file_put_contents("{$this->dir}/empty", "\n");
@@ -100,7 +100,7 @@ final class DecryptLegacyCommandTest extends TestCase
     {
         $this->terminal->env['ARKHIVE_CRYPT_PASSWORD'] = 'wrong';
 
-        self::assertSame(ExitCode::FAILURE, Artisan::call('decrypt-legacy', ['file' => $this->archive, '--to' => "{$this->dir}/out"]));
+        self::assertSame(ExitCode::NO_PERMISSION, Artisan::call('decrypt-legacy', ['file' => $this->archive, '--to' => "{$this->dir}/out"]));
         self::assertStringContainsString('error Cannot decrypt the archive: the password is wrong', $this->logOutput());
         self::assertDirectoryDoesNotExist("{$this->dir}/out");
     }
@@ -116,7 +116,7 @@ final class DecryptLegacyCommandTest extends TestCase
 
     public function testAMissingArchiveIsAUsageError(): void
     {
-        self::assertSame(ExitCode::USAGE, Artisan::call('decrypt-legacy', ['file' => 'nothing.enc.arbk']));
+        self::assertSame(ExitCode::NO_INPUT, Artisan::call('decrypt-legacy', ['file' => 'nothing.enc.arbk']));
         self::assertStringContainsString("error The archive {$this->dir}/cwd/nothing.enc.arbk does not exist", $this->logOutput());
     }
 }

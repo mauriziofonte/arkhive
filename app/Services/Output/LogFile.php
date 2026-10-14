@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Mfonte\Arkhive\Services\Output;
 
-use Mfonte\Arkhive\Exceptions\UsageException;
+use Mfonte\Arkhive\Exceptions\RefusedException;
 
 /**
  * --log-file: lines are appended; when the file grows past $maxBytes it is rotated to
@@ -22,7 +22,7 @@ final class LogFile
     ) {
         $dir = dirname($path);
         if (!is_dir($dir) || !is_writable($dir) || (file_exists($path) && !is_writable($path))) {
-            throw new UsageException("Cannot write the log file {$path}: check that its directory exists and is writable");
+            throw new RefusedException("Cannot write the log file {$path}: check that its directory exists and is writable");
         }
     }
 

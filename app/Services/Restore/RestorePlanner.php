@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace Mfonte\Arkhive\Services\Restore;
 
-use Mfonte\Arkhive\Exceptions\RefusedException;
+use Mfonte\Arkhive\Exceptions\CancelledException;
+use Mfonte\Arkhive\Exceptions\NoInputException;
 use Mfonte\Arkhive\Exceptions\UsageException;
 use Mfonte\Arkhive\Services\Config\Config;
 use Mfonte\Arkhive\Services\Exclusion\ExclusionConverter;
@@ -18,7 +19,7 @@ use Mfonte\Arkhive\Support\TextTable;
 /**
  * Turns the flags into a RestorePlan. In a terminal (a Prompter is given) every choice not given as
  * a flag is asked, with a default taken by Enter (spec §10.1); unattended, a missing required choice
- * is exit 2 naming its flag and nothing is ever asked (spec §10.2).
+ * is exit 64 naming its flag and nothing is ever asked (spec §10.2).
  */
 final class RestorePlanner
 {
@@ -54,14 +55,14 @@ final class RestorePlanner
         if ($options->inPlace) {
             if (!$force) {
                 if ($this->prompter === null) {
-                    throw new RefusedException(
+                    throw new UsageException(
                         'An in-place restore overwrites the original files and needs --force',
                         'Pass --force (a safety snapshot of the paths is taken first), or restore to a new directory with --target',
                     );
                 }
                 $this->prompter->say('An in-place restore overwrites the original files at ' . implode(', ', $selection->includes === [] ? $snapshot->paths : $selection->includes) . ' (a safety snapshot of them is taken first).');
                 if (!$this->prompter->typed('Overwrite the original files?', self::OVERWRITE_WORD)) {
-                    throw new RefusedException('In-place restore not confirmed: nothing was restored');
+                    throw new CancelledException('In-place restore not confirmed: nothing was restored');
                 }
                 $force = true;
             }
@@ -75,7 +76,7 @@ final class RestorePlanner
             $directory = new TargetDirectory($target);
             if (!$force && !$directory->isEmpty() && is_dir($target) && $this->prompter !== null) {
                 if (!$this->prompter->typed("{$target} is not empty: files with the same names will be overwritten.", self::OVERWRITE_WORD)) {
-                    throw new RefusedException("The restore target {$target} is not empty and the restore was not confirmed: nothing was restored");
+                    throw new CancelledException("The restore target {$target} is not empty and the restore was not confirmed: nothing was restored");
                 }
                 $force = true;
             }
@@ -120,7 +121,7 @@ final class RestorePlanner
             return;
         }
         if (!$this->prompter->confirm('Start the restore?', true)) {
-            throw new UsageException('Restore cancelled: nothing was restored');
+            throw new CancelledException('Restore cancelled: nothing was restored');
         }
     }
 
@@ -188,7 +189,7 @@ final class RestorePlanner
             }
             try {
                 return $list->resolve($answer, $host);
-            } catch (UsageException $e) {
+            } catch (UsageException|NoInputException $e) {
                 $this->prompter->say($e->getMessage());
             }
         }

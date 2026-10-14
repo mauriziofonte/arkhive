@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Services\Config;
 
-use Mfonte\Arkhive\Exceptions\UsageException;
+use Mfonte\Arkhive\Exceptions\ConfigException;
+use Mfonte\Arkhive\Exceptions\NoInputException;
 use Mfonte\Arkhive\Services\Config\ConfigLocator;
 use PHPUnit\Framework\TestCase;
 use Tests\Support\TempDir;
@@ -78,9 +79,9 @@ final class ConfigLocatorTest extends TestCase
         self::assertSame($explicit, (new ConfigLocator($cwd, ''))->locate($explicit));
     }
 
-    public function testMissingExplicitConfigIsAUsageError(): void
+    public function testMissingExplicitConfigIsNoInput(): void
     {
-        $this->expectExceptionObject(new UsageException('Configuration file /nonexistent/arkhive.conf (from --config) does not exist or is not readable'));
+        $this->expectExceptionObject(new NoInputException('Configuration file /nonexistent/arkhive.conf (from --config) does not exist or is not readable'));
 
         (new ConfigLocator('/', ''))->locate('/nonexistent/arkhive.conf');
     }
@@ -91,8 +92,8 @@ final class ConfigLocatorTest extends TestCase
         $locator = new ConfigLocator($cwd, '');
         try {
             $locator->locate();
-            self::fail('expected a usage error');
-        } catch (UsageException $e) {
+            self::fail('expected a configuration error');
+        } catch (ConfigException $e) {
             if (is_file('/etc/arkhive-config') || is_file('/etc/arkhive/config')) {
                 self::markTestSkipped('this machine has a system-wide ArkHive config');
             }

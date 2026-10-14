@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Mfonte\Arkhive\Services\Restore;
 
+use Mfonte\Arkhive\Exceptions\NoInputException;
 use Mfonte\Arkhive\Exceptions\UsageException;
 use Mfonte\Arkhive\Services\Dump\DumpStaging;
 use Mfonte\Arkhive\Services\Restic\Node;
@@ -71,7 +72,7 @@ final class DumpFinder
         }
         if ($matches === []) {
             $available = $dumps === [] ? 'the snapshot has no database dump' : 'available: ' . implode(', ', array_map(static fn (DumpFile $d): string => $d->label(), $dumps));
-            throw new UsageException("There is no dump of database {$name} in the snapshot ({$available})");
+            throw new NoInputException("There is no dump of database {$name} in the snapshot ({$available})");
         }
 
         throw new UsageException("Both a MySQL and a PostgreSQL dump of {$name} are in the snapshot", "Pass --db mysql/{$name} or --db pgsql/{$name}");

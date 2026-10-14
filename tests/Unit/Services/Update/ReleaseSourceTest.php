@@ -106,7 +106,7 @@ final class ReleaseSourceTest extends TestCase
             self::fail('an unknown tag was found');
         } catch (ArkhiveException $e) {
             self::assertSame('There is no release v9.9.9', $e->getMessage());
-            self::assertSame(ExitCode::FAILURE, $e->exitCode());
+            self::assertSame(ExitCode::NO_INPUT, $e->exitCode());
         }
 
         try {

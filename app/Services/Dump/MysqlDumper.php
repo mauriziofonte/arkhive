@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Mfonte\Arkhive\Services\Dump;
 
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
+use Mfonte\Arkhive\Exceptions\SoftwareException;
+use Mfonte\Arkhive\Exceptions\UnavailableException;
 use Mfonte\Arkhive\Services\Config\MysqlConfig;
 use Mfonte\Arkhive\Services\Process\Cleanup;
 use Mfonte\Arkhive\Services\Process\Command;
@@ -122,7 +124,7 @@ final class MysqlDumper
         if (!is_file($partial) || !@rename($partial, $path)) {
             @unlink($partial);
 
-            throw new ArkhiveException("MySQL dump of database {$database} reported success but wrote no file at {$partial}");
+            throw new SoftwareException("MySQL dump of database {$database} reported success but wrote no file at {$partial}");
         }
 
         return new DumpResult('mysql', $database, $path, (int) filesize($path), $result->duration);
@@ -153,7 +155,7 @@ final class MysqlDumper
             '--execute=' . $sql,
         ]));
         if (!$result->succeeded()) {
-            throw new ArkhiveException($result->failure($what), hint: 'Check MYSQL_HOST, MYSQL_PORT, MYSQL_USER and MYSQL_PASSWORD, and that the server is running');
+            throw new UnavailableException($result->failure($what), hint: 'Check MYSQL_HOST, MYSQL_PORT, MYSQL_USER and MYSQL_PASSWORD, and that the server is running');
         }
 
         return $result->stdout;

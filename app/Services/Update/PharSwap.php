@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Mfonte\Arkhive\Services\Update;
 
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
+use Mfonte\Arkhive\Exceptions\RefusedException;
 
 /**
  * The final rename() of an update. Replacing the PHAR that is running cannot happen mid-run: PHP
@@ -49,7 +50,7 @@ final class PharSwap
                     @unlink($from);
                 }
 
-                throw new ArkhiveException("Cannot replace {$to}: the running version is unchanged");
+                throw new RefusedException("Cannot replace {$to}: the running version is unchanged");
             }
 
             return;

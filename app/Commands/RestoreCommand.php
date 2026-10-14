@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Mfonte\Arkhive\Commands;
 
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
+use Mfonte\Arkhive\Exceptions\SoftwareException;
 use Mfonte\Arkhive\Exceptions\UsageException;
 use Mfonte\Arkhive\ExitCode;
 use Mfonte\Arkhive\Services\Process\ProcessRunner;
@@ -157,7 +158,7 @@ final class RestoreCommand extends RepositoryCommand
         }
         $buffer = fopen('php://temp', 'w+b');
         if ($buffer === false) {
-            throw new ArkhiveException('Cannot open a buffer for standard output');
+            throw new SoftwareException('Cannot open a buffer for standard output');
         }
         try {
             $result = $task($buffer);

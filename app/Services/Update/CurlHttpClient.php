@@ -4,7 +4,11 @@ declare(strict_types=1);
 
 namespace Mfonte\Arkhive\Services\Update;
 
-use Mfonte\Arkhive\Exceptions\ArkhiveException;
+use Mfonte\Arkhive\Exceptions\DataException;
+use Mfonte\Arkhive\Exceptions\IoException;
+use Mfonte\Arkhive\Exceptions\RefusedException;
+use Mfonte\Arkhive\Exceptions\SoftwareException;
+use Mfonte\Arkhive\Exceptions\UnavailableException;
 
 /**
  * HttpClient on the curl extension. libcurl reads HTTPS_PROXY / https_proxy itself; the proxy is
@@ -25,7 +29,7 @@ final class CurlHttpClient implements HttpClient
         curl_setopt($handle, CURLOPT_RETURNTRANSFER, true);
         $body = curl_exec($handle);
         if (!is_string($body)) {
-            throw new ArkhiveException("Cannot fetch {$url}: " . curl_error($handle), hint: self::hint());
+            throw new UnavailableException("Cannot fetch {$url}: " . curl_error($handle), hint: self::hint());
         }
 
         return new HttpResponse((int) curl_getinfo($handle, CURLINFO_RESPONSE_CODE), $body);
@@ -35,7 +39,7 @@ final class CurlHttpClient implements HttpClient
     {
         $file = @fopen($path, 'xb');
         if ($file === false) {
-            throw new ArkhiveException("Cannot create {$path}");
+            throw new RefusedException("Cannot create {$path}");
         }
         $written = 0;
         $tooLarge = false;
@@ -59,13 +63,13 @@ final class CurlHttpClient implements HttpClient
         $ok = curl_exec($handle);
         fclose($file);
         if ($tooLarge) {
-            throw new ArkhiveException("The download of {$url} is larger than the expected " . $maxBytes . ' bytes: stopped');
+            throw new DataException("The download of {$url} is larger than the expected " . $maxBytes . ' bytes: stopped');
         }
         if ($failedWrite) {
-            throw new ArkhiveException("Cannot write {$path}: the filesystem is full or not writable");
+            throw new IoException("Cannot write {$path}: the filesystem is full or not writable");
         }
         if ($ok === false) {
-            throw new ArkhiveException("Cannot download {$url}: " . curl_error($handle), hint: self::hint());
+            throw new UnavailableException("Cannot download {$url}: " . curl_error($handle), hint: self::hint());
         }
 
         return (int) curl_getinfo($handle, CURLINFO_RESPONSE_CODE);
@@ -78,7 +82,7 @@ final class CurlHttpClient implements HttpClient
     {
         $handle = curl_init($url);
         if ($handle === false) {
-            throw new ArkhiveException("Cannot fetch {$url}: curl_init failed");
+            throw new SoftwareException("Cannot fetch {$url}: curl_init failed");
         }
         $lines = [];
         foreach ($headers as $name => $value) {
