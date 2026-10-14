@@ -1,0 +1,5 @@
+created restic repository de32ab6382 at /srv/restic-repo
+
+Please note that knowledge of your password is required to access
+the repository. Losing your password means that your data is
+irrecoverably lost.

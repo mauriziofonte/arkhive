@@ -132,7 +132,7 @@ final class RestoreRunnerTest extends TestCase
         $target = "{$this->root}/restore";
 
         $this->runner()->run($this->restic, $this->plan(Selection::everything(), $target), null, 'h', $this->log(), self::sink());
-        $this->restic->supportsSparseRestore();
+        $this->restic->capabilities();
 
         self::assertSame(['restore', '--json', '--verify', '--target', $target, '--', $this->snapshot->id], $this->fake->callsOf('restore')[0]);
         self::assertCount(1, $this->fake->callsOf('version'), 'the version is asked once');

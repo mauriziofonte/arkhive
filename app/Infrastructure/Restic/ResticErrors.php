@@ -50,6 +50,12 @@ final class ResticErrors
                     . escapeshellarg($settings->passwordFile) . ' restic -r ' . escapeshellarg($settings->repository) . ' unlock (ArkHive never does this automatically)',
             );
         }
+        if (str_contains($stderr, 'unsupported repository version')) {
+            return new UnavailableException(
+                "This restic cannot open the repository {$settings->repository}: it uses a newer repository format",
+                hint: 'Repository format 2 (compression) needs restic 0.14.0 or newer: install it from your distribution or the static binary from https://github.com/restic/restic/releases (then set RESTIC_BINARY)',
+            );
+        }
         if (stripos($stderr, 'no space left on device') !== false) {
             return new IoException($result->failure($what), hint: 'The filesystem holding the repository (or the restic cache) is full: free space, or prune old snapshots with arkhive maintain');
         }

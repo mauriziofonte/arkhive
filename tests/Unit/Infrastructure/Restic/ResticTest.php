@@ -167,7 +167,7 @@ final class ResticTest extends TestCase
 
     public function testCommandsCarryTheRepositoryAndPasswordFileInTheEnvironmentOnly(): void
     {
-        $restic = new Restic(self::settings(), '/usr/bin/restic', new FakeProcessRunner());
+        $restic = new Restic(self::settings(), '/usr/bin/restic', self::versionRunner('0.16.1'));
         $command = $restic->command(['snapshots', '--json'], ['RESTIC_PROGRESS_FPS' => '2']);
 
         self::assertSame(['/usr/bin/restic', '--option', 'sftp.args=-o ServerAliveInterval=15 -o ServerAliveCountMax=4 -o BatchMode=yes', 'snapshots', '--json'], $command->argv);
@@ -187,17 +187,64 @@ final class ResticTest extends TestCase
         self::assertSame(['/usr/bin/restic', 'cat', 'config'], $local->command(['cat', 'config'])->argv);
     }
 
+    /**
+     * @return iterable<string, array{string, string, string}>
+     */
+    public static function sftpBeforeArgs(): iterable
+    {
+        $keepalive = 'ssh -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -o BatchMode=yes';
+        yield 'scp-like' => ['0.16.0', 'sftp:backup-user@backup.example.com:/restic', "{$keepalive} -l backup-user backup.example.com -s sftp"];
+        yield 'URL with port' => ['0.14.0', 'sftp://backup-user@backup.example.com:2222//restic', "{$keepalive} -p 2222 -l backup-user backup.example.com -s sftp"];
+        yield 'no user' => ['0.11.0', 'sftp:backup.example.com:restic', "{$keepalive} backup.example.com -s sftp"];
+        yield 'IPv6' => ['0.12.1', 'sftp://backup-user@[2001:db8::5]:23/restic', "{$keepalive} -p 23 -l backup-user 2001:db8::5 -s sftp"];
+    }
+
+    #[DataProvider('sftpBeforeArgs')]
+    public function testBeforeSftpArgsTheKeepalivesGoInAWholeSftpCommand(string $version, string $repository, string $sshCommand): void
+    {
+        $restic = new Restic(self::settings($repository), '/usr/bin/restic', self::versionRunner($version));
+
+        self::assertSame(['/usr/bin/restic', '--option', "sftp.command={$sshCommand}", 'cat', 'config'], $restic->command(['cat', 'config'])->argv);
+    }
+
+    public function testAnSftpUrlThatNeedsQuotingIsLeftToResticsDefault(): void
+    {
+        $restic = new Restic(self::settings('sftp:"odd user"@backup.example.com:/restic'), '/usr/bin/restic', self::versionRunner('0.14.0'));
+
+        self::assertSame(['/usr/bin/restic', 'cat', 'config'], $restic->command(['cat', 'config'])->argv);
+    }
+
+    public function testAnOldResticCannotOpenARepositoryOfFormatTwo(): void
+    {
+        $result = new ProcessResult(new Command(['/usr/bin/restic', 'cat', 'config']), 1, '', self::fixture('cat-config-v2-0.12.txt'));
+        $error = ResticErrors::exception($result, 'Opening the restic repository', self::settings('/srv/restic-repo'));
+
+        self::assertSame(ExitCode::UNAVAILABLE, $error->exitCode());
+        self::assertSame('This restic cannot open the repository /srv/restic-repo: it uses a newer repository format', $error->getMessage());
+        self::assertStringStartsWith('Repository format 2 (compression) needs restic 0.14.0 or newer', (string) $error->hint());
+    }
+
+    private static function versionRunner(string $version): FakeProcessRunner
+    {
+        return (new FakeProcessRunner())->on('restic', static fn (Command $command): array => $command->argv[1] === 'version'
+            ? [0, "restic {$version} compiled with go1.24 on linux/amd64\n", '']
+            : throw new \RuntimeException('unexpected: ' . $command->display()));
+    }
+
     public function testVersionChecks(): void
     {
         $runner = (new FakeProcessRunner())->on('restic', static fn (): array => [0, self::fixture('version-0.19.txt'), '']);
         self::assertSame('0.19.1', (new Restic(self::settings(), '/usr/bin/restic', $runner))->requireSupportedVersion());
 
-        $old = (new FakeProcessRunner())->on('restic', static fn (): array => [0, "restic 0.13.1 compiled with go1.18 on linux/amd64\n", '']);
+        $debian11 = (new FakeProcessRunner())->on('restic', static fn (): array => [0, "restic 0.11.0 compiled with go1.15.9 on linux/amd64\n", '']);
+        self::assertSame('0.11.0', (new Restic(self::settings(), '/usr/bin/restic', $debian11))->requireSupportedVersion());
+
+        $old = (new FakeProcessRunner())->on('restic', static fn (): array => [0, "restic 0.10.0 compiled with go1.15 on linux/amd64\n", '']);
         try {
             (new Restic(self::settings(), '/usr/bin/restic', $old))->requireSupportedVersion();
             self::fail('expected a refusal');
         } catch (ArkhiveException $e) {
-            self::assertSame('restic 0.13.1 is too old: ArkHive needs restic 0.14.0 or newer (repository format 2, compression)', $e->getMessage());
+            self::assertSame('restic 0.10.0 is too old: ArkHive needs restic 0.11.0 or newer', $e->getMessage());
             self::assertSame('Install a newer restic from your distribution, or the static binary from https://github.com/restic/restic/releases (then set RESTIC_BINARY)', $e->hint());
         }
 

@@ -146,12 +146,39 @@ final class DoctorTest extends TestCase
 
     public function testAnOldResticIsAFailure(): void
     {
-        $this->restic->version = "restic 0.12.1 compiled with go1.16 on linux/amd64\n";
+        $this->restic->version = "restic 0.10.0 compiled with go1.15 on linux/amd64\n";
 
         $checks = $this->diagnose($this->writeConfig());
 
         self::assertSame(CheckStatus::Failed, $checks['restic']->status);
-        self::assertStringStartsWith('restic 0.12.1 is too old', $checks['restic']->message);
+        self::assertStringStartsWith('restic 0.10.0 is too old', $checks['restic']->message);
+    }
+
+    public function testAnOlderSupportedResticNamesWhatItLacks(): void
+    {
+        $this->restic->version = "restic 0.12.1 compiled with go1.18 on linux/amd64\n";
+
+        $checks = $this->diagnose($this->writeConfig());
+
+        self::assertSame(CheckStatus::Ok, $checks['restic']->status);
+        self::assertStringStartsWith('restic 0.12.1 at ', $checks['restic']->message);
+        self::assertStringEndsWith('(no compression (repository format 1; format 2 needs restic 0.14.0 or newer); restores write sparse files in full; no restore progress)', $checks['restic']->message);
+    }
+
+    public function testACompressionSettingThatAnOldResticIgnoresIsAWarning(): void
+    {
+        $this->restic->version = "restic 0.12.1 compiled with go1.18 on linux/amd64\n";
+
+        $checks = $this->diagnose($this->writeConfig(['RESTIC_COMPRESSION' => 'max']));
+
+        self::assertSame(CheckStatus::Warning, $checks['restic']->status);
+        self::assertStringEndsWith('no restore progress): RESTIC_COMPRESSION=max has no effect', $checks['restic']->message);
+        self::assertSame('Install restic 0.14.0 or newer, or remove RESTIC_COMPRESSION', $checks['restic']->hint);
+
+        $this->restic->version = "restic 0.14.0 compiled with go1.19 on linux/amd64\n";
+        self::assertSame(CheckStatus::Ok, $this->diagnose($this->writeConfig(['RESTIC_COMPRESSION' => 'max']))['restic']->status);
+        $this->restic->version = "restic 0.12.1 compiled with go1.18 on linux/amd64\n";
+        self::assertSame(CheckStatus::Ok, $this->diagnose($this->writeConfig(['RESTIC_COMPRESSION' => 'auto']))['restic']->status);
     }
 
     public function testRemoved1xKeysAreListed(): void

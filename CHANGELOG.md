@@ -6,6 +6,24 @@ All notable changes to ArkHive are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- restic 0.11.0 or newer is supported (2.0 needed 0.14.0), so the restic package of Debian 11,
+  Ubuntu 22.04 and Debian 12 works as is. Where an older restic lacks a feature ArkHive falls
+  back: keepalives for `sftp:` repositories go in a whole `sftp.command` before 0.16.1, `init`
+  and `restore` totals are read without JSON, short snapshot ids are resolved to full ones,
+  `RESTIC_CHECK_SUBSET` becomes the nearest fraction before 0.12 (percentages) and 0.14 (sizes),
+  and `--compression` is left out before 0.14. `doctor` names what the installed restic lacks.
+- `tests/Compat`: ArkHive's commands against a real restic (`ARKHIVE_TEST_RESTIC`), run in CI for
+  every release from 0.11.0 to the current one, including an `sftp:` repository on a local sshd.
+
+### Fixed
+
+- `sftp:` repositories failed on restic older than 0.16.1 ("option sftp.args is not known"), and
+  `maintain` failed on restic older than 0.12 with the default `RESTIC_CHECK_SUBSET=5%`.
+- A repository of format 2 opened by restic older than 0.14 is reported as such (exit 69, with
+  the version to install) instead of a bare restic error.
+
 ### Changed
 
 - Exit codes follow `sysexits.h` (see "Exit codes" in the README): usage errors are 64 (were 2),

@@ -179,6 +179,10 @@ final class ResticOutput
                 $line = trim($line);
                 if ($line !== '' && preg_match(self::CHECK_PROGRESS, $line) !== 1) {
                     $errors[] = $line;
+                    // the text output of restic before 0.18 (0.11 prints short pack ids)
+                    if (preg_match('/^Pack ID does not match, want ([0-9a-f]{8,64})\b/', $line, $match) === 1) {
+                        $broken[] = $match[1];
+                    }
                 }
                 continue;
             }
@@ -199,7 +203,7 @@ final class ResticOutput
         }
         $ok = $exitCode === 0 && ($summaryErrors ?? 0) === 0;
 
-        return new CheckResult($ok, $ok ? [] : array_values(array_unique($errors)), $broken);
+        return new CheckResult($ok, $ok ? [] : array_values(array_unique($errors)), array_values(array_unique($broken)));
     }
 
     /**

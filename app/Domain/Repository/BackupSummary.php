@@ -27,6 +27,24 @@ final readonly class BackupSummary
     ) {
     }
 
+    public function withSnapshotId(string $snapshotId): self
+    {
+        return new self(
+            $snapshotId,
+            $this->filesNew,
+            $this->filesChanged,
+            $this->filesUnmodified,
+            $this->dirsNew,
+            $this->dirsChanged,
+            $this->dirsUnmodified,
+            $this->dataAdded,
+            $this->dataAddedPacked,
+            $this->totalFilesProcessed,
+            $this->totalBytesProcessed,
+            $this->totalDuration,
+        );
+    }
+
     public function shortId(): string
     {
         return substr($this->snapshotId, 0, 8);

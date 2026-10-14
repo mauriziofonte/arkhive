@@ -1,0 +1,14 @@
+using temporary cache in /tmp/restic-check-cache-588818739
+create exclusive lock for repository
+load indexes
+check all packs
+check snapshots, trees and blobs
+error for tree 803f1c39:
+  decrypting blob 803f1c39e1286f69bf9ad01d5d19f64af143ba1d12d705c7a19178d9f8e53297 failed: ciphertext verification failed
+read all data
+[0:00] 100.00%  1 / 1 snapshots
+
+Pack ID does not match, want 9918f67d, got 86f26e4d
+[0:00] 100.00%  2 / 2 packs
+
+Fatal: repository contains errors

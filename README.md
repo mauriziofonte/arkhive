@@ -9,10 +9,10 @@ Contents: [Requirements](#requirements) | [Install](#install) | [Quick start](#q
 ## Requirements
 
 - **PHP 8.3 or newer** (CLI) with the extensions `phar`, `json`, `mbstring`, `posix` and `pcntl`, plus `curl` or `openssl` for `self-update`. The PHAR checks this at startup and, if something is missing, prints the install command for your distribution and exits 69.
-- **restic 0.14.0 or newer** (repository format 2 and compression), checked before every repository operation.
+- **restic 0.11.0 or newer** (the package of Debian 11 and later), checked before every repository operation. Every release from 0.11.0 to the current one is tested (CI `restic-compat`). Older releases lack some features and ArkHive works around them: before 0.14.0 there is no compression (repository format 1, and a format 2 repository cannot be opened), before 0.15.0 restores write sparse files in full, before 0.16.0 restores show no progress. `arkhive doctor` names what the installed restic lacks.
 - `ssh` for an SFTP repository; `mariadb-dump`/`mysqldump` and `mariadb`/`mysql` for MySQL dumps; `pg_dump` and `psql` for PostgreSQL dumps; `fusermount3` (FUSE) for `mount`; `openssl`, `tar` and `xz` only for `decrypt-legacy`; `gh` (optional) to verify release provenance. `arkhive doctor` reports each missing tool with the install command for your distribution.
 
-Supported and tested on amd64 and arm64: Debian 12/13, Ubuntu 22.04/24.04, Rocky/Alma/RHEL 9, Fedora, Alpine 3.20+, Arch. The commands below are the ones the CI distribution matrix uses (`tests/distro/setup.sh`), run as root.
+Supported and tested on amd64 and arm64: Debian 11/12/13, Ubuntu 22.04/24.04, Rocky/Alma/RHEL 9, Fedora, Alpine 3.20+, Arch. The commands below are the ones the CI distribution matrix uses (`tests/distro/setup.sh`), run as root.
 
 **Debian 13**, **Ubuntu 24.04** (the distribution PHP is 8.4 / 8.3):
 
@@ -21,25 +21,26 @@ apt-get update
 apt-get install -y php-cli php-mbstring php-curl restic
 ```
 
-**Debian 12** (ships PHP 8.2: PHP comes from packages.sury.org):
+**Debian 11, Debian 12** (ship PHP 7.4 / 8.2: PHP comes from packages.sury.org; restic from the distribution, 0.11 / 0.14):
 
 ```sh
 apt-get update
 apt-get install -y ca-certificates curl
 curl -fsSLo /tmp/sury-keyring.deb https://packages.sury.org/debsuryorg-archive-keyring.deb
 dpkg -i /tmp/sury-keyring.deb
-echo "deb [signed-by=/usr/share/keyrings/debsuryorg-archive-keyring.gpg] https://packages.sury.org/php/ bookworm main" > /etc/apt/sources.list.d/php.list
+. /etc/os-release
+echo "deb [signed-by=/usr/share/keyrings/debsuryorg-archive-keyring.gpg] https://packages.sury.org/php/ $VERSION_CODENAME main" > /etc/apt/sources.list.d/php.list
 apt-get update
 apt-get install -y php8.4-cli php8.4-mbstring php8.4-curl restic
 ```
 
-**Ubuntu 22.04** (ships PHP 8.1: PHP comes from `ppa:ondrej/php`; its restic package is 0.12, too old: install the official binary as shown below):
+**Ubuntu 22.04** (ships PHP 8.1: PHP comes from `ppa:ondrej/php`; its restic package is 0.12.1):
 
 ```sh
 apt-get update
 apt-get install -y software-properties-common gpg-agent
 add-apt-repository -y ppa:ondrej/php
-apt-get install -y php8.4-cli php8.4-mbstring php8.4-curl
+apt-get install -y php8.4-cli php8.4-mbstring php8.4-curl restic
 ```
 
 **Rocky, Alma, RHEL 9**: PHP 8.3 from the AppStream module, or PHP 8.4 from Remi; restic from EPEL.
@@ -84,7 +85,7 @@ ln -sf /usr/bin/php83 /usr/bin/php
 pacman -Sy --needed php restic
 ```
 
-**restic from the official release** (any distribution whose package is older than 0.14; needs `curl` and `bzip2`). Pick the current version on the [restic releases page](https://github.com/restic/restic/releases); `a` is `amd64` or `arm64`:
+**restic from the official release** (for compression and repository format 2 where the distribution ships restic older than 0.14, or for a distribution without a package; needs `curl` and `bzip2`). Pick the current version on the [restic releases page](https://github.com/restic/restic/releases); `a` is `amd64` or `arm64`:
 
 ```sh
 v=0.19.1 a=amd64
@@ -236,13 +237,13 @@ Syntax: one `KEY=value` per line, optionally prefixed by `export`. `'single quot
 | `RESTIC_REPOSITORY` | yes | | The restic repository, e.g. `sftp:u123456@backup.example.com:arkhive` or a local path |
 | `RESTIC_PASSWORD_FILE` | yes | | Absolute path of the repository password file. Refused if it is missing (except by `init`, which generates it), empty, not a regular file, readable by group or others, or not owned by the running user |
 | `RESTIC_SFTP_COMMAND` | no | restic's own `ssh` call | Passed to restic as `-o sftp.command=...`, for a port or key, e.g. `ssh -p 23 -i /root/.ssh/arkhive u123456@backup.example.com -s sftp`. Without it ArkHive adds `ServerAliveInterval=15`, `ServerAliveCountMax=4` and `BatchMode=yes` to an `sftp:` repository; with it the command is used as written, so add those `-o` options yourself if you want them |
-| `RESTIC_BINARY` | no | `restic` | A name searched in `PATH` and the standard directories, or a path; 0.14.0 or newer |
+| `RESTIC_BINARY` | no | `restic` | A name searched in `PATH` and the standard directories, or a path; 0.11.0 or newer |
 | `RESTIC_HOST` | no | system hostname | Host name recorded in the snapshots; retention, `status` and `drill` follow it |
-| `RESTIC_COMPRESSION` | no | `auto` | `auto`, `max` or `off` |
+| `RESTIC_COMPRESSION` | no | `auto` | `auto`, `max` or `off`; needs restic 0.14.0 or newer (`doctor` warns when it has no effect) |
 | `RESTIC_KEEP_DAILY` | no | `7` | Daily snapshots kept by `maintain` |
 | `RESTIC_KEEP_WEEKLY` | no | `4` | Weekly snapshots kept by `maintain` |
 | `RESTIC_KEEP_MONTHLY` | no | `6` | Monthly snapshots kept by `maintain` |
-| `RESTIC_CHECK_SUBSET` | no | `5%` | Data read back by `maintain`: a percentage (`5%`), a fraction (`1/10`) or a size (`500M`) |
+| `RESTIC_CHECK_SUBSET` | no | `5%` | Data read back by `maintain`: a percentage (`5%`), a fraction (`1/10`) or a size (`500M`); with restic before 0.12 (percentage) or 0.14 (size) ArkHive reads the nearest fraction instead, a different one at each run |
 | `EXCLUSION_PATTERNS` | no | none | Comma-separated 1.x patterns, see below |
 | `DUMP_DIRECTORY` | when dumps are enabled | | Absolute path of a dedicated staging directory for the dumps (`mysql/<db>.sql`, `pgsql/<db>.sql`), backed up as a path of its own and emptied after each successful backup. It cannot be `/`, cannot be or contain a backup path, and must not be excluded by `EXCLUSION_PATTERNS` |
 | `WITH_MYSQL` | no | `false` | Dump MySQL/MariaDB databases |
@@ -580,7 +581,7 @@ rsync -aHAX --numeric-ids "$TARGET/etc/nginx/" /etc/nginx/
 ArkHive 1.x built `tar | gzip/xz | openssl enc -aes-256-cbc` and streamed one full archive over SSH every day. The random salt and CBC chaining make two consecutive archives share nothing, so every run uploaded the whole data set (tens of GB a day for a few hundred MB of real change) and no deduplicating backend could help. 2.0 keeps the configuration, the dumps, the exclusions, the locking, the notifications and the interactive restore, and hands transport, deduplication, compression, encryption and retention to restic, which receives plain input (file trees and uncompressed per-database dumps) so that deduplication works.
 
 - The **first** 2.0 backup uploads everything (a full upload); every backup after it uploads only new and changed data.
-- Install **restic** 0.14 or newer ([Requirements](#requirements)). `tar`, `gzip`, `xz`, `openssl`, `scp`, `pv`, `mkfifo` and `tee` are no longer needed (`openssl`, `tar`, `xz` only for `decrypt-legacy`).
+- Install **restic** 0.11 or newer ([Requirements](#requirements)). `tar`, `gzip`, `xz`, `openssl`, `scp`, `pv`, `mkfifo` and `tee` are no longer needed (`openssl`, `tar`, `xz` only for `decrypt-legacy`).
 - PHP 8.3 or newer is required.
 - `restore` is rewritten ([restore](#restore)): its destination is `--target`, not an argument. `backup --with-progress` and `--with-disk-space-check` are no longer needed (accepted, ignored).
 - PostgreSQL: every database in `PGSQL_DATABASES` is dumped (1.x dumped only the first), in plain format. MySQL: `*` means every non-system database.

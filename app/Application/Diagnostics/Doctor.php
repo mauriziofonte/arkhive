@@ -25,6 +25,7 @@ use Mfonte\Arkhive\Domain\Configuration\ResticSettings;
 use Mfonte\Arkhive\Domain\Diagnostics\Check;
 use Mfonte\Arkhive\Domain\Diagnostics\CheckStatus;
 use Mfonte\Arkhive\Domain\Execution\ExecutionContext;
+use Mfonte\Arkhive\Domain\Repository\ResticCapabilities;
 use Mfonte\Arkhive\Domain\Repository\Snapshot;
 use Mfonte\Arkhive\Domain\Repository\Snapshots;
 use Mfonte\Arkhive\Domain\Shared\Bytes;
@@ -234,7 +235,15 @@ final class Doctor
             $restic = $this->resticFactory->create($settings, 'for every backup and restore');
             $version = $restic->requireSupportedVersion();
             $this->restic = $restic;
-            $this->add('restic', CheckStatus::Ok, "restic {$version} at {$restic->binary()}");
+            $capabilities = $restic->capabilities();
+            $limits = $capabilities->limitations();
+            $found = "restic {$version} at {$restic->binary()}" . ($limits === [] ? '' : ' (' . implode('; ', $limits) . ')');
+            $compression = $this->config?->restic->compression;
+            if ($compression !== null && $compression !== 'auto' && !$capabilities->compression()) {
+                $this->add('restic', CheckStatus::Warning, "{$found}: RESTIC_COMPRESSION={$compression} has no effect", 'Install restic ' . ResticCapabilities::REPOSITORY_V2 . ' or newer, or remove RESTIC_COMPRESSION');
+            } else {
+                $this->add('restic', CheckStatus::Ok, $found);
+            }
         } catch (InterruptedException $e) {
             throw $e;
         } catch (ArkhiveException $e) {

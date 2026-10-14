@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Tests\Unit\Domain\Repository;
+namespace Tests\Unit\Infrastructure\Restic;
 
 use DateTimeImmutable;
 use Mfonte\Arkhive\Domain\Repository\Snapshot;
@@ -14,7 +14,7 @@ use Tests\Support\FakeRestic;
 /**
  * Parsing of real restic 0.19 and 0.16 output (tests/Fixtures/restic).
  */
-final class SnapshotModelsTest extends TestCase
+final class ResticOutputSnapshotTest extends TestCase
 {
     /**
      * @return list<array<string, mixed>>

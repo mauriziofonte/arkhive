@@ -53,7 +53,7 @@ final class ResticMaintainTest extends TestCase
 
         self::assertTrue($this->restic->check()->ok);
         self::assertTrue($this->restic->check('5%')->ok);
-        self::assertSame([['check', '--json'], ['check', '--json', '--read-data-subset=5%']], $this->fake->calls);
+        self::assertSame([['check', '--json'], ['version'], ['check', '--json', '--read-data-subset=5%']], $this->fake->calls, 'the subset is fitted to the restic version');
     }
 
     public function testCheckExit1IsAResultNotAnException(): void

@@ -13,6 +13,7 @@ use Mfonte\Arkhive\Domain\Repository\ForgetResult;
 use Mfonte\Arkhive\Domain\Repository\Node;
 use Mfonte\Arkhive\Domain\Repository\RepositoryLock;
 use Mfonte\Arkhive\Domain\Repository\RepositoryStats;
+use Mfonte\Arkhive\Domain\Repository\ResticCapabilities;
 use Mfonte\Arkhive\Domain\Repository\RestoreProgress;
 use Mfonte\Arkhive\Domain\Repository\RestoreRequest;
 use Mfonte\Arkhive\Domain\Repository\Snapshot;
@@ -35,6 +36,11 @@ interface SnapshotStore
      * The client version ("0.19.1").
      */
     public function version(): string;
+
+    /**
+     * What the installed client can do; the adapter already falls back where a feature is missing.
+     */
+    public function capabilities(): ResticCapabilities;
 
     /**
      * @throws ArkhiveException when the client is too old for ArkHive

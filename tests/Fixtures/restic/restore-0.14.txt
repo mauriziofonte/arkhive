@@ -1,0 +1,3 @@
+restoring <Snapshot bed594d7 of [/srv/www] at 2026-10-14 20:55:12.5098142 +0000 UTC by root@web1.example.com> to /srv/restore
+verifying files in /srv/restore
+finished verifying 3 files in /srv/restore (took 1ms)

@@ -9,15 +9,20 @@ use Mfonte\Arkhive\Application\Port\SnapshotStore;
 use Mfonte\Arkhive\Application\Process\Command;
 use Mfonte\Arkhive\Application\Process\ProcessResult;
 use Mfonte\Arkhive\Domain\Configuration\ResticSettings;
+use Mfonte\Arkhive\Domain\Exclusion\ResticPatternMatcher;
 use Mfonte\Arkhive\Domain\Repository\BackupOutcome;
 use Mfonte\Arkhive\Domain\Repository\BackupRequest;
+use Mfonte\Arkhive\Domain\Repository\BackupSummary;
 use Mfonte\Arkhive\Domain\Repository\CheckResult;
 use Mfonte\Arkhive\Domain\Repository\ForgetResult;
 use Mfonte\Arkhive\Domain\Repository\Node;
+use Mfonte\Arkhive\Domain\Repository\ReadDataSubset;
 use Mfonte\Arkhive\Domain\Repository\RepositoryLock;
 use Mfonte\Arkhive\Domain\Repository\RepositoryStats;
+use Mfonte\Arkhive\Domain\Repository\ResticCapabilities;
 use Mfonte\Arkhive\Domain\Repository\RestoreProgress;
 use Mfonte\Arkhive\Domain\Repository\RestoreRequest;
+use Mfonte\Arkhive\Domain\Repository\SftpLocation;
 use Mfonte\Arkhive\Domain\Repository\Snapshot;
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
 use Mfonte\Arkhive\Exceptions\SoftwareException;
@@ -32,17 +37,14 @@ final class Restic implements SnapshotStore
     /** restic backup exit code: snapshot saved, but some source files could not be read */
     public const INCOMPLETE = 3;
 
-    /** spec §4: repository v2 and compression */
-    public const MINIMUM_VERSION = '0.14.0';
+    /** the restic of Debian 11 (docs/2.1-PLAN.md §3) */
+    public const MINIMUM_VERSION = ResticCapabilities::MINIMUM;
 
     /** keepalives so that a server that stops answering fails the run instead of hanging it */
     public const SFTP_ARGS = '-o ServerAliveInterval=15 -o ServerAliveCountMax=4 -o BatchMode=yes';
 
     /** seconds allowed for the reachability check */
     public const REACH_TIMEOUT = 300.0;
-
-    /** `restore --sparse` (zero runs written as holes); assumed from 0.15 to stay on the safe side */
-    public const SPARSE_RESTORE_VERSION = '0.15.0';
 
     private ?string $version = null;
 
@@ -73,7 +75,7 @@ final class Restic implements SnapshotStore
         if ($this->settings->sftpCommand !== null) {
             $options = ['--option', 'sftp.command=' . $this->settings->sftpCommand];
         } elseif (str_starts_with($this->settings->repository, 'sftp:')) {
-            $options = ['--option', 'sftp.args=' . self::SFTP_ARGS];
+            $options = $this->sftpOptions();
         }
 
         return new Command([$this->binary, ...$options, ...$args], [
@@ -129,9 +131,9 @@ final class Restic implements SnapshotStore
         return $this->version = $version;
     }
 
-    public function supportsSparseRestore(): bool
+    public function capabilities(): ResticCapabilities
     {
-        return version_compare($this->version(), self::SPARSE_RESTORE_VERSION, '>=');
+        return ResticCapabilities::of($this->version());
     }
 
     public static function parseVersion(string $output): ?string
@@ -140,14 +142,14 @@ final class Restic implements SnapshotStore
     }
 
     /**
-     * @throws ArkhiveException when restic is older than 0.14
+     * @throws ArkhiveException when restic is older than ResticCapabilities::MINIMUM
      */
     public function requireSupportedVersion(): string
     {
         $version = $this->version();
-        if (version_compare($version, self::MINIMUM_VERSION, '<')) {
+        if (!$this->capabilities()->supported()) {
             throw new UnavailableException(
-                "restic {$version} is too old: ArkHive needs restic " . self::MINIMUM_VERSION . ' or newer (repository format 2, compression)',
+                "restic {$version} is too old: ArkHive needs restic " . self::MINIMUM_VERSION . ' or newer',
                 hint: 'Install a newer restic from your distribution, or the static binary from https://github.com/restic/restic/releases (then set RESTIC_BINARY)',
             );
         }
@@ -184,7 +186,8 @@ final class Restic implements SnapshotStore
             }
         }
 
-        return '';
+        // before 0.15 init prints text only: "created restic repository 8e5f9aadd7 at /srv/restic-repo"
+        return preg_match('/^created restic repository ([0-9a-f]+) at /m', $result->stdout, $match) === 1 ? $match[1] : '';
     }
 
     /**
@@ -344,7 +347,7 @@ final class Restic implements SnapshotStore
             array_push($args, '--tag', $tag);
         }
         array_push($args, '--host', $request->host);
-        if ($request->compression !== null) {
+        if ($request->compression !== null && $this->capabilities()->compression()) {
             array_push($args, '--compression', $request->compression);
         }
         if ($request->excludeFile !== null) {
@@ -390,13 +393,19 @@ final class Restic implements SnapshotStore
             }
         }
 
+        if ($summary instanceof BackupSummary && self::isShortId($summary->snapshotId)) {
+            // before 0.16 the summary carries the short id: the full one names the snapshot unambiguously
+            $summary = $summary->withSnapshotId($this->fullSnapshotId($summary->snapshotId, $request->host));
+        }
+
         return new BackupOutcome($summary, $incomplete, array_values(array_unique($unreadable)), $result->stderrTail());
     }
 
     public function restore(RestoreRequest $request, ?callable $onProgress = null): ?RestoreProgress
     {
+        $capabilities = $this->capabilities();
         $args = ['restore', '--json', '--verify'];
-        if ($this->supportsSparseRestore()) {
+        if ($capabilities->sparseRestore()) {
             // runs of zeros become holes again: sparse files (images, databases) keep their real size on disk
             $args[] = '--sparse';
         }
@@ -428,7 +437,71 @@ final class Restic implements SnapshotStore
             },
         );
 
+        if ($summary === null && !$capabilities->jsonRestore()) {
+            // before 0.16 restore reports nothing machine-readable: count what the selection holds
+            $summary = $this->restoredTotals($request);
+        }
+
         return $summary;
+    }
+
+    /**
+     * The files, directories and bytes of the snapshot that a restore request selects, as restic's
+     * own summary would count them.
+     */
+    private function restoredTotals(RestoreRequest $request): RestoreProgress
+    {
+        $count = 0;
+        $bytes = 0;
+        $this->ls($request->snapshotId, [], true, static function (Node $node) use (&$count, &$bytes, $request): void {
+            if (ResticPatternMatcher::excludes($request->excludes, $node->path)) {
+                return;
+            }
+            if ($request->includes !== [] && !ResticPatternMatcher::excludes($request->includes, $node->path)) {
+                return;
+            }
+            $count++;
+            if ($node->isFile()) {
+                $bytes += $node->size;
+            }
+        });
+
+        return new RestoreProgress(1.0, $count, $count, $bytes, $bytes);
+    }
+
+    /**
+     * The sftp options: keepalives and batch mode, as `sftp.args` from restic 0.16.1, before that as a
+     * whole `sftp.command` built from the repository URL (restic's own default command plus the options).
+     *
+     * @return list<string>
+     */
+    private function sftpOptions(): array
+    {
+        if ($this->capabilities()->sftpArgs()) {
+            return ['--option', 'sftp.args=' . self::SFTP_ARGS];
+        }
+        $location = SftpLocation::parse($this->settings->repository);
+        if ($location === null) {
+            return [];
+        }
+
+        return ['--option', 'sftp.command=' . $location->sshCommand(explode(' ', self::SFTP_ARGS))];
+    }
+
+    private static function isShortId(string $id): bool
+    {
+        return preg_match('/^[0-9a-f]{8,63}$/', $id) === 1;
+    }
+
+    private function fullSnapshotId(string $shortId, string $host): string
+    {
+        foreach ($this->snapshots($host) as $snapshot) {
+            if (str_starts_with($snapshot->id, $shortId)) {
+                return $snapshot->id;
+            }
+        }
+
+        return $shortId;
     }
 
     public function mount(string $directory, ?string $host = null): void
@@ -468,7 +541,8 @@ final class Restic implements SnapshotStore
     {
         $args = ['check', '--json'];
         if ($readDataSubset !== null) {
-            $args[] = '--read-data-subset=' . $readDataSubset;
+            $subset = ReadDataSubset::adapt($readDataSubset, $this->capabilities(), fn (): int => $this->stats()->rawBytes, random_int(0, PHP_INT_MAX));
+            $args[] = '--read-data-subset=' . $subset;
         }
         $what = $readDataSubset === null ? 'Checking the repository structure' : "Reading back {$readDataSubset} of the repository data";
         $result = $this->run($args, $what, acceptedExitCodes: [0, 1]);

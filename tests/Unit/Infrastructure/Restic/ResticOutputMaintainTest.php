@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Tests\Unit\Domain\Repository;
+namespace Tests\Unit\Infrastructure\Restic;
 
 use Mfonte\Arkhive\Infrastructure\Restic\ResticJson;
 use Mfonte\Arkhive\Infrastructure\Restic\ResticOutput;
@@ -13,7 +13,7 @@ use Tests\Support\FakeRestic;
 /**
  * forget, check and stats output captured from restic 0.19.1 and 0.16.4.
  */
-final class MaintainModelsTest extends TestCase
+final class ResticOutputMaintainTest extends TestCase
 {
     /**
      * @return iterable<string, array{string, int, int, string}>
@@ -77,7 +77,7 @@ final class MaintainModelsTest extends TestCase
         $check = ResticOutput::checkResult(1, '', FakeRestic::fixture('check-damaged-0.16.txt'));
 
         self::assertFalse($check->ok);
-        self::assertSame([], $check->brokenPacks);
+        self::assertSame(['9c44581e683bf99da4d31da1311e76e37c381784a311c637c56a2bd887b84af7'], $check->brokenPacks);
         self::assertSame('Pack ID does not match, want 9c44581e683bf99da4d31da1311e76e37c381784a311c637c56a2bd887b84af7, got 830bf7b2550d5746cd46e6c92e19c3ed720eb0626b74e058969cac91fcf52009', $check->describe());
     }
 
