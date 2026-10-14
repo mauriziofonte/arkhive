@@ -1,0 +1,4 @@
+NAME="Example OS"
+ID=exampleos
+VERSION_ID=1
+PRETTY_NAME="Example OS 1"

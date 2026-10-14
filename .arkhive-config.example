@@ -1,30 +1,60 @@
-BACKUP_DIRECTORY=/path/to/backup/directory
-BACKUP_RETENTION_DAYS=10
+# ArkHive 2.0 configuration. Copy to /etc/arkhive/config (or another location listed in the README),
+# then `chmod 600` it: it may contain database and SMTP passwords.
+
+# What to back up: absolute paths, space-separated ("double quotes" keep a path with spaces together).
+BACKUP_PATHS="/var/www /etc"
+
+# Exclusions (1.x syntax, comma-separated). A leading / anchors a pattern to each backup path;
+# "*/name/*" and "name/*" exclude a directory called name anywhere; "*.ext" excludes files by name.
 EXCLUSION_PATTERNS="*/backups/*,*/node_modules/*,npm-debug.log,yarn-error.log,package-lock.json,yarn.lock,pnpm-lock.yaml,.eslintcache,.stylelintcache,*/vendor/*,*/composer.lock,*/.git/*,*/.svn/*,*/.hg/*,*/.idea/*,*/.vscode/*,*/.history/*,*/.DS_Store,Thumbs.db,desktop.ini,*.sublime-project,*.sublime-workspace,*.pid,*.sock,*.log,*.rar,*.7z,*.zip,*.tar,*.tar.gz,*.tar.xz,*.iso,*.img,*.dmg,*.exe,*.dll,*.so,*.dylib,*.bin,*.o,*.a,*.class,*.jar,*.war,*.pyc,*.pyo,__pycache__/*,*/node/*,*/go/*,*/.nvm/*,*/.rbenv/*,*/.pyenv/*,*/.cargo/*,*/.rustup/*,*/tmp/*,*/temp/*,*/cache/*,*/build/*,*/dist/*,*/out/*,*/target/*,*/coverage/*,*/.pytest_cache/*,*/.tox/*,*.swp,*.swo,*.swn,*~,.env.local,.env.*.local"
-COMPRESSION_TYPE=gzip
-SSH_HOST=example.com
-SSH_PORT=22
-SSH_USER=example
-SSH_BACKUP_HOME="~/backup"
+
+# The restic repository. For an SFTP server on a non-standard port (e.g. a storage box on port 23),
+# set RESTIC_SFTP_COMMAND too.
+RESTIC_REPOSITORY="sftp:backup-user@backup.example.com:/restic"
+RESTIC_SFTP_COMMAND="ssh -i /root/.ssh/arkhive_backup -p 23 backup-user@backup.example.com -s sftp"
+
+# The repository password, alone in a file readable only by the user running ArkHive (chmod 600).
+# Keep a second copy of it somewhere else: without it the backups cannot be restored.
+RESTIC_PASSWORD_FILE=/etc/arkhive/restic-password
+
+# Optional restic settings (defaults shown).
+#RESTIC_BINARY=restic
+#RESTIC_HOST=
+#RESTIC_COMPRESSION=auto
+#RESTIC_KEEP_DAILY=7
+#RESTIC_KEEP_WEEKLY=4
+#RESTIC_KEEP_MONTHLY=6
+#RESTIC_CHECK_SUBSET=5%
+
+# Database dumps: one plain .sql file per database, written to DUMP_DIRECTORY (a dedicated directory,
+# emptied after each successful backup) and included in the snapshot.
+DUMP_DIRECTORY=/var/backups/arkhive-dumps
+
 WITH_MYSQL=true
 MYSQL_HOST=localhost
 MYSQL_PORT=3306
-MYSQL_USER=root
-MYSQL_PASSWORD=password
+MYSQL_USER=backup
+MYSQL_PASSWORD=change-me
+# "*" = every database except information_schema, performance_schema, sys and mysql
 MYSQL_DATABASES="database1 database2"
+
 WITH_PGSQL=false
 PGSQL_HOST=localhost
+PGSQL_PORT=5432
 PGSQL_USER=postgres
+#PGSQL_PASSWORD=
 PGSQL_DATABASES="database1 database2"
-WITH_CRYPT=true
-CRYPT_PASSWORD=strong_encryption_password
+#PGSQL_DUMP_OPTIONS="--no-owner --no-privileges"
+
+# E-mail notifications. NOTIFY_ON=failure sends mail only when something went wrong.
 NOTIFY=true
+NOTIFY_ON=always
 SMTP_HOST=smtp.example.com
-SMTP_AUTH=login
-SMTP_ENCRYPTION=tls
-SMTP_SSL=true
 SMTP_PORT=587
+# ssl (implicit TLS, usually port 465), tls (STARTTLS, usually 587) or none
+SMTP_ENCRYPTION=tls
+# both optional: leave them empty for an unauthenticated relay
 SMTP_USER=smtp_user
 SMTP_PASSWORD=smtp_password
-SMTP_FROM=user@example.com
-SMTP_TO=user@example.com
+SMTP_FROM=arkhive@example.com
+SMTP_TO=admin@example.com

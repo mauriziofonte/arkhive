@@ -1,7 +1,20 @@
 #!/usr/bin/env php
 <?php
 
+declare(strict_types=1);
+
 define('LARAVEL_START', microtime(true));
+
+/*
+| Requirements first, in syntax old PHP versions can parse: a host with PHP 8.1 or without pcntl
+| gets the install command for its distribution instead of a parse error or a fatal error.
+*/
+require_once __DIR__.'/bootstrap/requirements.php';
+$problems = arkhive_startup_problems();
+if ($problems !== []) {
+    fwrite(STDERR, implode(PHP_EOL, $problems).PHP_EOL);
+    exit(1);
+}
 
 /*
 |--------------------------------------------------------------------------
@@ -15,7 +28,7 @@ define('LARAVEL_START', microtime(true));
 |
 */
 
-$autoloader = require file_exists(__DIR__.'/vendor/autoload.php') ?  __DIR__.'/vendor/autoload.php' : __DIR__.'/../../autoload.php';
+$autoloader = require file_exists(__DIR__.'/vendor/autoload.php') ? __DIR__.'/vendor/autoload.php' : __DIR__.'/../../autoload.php';
 
 $app = require_once __DIR__.'/bootstrap/app.php';
 
@@ -33,8 +46,8 @@ $app = require_once __DIR__.'/bootstrap/app.php';
 $kernel = $app->make(Illuminate\Contracts\Console\Kernel::class);
 
 $status = $kernel->handle(
-    $input = new Symfony\Component\Console\Input\ArgvInput,
-    new Symfony\Component\Console\Output\ConsoleOutput
+    $input = new Symfony\Component\Console\Input\ArgvInput(),
+    new Symfony\Component\Console\Output\ConsoleOutput()
 );
 
 /*

@@ -1,0 +1,79 @@
+name: Distro matrix
+
+# spec §13.3: the built PHAR in a fresh container of every distribution of §12. Called by ci.yml
+# (amd64) and release.yml (arm64 through QEMU).
+on:
+  workflow_call:
+    inputs:
+      platform:
+        description: Container platform (linux/amd64 or linux/arm64)
+        type: string
+        required: true
+      artifact:
+        description: Name of the artifact holding arkhive.phar
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  distro:
+    name: ${{ matrix.image }} (${{ inputs.platform }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: debian:12
+            hint: 'Run: apt install restic'
+          - image: debian:13
+            hint: 'Run: apt install restic'
+          - image: ubuntu:22.04
+            hint: 'Run: apt install restic'
+          - image: ubuntu:24.04
+            hint: 'Run: apt install restic'
+          - image: rockylinux/rockylinux:9
+            hint: 'Run: dnf install epel-release, then: dnf install restic'
+          - image: almalinux:9
+            hint: 'Run: dnf install epel-release, then: dnf install restic'
+          - image: fedora:latest
+            hint: 'Run: dnf install restic'
+          - image: alpine:3.20
+            hint: 'Run: apk add restic'
+          - image: archlinux:latest
+            hint: 'Run: pacman -S restic'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ${{ inputs.artifact }}
+          path: build
+      - name: Emulate ${{ inputs.platform }}
+        if: inputs.platform != 'linux/amd64'
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+        with:
+          platforms: ${{ inputs.platform }}
+      - name: Download the pinned restic release
+        # into /opt/restic in the container: outside PATH and the standard directories, so the
+        # missing-restic case of check.php really has no restic
+        run: |
+          mkdir -p build/restic
+          RESTIC_ARCH="${PLATFORM#linux/}" tests/bin/install-restic.sh build/restic/restic
+        env:
+          PLATFORM: ${{ inputs.platform }}
+      - name: Install PHP and run the built PHAR in ${{ matrix.image }}
+        # the official Arch Linux image is amd64 only
+        if: inputs.platform == 'linux/amd64' || matrix.image != 'archlinux:latest'
+        run: >-
+          docker run --rm --platform "$PLATFORM"
+          -v "$PWD/tests/distro:/distro:ro"
+          -v "$PWD/build/arkhive.phar:/opt/arkhive/arkhive.phar:ro"
+          -v "$PWD/build/restic:/opt/restic:ro"
+          "$IMAGE"
+          sh -c 'sh /distro/setup.sh && php /distro/check.php /opt/arkhive/arkhive.phar /opt/restic/restic "$0"'
+          "$HINT"
+        env:
+          PLATFORM: ${{ inputs.platform }}
+          IMAGE: ${{ matrix.image }}
+          HINT: ${{ matrix.hint }}

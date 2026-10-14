@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 return [
 
     /*
@@ -13,7 +15,7 @@ return [
     |
     */
 
-    'default' => NunoMaduro\LaravelConsoleSummary\SummaryCommand::class,
+    'default' => Mfonte\Arkhive\Commands\SummaryCommand::class,
 
     /*
     |--------------------------------------------------------------------------
@@ -55,11 +57,14 @@ return [
     */
 
     'hidden' => [
-        NunoMaduro\LaravelConsoleSummary\SummaryCommand::class,
+        Mfonte\Arkhive\Commands\SummaryCommand::class,
+        Symfony\Component\Console\Command\DumpCompletionCommand::class,
         Symfony\Component\Console\Command\HelpCommand::class,
         Illuminate\Console\Scheduling\ScheduleRunCommand::class,
+        Illuminate\Console\Scheduling\ScheduleListCommand::class,
         Illuminate\Console\Scheduling\ScheduleFinishCommand::class,
         Illuminate\Foundation\Console\VendorPublishCommand::class,
+        LaravelZero\Framework\Commands\StubPublishCommand::class,
     ],
 
     /*
@@ -74,7 +79,8 @@ return [
     */
 
     'remove' => [
-        // ..
+        // replaced by Mfonte\Arkhive\Commands\SummaryCommand (unknown commands exit 2)
+        NunoMaduro\LaravelConsoleSummary\SummaryCommand::class,
     ],
 
 ];
