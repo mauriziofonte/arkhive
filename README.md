@@ -664,6 +664,15 @@ rsync -aHAX --numeric-ids "$TARGET/etc/nginx/" /etc/nginx/
 
 **Recreate the configuration** at `/etc/arkhive/config` (`/etc/arkhive/config` itself was restored under `$TARGET` if `/etc` was a backup path), with the same `RESTIC_REPOSITORY`, `RESTIC_SFTP_COMMAND` and a `RESTIC_PASSWORD_FILE` pointing at the password file. If the new server has a different hostname, set `RESTIC_HOST` to the old one so that retention, `status` and `drill` keep following the same series of snapshots. Do **not** run `arkhive init`: the repository already exists. Then `arkhive doctor`, `arkhive backup`, and `arkhive schedule --systemd` (or `--cron`) to put the backups back on a timer.
 
+## Upgrading from 2.0
+
+`arkhive self-update` installs 2.1 (same major version). The configuration, the repository and the password file stay as they are; the new keys (`LOCK_WAIT`, `DUMP_REQUIRED`, `LOG_TARGET`, `SYSLOG_FACILITY`) are optional. What to check:
+
+- **Exit codes**: scripts or monitors that test for `2` (usage or configuration error) or `4` (refused) must test for `64`/`78` and `73` (see [Exit codes](#exit-codes)); a failed `drill` or repository check is `65` instead of `1`, and a database dump that fails is named and skipped (exit 3) unless `DUMP_REQUIRED=true`.
+- **Units**: reinstall them to get `OnFailure=` notifications, the hardening, `StateDirectory=`/`CacheDirectory=`, the job ordering and the randomized timers: `sudo arkhive schedule --install --config /etc/arkhive/config` (it overwrites the units it generated, never anything else; units you edited by hand are refused, compare them with `arkhive schedule --systemd`). For cron, regenerate the lines with `arkhive schedule --cron`.
+- **Logs**: under systemd the events now reach the journal with structured fields (see [Logging](#logging)): `journalctl -u arkhive-backup.service` shows the same messages; filters on the `<N>` prefixes of 2.0 are not needed any more. Elsewhere nothing changes unless `LOG_TARGET=syslog` is set.
+- **restic**: any release from 0.11.0 works, so a distribution package (Debian 11 and later, Ubuntu 22.04 and later) can replace the static binary; `arkhive doctor` lists what an older restic lacks.
+
 ## Migrating from 1.x
 
 ### What changed and why
