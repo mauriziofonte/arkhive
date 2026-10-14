@@ -89,6 +89,46 @@ final class RestoreTest extends E2eTestCase
     }
 
     /**
+     * Runs an exclusive restic operation on a local repository as another host (a UTS namespace:
+     * e2e runs as root), copies its lock file while it holds it (busy polling: a local repair lasts
+     * far longer than one scan) and writes it back afterwards, as a crashed run leaves it.
+     *
+     * @return string the restored lock file
+     */
+    private function captureExclusiveLock(string $repository): string
+    {
+        $repair = proc_open(
+            // from another hostname: restic ignores a lock of a dead process on its own host as stale
+            ['unshare', '--uts', 'sh', '-c', 'hostname crashed.example.com && exec "$0" repair index --read-all-packs', self::env('E2E_RESTIC')],
+            [0 => ['file', '/dev/null', 'r'], 1 => ['file', '/dev/null', 'w'], 2 => ['file', "{$this->dir}/repair.stderr", 'w']],
+            $pipes,
+            null,
+            self::environment(['RESTIC_REPOSITORY' => $repository, 'RESTIC_PASSWORD_FILE' => self::env('E2E_PASSWORD_FILE')]),
+        );
+        self::assertIsResource($repair);
+        $captured = [];
+        do {
+            $running = proc_get_status($repair)['running'];
+            foreach (glob("{$repository}/locks/*") ?: [] as $file) {
+                if (preg_match('/^[0-9a-f]{64}$/', basename($file)) !== 1) {
+                    continue; // restic writes "<id>-tmp-<n>" first, then renames it
+                }
+                $content = @file_get_contents($file);
+                if (is_string($content) && $content !== '') {
+                    $captured[$file] = $content;
+                }
+            }
+        } while ($running);
+        $exit = proc_close($repair);
+        self::assertSame(0, $exit, 'the repair ran: ' . (string) @file_get_contents("{$this->dir}/repair.stderr"));
+        self::assertNotSame([], $captured, 'the lock of the repair was seen while it ran');
+        $file = (string) array_key_first($captured);
+        file_put_contents($file, $captured[$file]);
+
+        return $file;
+    }
+
+    /**
      * A small tree: text and binary files with set modes and mtimes, owned by another uid as root.
      */
     private function buildTree(): void
@@ -358,8 +398,6 @@ final class RestoreTest extends E2eTestCase
     public function testWrongPasswordUnreachableRepositoryAndStaleLockAreExplained(): void
     {
         $this->buildTree();
-        // enough incompressible data that the throttled repair below is still reading when it is killed
-        file_put_contents("{$this->tree}/ballast.bin", random_bytes(4 * 1024 * 1024));
         $this->backup();
         $target = "{$this->dir}/never";
 
@@ -376,28 +414,21 @@ final class RestoreTest extends E2eTestCase
         self::assertStringContainsString('error Opening the restic repository failed (restic exit ', $result->stderr);
         self::assertStringContainsString('notice Check that the repository server is up and that this command works by hand: ' . $unreachable, $result->stderr);
 
-        // a stale exclusive lock: a repair killed while it holds the lock
-        $repair = proc_open(
-            [self::env('E2E_RESTIC'), '-o', "sftp.command={$this->sftpCommand}", 'repair', 'index', '--read-all-packs', '--limit-download', '1'],
-            [0 => ['file', '/dev/null', 'r'], 1 => ['file', '/dev/null', 'w'], 2 => ['file', "{$this->dir}/repair.stderr", 'w']],
-            $pipes,
-            null,
-            self::environment(['RESTIC_REPOSITORY' => $this->repository, 'RESTIC_PASSWORD_FILE' => self::env('E2E_PASSWORD_FILE')]),
-        );
-        self::assertIsResource($repair);
-        $locked = self::waitFor(fn (): bool => trim(self::restic(['list', 'locks', '--no-lock'], $this->repository, $this->sftpCommand)->stdout) !== '', 60);
-        $state = proc_get_status($repair);
-        self::assertTrue($locked, sprintf('the repair takes its lock (running: %s, exit %d): %s', $state['running'] ? 'yes' : 'no', $state['exitcode'], (string) @file_get_contents("{$this->dir}/repair.stderr")));
-        proc_terminate($repair, 9);
-        proc_close($repair);
+        // a stale exclusive lock, as a run killed while holding it leaves it behind. Deterministic on
+        // any runner: on a local repository the lock file of a repair is copied while it exists and
+        // put back once the repair is over (timing a kill against the SFTP repository was flaky).
+        $local = "{$this->dir}/local-repo";
+        $this->arkhiveInit($this->dir, $local, null);
+        $this->backup(['RESTIC_REPOSITORY' => $local]);
+        $lock = $this->captureExclusiveLock($local);
         try {
-            $result = $this->ark(['restore', '--snapshot', 'latest', '--target', $target, '--yes']);
+            $result = $this->ark(['restore', '--snapshot', 'latest', '--target', $target, '--yes'], ['RESTIC_REPOSITORY' => $local]);
             self::assertSame(1, $result->exitCode, $result->output());
             self::assertStringContainsString('error The restic repository is locked', $result->stderr);
-            self::assertStringContainsString("restic -r '{$this->repository}' unlock (ArkHive never does this automatically)", $result->stderr);
-            self::assertNotSame('', trim(self::restic(['list', 'locks', '--no-lock'], $this->repository, $this->sftpCommand)->stdout), 'ArkHive did not remove the lock');
+            self::assertStringContainsString("restic -r '{$local}' unlock (ArkHive never does this automatically)", $result->stderr);
+            self::assertFileExists($lock, 'ArkHive did not remove the lock');
         } finally {
-            self::restic(['unlock'], $this->repository, $this->sftpCommand);
+            self::restic(['unlock', '--remove-all'], $local, null);
         }
         self::assertFileDoesNotExist($target, 'no partial target');
     }
