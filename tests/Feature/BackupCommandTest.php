@@ -75,6 +75,21 @@ final class BackupCommandTest extends TestCase
         self::assertSame($run, $this->runs->load('backup')->lastSuccess);
     }
 
+    public function testAUnitRunRecordsItsInvocationAndWhetherItNotified(): void
+    {
+        $this->terminal->env['INVOCATION_ID'] = '6B1F0B6BD2B4405E8BF5E0C4D0C5E1AA';
+        self::assertSame(ExitCode::SUCCESS, Artisan::call('backup', ['--config' => $this->writeConfig(self::notify())]));
+        $run = $this->runs->load('backup')->last;
+        self::assertSame(['6b1f0b6bd2b4405e8bf5e0c4d0c5e1aa', true], [$run?->invocation, $run?->notified]);
+
+        self::assertSame(ExitCode::SUCCESS, Artisan::call('backup', ['--config' => $this->writeConfig(self::notify('failure'))]));
+        self::assertFalse($this->runs->load('backup')->last?->notified, 'a success is not mailed with NOTIFY_ON=failure');
+
+        $this->terminal->env['INVOCATION_ID'] = 'not-an-id';
+        self::assertSame(ExitCode::SUCCESS, Artisan::call('backup', ['--config' => $this->writeConfig()]));
+        self::assertNull($this->runs->load('backup')->last?->invocation);
+    }
+
     public function testUnderSystemdTheUnitStatusFollowsTheBackup(): void
     {
         $this->systemd->listening = true;

@@ -12,6 +12,7 @@ use Mfonte\Arkhive\Application\Port\ProcessRunner;
 use Mfonte\Arkhive\Application\Port\Prompter;
 use Mfonte\Arkhive\Application\Port\RunStateStore;
 use Mfonte\Arkhive\Application\Port\ServiceManager;
+use Mfonte\Arkhive\Application\Port\ServiceUnits;
 use Mfonte\Arkhive\Application\Port\SnapshotStoreFactory;
 use Mfonte\Arkhive\Application\Port\Terminal;
 use Mfonte\Arkhive\Application\Process\Cleanup;
@@ -36,6 +37,7 @@ use Mfonte\Arkhive\Infrastructure\State\JsonRunStateStore;
 use Mfonte\Arkhive\Infrastructure\System\OsRelease;
 use Mfonte\Arkhive\Infrastructure\System\SystemClock;
 use Mfonte\Arkhive\Infrastructure\Systemd\NotifySocket;
+use Mfonte\Arkhive\Infrastructure\Systemd\Systemctl;
 use Random\Randomizer;
 
 class AppServiceProvider extends ServiceProvider
@@ -56,6 +58,7 @@ class AppServiceProvider extends ServiceProvider
         ));
         $this->app->singleton(BinaryFinder::class, static fn (): BinaryFinder => BinaryFinder::fromEnvironment());
         // restic's cache goes in systemd's CacheDirectory= when the unit has one
+        $this->app->bind(ServiceUnits::class, Systemctl::class);
         $this->app->bind(SnapshotStoreFactory::class, static fn ($app): SnapshotStoreFactory => new ResticFactory(
             $app->make(ProcessRunner::class),
             $app->make(Dependencies::class),

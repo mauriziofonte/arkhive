@@ -40,6 +40,10 @@ All notable changes to ArkHive are documented in this file. The format follows
   kernel and privilege protections; `CPUSchedulingPolicy=batch`; timers spread over 10 minutes
   (`RandomizedDelaySec`); maintain and drill wait for a backup due at the same time. Regenerate
   and reinstall the units (`arkhive schedule --systemd`) to get them.
+- `arkhive notify --failed-unit <unit>` and the `arkhive-failure@.service` template the units
+  start with `OnFailure=`: a scheduled run that ends without sending its own notification
+  (killed by the timeout or the OOM killer, failed before reading its configuration) is reported
+  with its outcome and its last journal lines. Run records gain `invocation` and `notified`.
 - `tests/Compat`: ArkHive's commands against a real restic (`ARKHIVE_TEST_RESTIC`), run in CI for
   every release from 0.11.0 to the current one, including an `sftp:` repository on a local sshd.
 

@@ -16,6 +16,9 @@ final class SystemdUnits
 {
     public const DIRECTORY = '/etc/systemd/system';
 
+    /** the template unit OnFailure= starts with the name of the failed unit */
+    public const FAILURE_TEMPLATE = 'arkhive-failure@.service';
+
     /**
      * @return array<string, string> unit path => content
      */
@@ -27,6 +30,7 @@ final class SystemdUnits
             $units["{$name}.service"] = self::service($schedule, $job);
             $units["{$name}.timer"] = self::timer($schedule, $job);
         }
+        $units[self::DIRECTORY . '/' . self::FAILURE_TEMPLATE] = self::failureTemplate($schedule);
 
         return $units;
     }
@@ -51,6 +55,8 @@ final class SystemdUnits
             . "Documentation=https://github.com/mauriziofonte/arkhive\n"
             . "Wants=network-online.target\n"
             . "After={$after}\n"
+            // a run that could not send its own notification (timeout, OOM kill) is reported by arkhive notify
+            . "OnFailure=arkhive-failure@%n.service\n"
             . "\n"
             . "[Service]\n"
             . "Type=oneshot\n"
@@ -76,6 +82,31 @@ final class SystemdUnits
             . "ProtectControlGroups=true\n"
             . "RestrictSUIDSGID=true\n"
             . "LockPersonality=true\n";
+    }
+
+    /**
+     * arkhive-failure@<failed unit>.service: sends the notification about a failed unit, unless the
+     * run already did. As root, to read the system journal.
+     */
+    private static function failureTemplate(Schedule $schedule): string
+    {
+        $invocation = implode(' ', array_map(self::quote(...), $schedule->invocation));
+
+        return self::header($schedule)
+            . "[Unit]\n"
+            . "Description=ArkHive notification about the failed %i\n"
+            . "Documentation=https://github.com/mauriziofonte/arkhive\n"
+            . "After=network-online.target\n"
+            . "\n"
+            . "[Service]\n"
+            . "Type=oneshot\n"
+            . "User=root\n"
+            . "ExecStart={$invocation} notify --failed-unit %i --config " . self::quote($schedule->config) . "\n"
+            // 3: nothing sent because no notification is configured (logged), not a failure of its own
+            . "SuccessExitStatus=3\n"
+            . "TimeoutStartSec=10min\n"
+            . "PrivateTmp=true\n"
+            . "NoNewPrivileges=true\n";
     }
 
     private static function timer(Schedule $schedule, Job $job): string

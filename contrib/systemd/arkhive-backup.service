@@ -4,6 +4,7 @@ Description=ArkHive backup
 Documentation=https://github.com/mauriziofonte/arkhive
 Wants=network-online.target
 After=network-online.target
+OnFailure=arkhive-failure@%n.service
 
 [Service]
 Type=oneshot

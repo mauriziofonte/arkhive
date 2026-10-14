@@ -4,6 +4,7 @@ Description=ArkHive restore drill
 Documentation=https://github.com/mauriziofonte/arkhive
 Wants=network-online.target
 After=network-online.target arkhive-backup.service arkhive-maintain.service
+OnFailure=arkhive-failure@%n.service
 
 [Service]
 Type=oneshot

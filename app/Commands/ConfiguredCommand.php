@@ -30,6 +30,12 @@ abstract class ConfiguredCommand extends ArkhiveCommand
     /** @var list<string> */
     protected array $runWarnings = [];
 
+    /** whether this run sent a notification (the OnFailure unit then does not send another) */
+    private bool $runNotified = false;
+
+    /** why the last notification could not be sent */
+    protected ?ArkhiveException $notificationFailure = null;
+
     public function __construct()
     {
         parent::__construct();
@@ -66,15 +72,17 @@ abstract class ConfiguredCommand extends ArkhiveCommand
     {
         $job = $this->recordedJob();
         // a command object serves every call in the process: nothing of this run may leak into the next
-        [$snapshot, $warnings] = [$this->runSnapshot, $this->runWarnings];
+        [$snapshot, $warnings, $notified] = [$this->runSnapshot, $this->runWarnings, $this->runNotified];
         $this->runSnapshot = null;
         $this->runWarnings = [];
+        $this->runNotified = false;
         if ($job === null || $exit === ExitCode::USAGE) {
             return;
         }
+        $invocation = strtolower($this->terminal->environment()['INVOCATION_ID'] ?? '');
         try {
             $this->laravel->make(RunJournal::class)->record(
-                new RunRecord($job, $started, $this->clock->now(), $exit, $snapshot, $warnings, $failure?->getMessage()),
+                new RunRecord($job, $started, $this->clock->now(), $exit, $snapshot, $warnings, $failure?->getMessage(), preg_match('/^[0-9a-f]{32}$/', $invocation) === 1 ? $invocation : null, $notified),
                 $this->log,
             );
         } catch (Throwable $e) {
@@ -109,9 +117,11 @@ abstract class ConfiguredCommand extends ArkhiveCommand
                 $this->log,
             );
             $this->log->debug('Notification sent to ' . implode(', ', $config->notify->to));
+            $this->runNotified = true;
 
             return true;
         } catch (ArkhiveException $e) {
+            $this->notificationFailure = $e;
             $this->log->warning($e->getMessage());
             if ($e->hint() !== null) {
                 $this->log->notice($e->hint());

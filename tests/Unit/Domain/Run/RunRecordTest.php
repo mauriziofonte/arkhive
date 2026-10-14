@@ -68,9 +68,23 @@ final class RunRecordTest extends TestCase
             'snapshot_id' => 'e82340a77eda4178',
             'warnings' => ['1 file unreadable'],
             'error' => 'partial',
+            'invocation' => null,
+            'notified' => false,
         ], $run->toArray());
         self::assertEquals($run, RunRecord::fromArray($run->toArray()));
         self::assertEquals(self::record(0), RunRecord::fromArray(self::record(0)->toArray()));
+
+        $unit = new RunRecord('backup', $run->started, $run->ended, 69, invocation: '6b1f0b6bd2b4405e8bf5e0c4d0c5e1aa', notified: true);
+        self::assertSame(['6b1f0b6bd2b4405e8bf5e0c4d0c5e1aa', true], [$unit->toArray()['invocation'], $unit->toArray()['notified']]);
+        self::assertEquals($unit, RunRecord::fromArray($unit->toArray()));
+        $stored = $unit->toArray();
+        $stored['invocation'] = 42;
+        $stored['notified'] = 'yes';
+        $read = RunRecord::fromArray($stored);
+        self::assertNotNull($read);
+        self::assertSame([null, false], [$read->invocation, $read->notified], 'wrong types read as unknown');
+        unset($stored['invocation'], $stored['notified']);
+        self::assertNotNull(RunRecord::fromArray($stored), 'a 2.1.0-rc record without them still reads');
     }
 
     /**

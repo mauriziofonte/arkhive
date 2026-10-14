@@ -19,7 +19,7 @@ final class ApplicationTest extends TestCase
     {
         $commands = array_keys(Artisan::all());
 
-        foreach (['backup', 'restore', 'ls', 'find', 'mount', 'maintain', 'status', 'init', 'drill', 'doctor', 'decrypt-legacy', 'self-update', 'schedule'] as $command) {
+        foreach (['backup', 'restore', 'ls', 'find', 'mount', 'maintain', 'status', 'init', 'drill', 'doctor', 'decrypt-legacy', 'self-update', 'schedule', 'notify'] as $command) {
             self::assertContains($command, $commands);
         }
     }

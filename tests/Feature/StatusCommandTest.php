@@ -101,7 +101,7 @@ final class StatusCommandTest extends TestCase
 
         self::assertSame(ExitCode::SUCCESS, Artisan::call('status', ['--config' => $this->writeConfig(), '--json' => true]));
         $runs = json_decode(Artisan::output(), true)['runs'];
-        self::assertSame(['job' => 'backup', 'started' => '2026-10-12T14:17:00+00:00', 'ended' => '2026-10-12T14:17:03+00:00', 'duration_seconds' => 3.0, 'exit_code' => 75, 'status' => 'failed', 'snapshot_id' => null, 'warnings' => [], 'error' => 'The restic repository is locked'], $runs['backup']['last']);
+        self::assertSame(['job' => 'backup', 'started' => '2026-10-12T14:17:00+00:00', 'ended' => '2026-10-12T14:17:03+00:00', 'duration_seconds' => 3.0, 'exit_code' => 75, 'status' => 'failed', 'snapshot_id' => null, 'warnings' => [], 'error' => 'The restic repository is locked', 'invocation' => null, 'notified' => false], $runs['backup']['last']);
         self::assertSame('aaaa1111bbbb2222', $runs['backup']['last_success']['snapshot_id']);
         self::assertSame(62.0, $runs['backup']['last_success']['duration_seconds']);
         self::assertNull($runs['drill']['last']);

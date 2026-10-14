@@ -122,6 +122,8 @@ final class DistroTest extends TestCase
         yield 'tar' => [Dependency::Tar, ['apt' => 'tar', 'dnf' => 'tar', 'apk' => 'tar', 'pacman' => 'tar', 'zypper' => 'tar']];
         yield 'gh' => [Dependency::Gh, ['apt' => 'gh', 'dnf' => 'gh', 'apk' => 'github-cli', 'pacman' => 'github-cli', 'zypper' => 'gh']];
         yield 'fuse' => [Dependency::Fuse, ['apt' => 'fuse3', 'dnf' => 'fuse3', 'apk' => 'fuse3', 'pacman' => 'fuse3', 'zypper' => 'fuse3']];
+        yield 'systemctl' => [Dependency::Systemctl, ['apt' => 'systemd', 'dnf' => 'systemd', 'apk' => 'systemd', 'pacman' => 'systemd', 'zypper' => 'systemd']];
+        yield 'journalctl' => [Dependency::Journalctl, ['apt' => 'systemd', 'dnf' => 'systemd', 'apk' => 'systemd', 'pacman' => 'systemd', 'zypper' => 'systemd']];
     }
 
     /**
@@ -144,6 +146,8 @@ final class DistroTest extends TestCase
         self::assertSame('mariadb-dump or mysqldump', Dependency::MysqlDump->label());
         self::assertSame(['mariadb', 'mysql'], Dependency::MysqlClient->binaries());
         self::assertSame(['fusermount3', 'fusermount'], Dependency::Fuse->binaries());
+        self::assertSame(['systemctl'], Dependency::Systemctl->binaries());
+        self::assertSame(['journalctl'], Dependency::Journalctl->binaries());
         self::assertSame('pg_dump', Dependency::PgDump->label());
         self::assertSame(['ssh'], Dependency::Ssh->binaries());
         self::assertSame(['openssl'], Dependency::Openssl->binaries());

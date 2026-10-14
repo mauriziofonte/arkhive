@@ -17,6 +17,8 @@ final readonly class RunRecord
 
     /**
      * @param list<string> $warnings
+     * @param string|null  $invocation systemd's INVOCATION_ID of the run, when it ran as a unit
+     * @param bool         $notified   the run sent its notification e-mail
      */
     public function __construct(
         public string $job,
@@ -26,6 +28,8 @@ final readonly class RunRecord
         public ?string $snapshotId = null,
         public array $warnings = [],
         public ?string $error = null,
+        public ?string $invocation = null,
+        public bool $notified = false,
     ) {
     }
 
@@ -67,7 +71,7 @@ final readonly class RunRecord
     }
 
     /**
-     * @return array{job: string, started: string, ended: string, duration_seconds: float, exit_code: int, status: string, snapshot_id: string|null, warnings: list<string>, error: string|null}
+     * @return array{job: string, started: string, ended: string, duration_seconds: float, exit_code: int, status: string, snapshot_id: string|null, warnings: list<string>, error: string|null, invocation: string|null, notified: bool}
      */
     public function toArray(): array
     {
@@ -81,6 +85,8 @@ final readonly class RunRecord
             'snapshot_id' => $this->snapshotId,
             'warnings' => $this->warnings,
             'error' => $this->error,
+            'invocation' => $this->invocation,
+            'notified' => $this->notified,
         ];
     }
 
@@ -104,7 +110,18 @@ final readonly class RunRecord
         $warnings = is_array($data['warnings'] ?? null) ? array_values(array_filter($data['warnings'], 'is_string')) : [];
         $snapshot = $data['snapshot_id'] ?? null;
         $error = $data['error'] ?? null;
+        $invocation = $data['invocation'] ?? null;
 
-        return new self($data['job'], $started, $ended, $data['exit_code'], is_string($snapshot) ? $snapshot : null, $warnings, is_string($error) ? $error : null);
+        return new self(
+            $data['job'],
+            $started,
+            $ended,
+            $data['exit_code'],
+            is_string($snapshot) ? $snapshot : null,
+            $warnings,
+            is_string($error) ? $error : null,
+            is_string($invocation) ? $invocation : null,
+            ($data['notified'] ?? false) === true,
+        );
     }
 }

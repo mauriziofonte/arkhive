@@ -4,6 +4,7 @@ Description=ArkHive maintenance (retention, prune, check)
 Documentation=https://github.com/mauriziofonte/arkhive
 Wants=network-online.target
 After=network-online.target arkhive-backup.service
+OnFailure=arkhive-failure@%n.service
 
 [Service]
 Type=oneshot

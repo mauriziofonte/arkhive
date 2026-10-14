@@ -20,6 +20,8 @@ enum Dependency: string
     case Tar = 'tar';
     case Gh = 'gh';
     case Fuse = 'fuse';
+    case Systemctl = 'systemctl';
+    case Journalctl = 'journalctl';
 
     /**
      * Binary names, preferred first.
@@ -40,6 +42,8 @@ enum Dependency: string
             self::Tar => ['tar'],
             self::Gh => ['gh'],
             self::Fuse => ['fusermount3', 'fusermount'],
+            self::Systemctl => ['systemctl'],
+            self::Journalctl => ['journalctl'],
         };
     }
 
@@ -74,6 +78,7 @@ enum Dependency: string
             self::Tar => ['tar'],
             self::Gh => [in_array($manager, [PackageManager::Apk, PackageManager::Pacman], true) ? 'github-cli' : 'gh'],
             self::Fuse => ['fuse3'],
+            self::Systemctl, self::Journalctl => ['systemd'],
         };
     }
 }
