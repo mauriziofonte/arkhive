@@ -67,7 +67,7 @@ final class DatabaseErrors
             return new NoInputException($message, $hint ?? 'Check the database names in the configuration (MYSQL_DATABASES, PGSQL_DATABASES)');
         }
         if (self::contains($stderr, self::UNREACHABLE)) {
-            return new UnavailableException($message, $hint ?? 'Check that the database server is running and reachable at the configured host and port');
+            return UnavailableException::network($message, $hint ?? 'Check that the database server is running and reachable at the configured host and port');
         }
 
         return new ArkhiveException($message, hint: $hint);

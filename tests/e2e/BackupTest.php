@@ -261,7 +261,24 @@ final class BackupTest extends E2eTestCase
         return false;
     }
 
-    public function testAParallelBackupFailsOnTheLock(): void
+    public function testAParallelBackupWithLockWaitZeroFailsOnTheLock(): void
+    {
+        $this->buildTree();
+        $config = $this->config(['RESTIC_BINARY' => $this->slowRestic(2), 'LOCK_WAIT' => '0']);
+
+        $first = self::startArkhive(['backup', '--config', $config], $this->runEnv());
+        self::assertTrue(self::waitFor($this->lockHeld(...)), 'the first run takes the lock');
+        $second = self::arkhive(['backup', '--config', $config], $this->runEnv());
+        $firstResult = self::finish($first);
+
+        self::assertSame(ExitCode::TEMPORARY, $second->exitCode, $second->output());
+        self::assertStringContainsString('error Another ArkHive run holds the lock for this repository (PID ', $second->stderr);
+        self::assertStringNotContainsString('trying again', $second->stderr);
+        self::assertSame(0, $firstResult->exitCode, $firstResult->output());
+        self::assertCount(1, $this->snapshots());
+    }
+
+    public function testAParallelBackupWaitsForTheFirstOne(): void
     {
         $this->buildTree();
         $config = $this->config(['RESTIC_BINARY' => $this->slowRestic(2)]);
@@ -271,10 +288,10 @@ final class BackupTest extends E2eTestCase
         $second = self::arkhive(['backup', '--config', $config], $this->runEnv());
         $firstResult = self::finish($first);
 
-        self::assertSame(ExitCode::TEMPORARY, $second->exitCode, $second->output());
-        self::assertStringContainsString('error Another ArkHive run holds the lock for this repository (PID ', $second->stderr);
         self::assertSame(0, $firstResult->exitCode, $firstResult->output());
-        self::assertCount(1, $this->snapshots());
+        self::assertSame(0, $second->exitCode, $second->output());
+        self::assertMatchesRegularExpression('/warning Waiting for the repository: Another ArkHive run holds the lock for this repository \(PID \d+.*\); trying again in \d+s \(waiting up to 300s in all, \d+s so far\)/', $second->stderr);
+        self::assertCount(2, $this->snapshots());
     }
 
     public function testSigtermStopsTheBackupCleanly(): void

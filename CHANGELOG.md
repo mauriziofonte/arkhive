@@ -14,6 +14,12 @@ All notable changes to ArkHive are documented in this file. The format follows
   and `restore` totals are read without JSON, short snapshot ids are resolved to full ones,
   `RESTIC_CHECK_SUBSET` becomes the nearest fraction before 0.12 (percentages) and 0.14 (sizes),
   and `--compression` is left out before 0.14. `doctor` names what the installed restic lacks.
+- Transient failures are tried again within the run, each retry logged with its reason: a
+  repository locked by another run or another restic client is waited for up to `LOCK_WAIT`
+  seconds (new optional key, default 300; `0` keeps the 2.0 behaviour of failing at once), a
+  repository that cannot be reached is tried three times, and a notification refused with a 4xx
+  answer (greylisting) or not delivered for a network error is tried three times. Permanent
+  failures (wrong password, missing repository, refused SSH key) are never retried.
 - `tests/Compat`: ArkHive's commands against a real restic (`ARKHIVE_TEST_RESTIC`), run in CI for
   every release from 0.11.0 to the current one, including an `sftp:` repository on a local sshd.
 

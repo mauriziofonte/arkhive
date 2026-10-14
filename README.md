@@ -165,6 +165,7 @@ arkhive self-update --allow-major    # needed to cross a major version (read the
    #RESTIC_KEEP_WEEKLY=4
    #RESTIC_KEEP_MONTHLY=6
    #RESTIC_CHECK_SUBSET=5%
+   #LOCK_WAIT=300
 
    # Database dumps: one plain .sql file per database, staged here, included in the snapshot,
    # removed after each successful backup. A dedicated directory.
@@ -244,6 +245,7 @@ Syntax: one `KEY=value` per line, optionally prefixed by `export`. `'single quot
 | `RESTIC_KEEP_WEEKLY` | no | `4` | Weekly snapshots kept by `maintain` |
 | `RESTIC_KEEP_MONTHLY` | no | `6` | Monthly snapshots kept by `maintain` |
 | `RESTIC_CHECK_SUBSET` | no | `5%` | Data read back by `maintain`: a percentage (`5%`), a fraction (`1/10`) or a size (`500M`); with restic before 0.12 (percentage) or 0.14 (size) ArkHive reads the nearest fraction instead, a different one at each run |
+| `LOCK_WAIT` | no | `300` | Seconds to wait for a repository locked by another ArkHive run or another restic client before giving up with exit 75; `0` gives up at once. See [Retries](#retries) |
 | `EXCLUSION_PATTERNS` | no | none | Comma-separated 1.x patterns, see below |
 | `DUMP_DIRECTORY` | when dumps are enabled | | Absolute path of a dedicated staging directory for the dumps (`mysql/<db>.sql`, `pgsql/<db>.sql`), backed up as a path of its own and emptied after each successful backup. It cannot be `/`, cannot be or contain a backup path, and must not be excluded by `EXCLUSION_PATTERNS` |
 | `WITH_MYSQL` | no | `false` | Dump MySQL/MariaDB databases |
@@ -268,7 +270,7 @@ Syntax: one `KEY=value` per line, optionally prefixed by `export`. `'single quot
 | `SMTP_FROM` | with `NOTIFY` | | A valid e-mail address |
 | `SMTP_TO` | with `NOTIFY` | | One or more addresses, comma-separated |
 
-A notification failure never turns a successful run into a failure: it is logged and the exit code becomes 3.
+A notification failure never turns a successful run into a failure: it is logged and the exit code becomes 3. A temporary refusal (a 4xx answer such as greylisting) or a server that cannot be reached is tried twice more first, about 15 and 45 seconds later.
 
 ### Exclusion patterns
 
@@ -317,7 +319,7 @@ Log events go to stderr; command results (tables, `--json` output, a file restor
 arkhive backup [--json]
 ```
 
-Preflight (restic binary and version, password file, repository reachable, free space for the dumps), the repository lock, the database dumps (a dump failure stops the backup before any snapshot is made), `restic backup` of `BACKUP_PATHS` and `DUMP_DIRECTORY` with tag `arkhive`, the summary (snapshot id, data added, new/changed/unmodified files, duration), the notification, then the dump directory is emptied. If restic could not read some files the snapshot is still saved, the unreadable files are listed and the exit code is 3. A second backup of the same repository while one is running fails immediately. `--json` prints the summary, the dumps and the warnings. The 1.x options `--with-progress` and `--with-disk-space-check` are accepted and ignored with a notice: progress is automatic in a terminal and the dump space is always checked.
+Preflight (restic binary and version, password file, repository reachable, free space for the dumps), the repository lock, the database dumps (a dump failure stops the backup before any snapshot is made), `restic backup` of `BACKUP_PATHS` and `DUMP_DIRECTORY` with tag `arkhive`, the summary (snapshot id, data added, new/changed/unmodified files, duration), the notification, then the dump directory is emptied. If restic could not read some files the snapshot is still saved, the unreadable files are listed and the exit code is 3. A second backup of the same repository while one is running waits for it, up to `LOCK_WAIT` seconds (5 minutes by default), then exits 75. `--json` prints the summary, the dumps and the warnings. The 1.x options `--with-progress` and `--with-disk-space-check` are accepted and ignored with a notice: progress is automatic in a terminal and the dump space is always checked.
 
 ### restore
 
@@ -531,6 +533,16 @@ ArkHive follows the `sysexits.h` convention, so scripts and systemd can tell a c
 | 143 | SIGTERM | Interrupted by SIGTERM (cleanup done, lock released) |
 
 64, 65, 66, 77 and 78 cannot succeed by running again unchanged; the systemd units list them in `RestartPreventExitStatus`. 2.0.0-rc.1 used 2 for usage and configuration errors and 4 for refusals: they are now 64 or 78, and 73 or 64.
+
+### Retries
+
+Failures that may pass on their own are tried again within the same run, each retry logged as a warning with its reason and the wait; when the last try fails the exit code is that failure's own (75, 69).
+
+- A repository locked by another ArkHive run or another restic client (another host's backup, a `prune`): tried again after 5, 10, 20 seconds, then every minute, until `LOCK_WAIT` seconds have passed (300 by default; `0` fails at once). ArkHive never removes a lock.
+- A repository that cannot be reached (connection refused or lost, name resolution, a timeout): three tries, about 5 and 15 seconds apart. A refused SSH key or an unknown host key is not tried again.
+- The notification e-mail, refused with a 4xx answer (greylisting, a rate limit) or not delivered for a network error: three tries, about 15 and 45 seconds apart. Its failure only turns the exit code into 3.
+
+A wrong password, a missing repository, a configuration error or a damaged repository are never tried again. Each wait ends at once on SIGINT or SIGTERM.
 
 ## My server is gone
 

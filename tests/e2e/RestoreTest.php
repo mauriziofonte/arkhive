@@ -413,6 +413,7 @@ final class RestoreTest extends E2eTestCase
         $result = $this->ark(['restore', '--snapshot', 'latest', '--target', $target, '--yes'], ['RESTIC_SFTP_COMMAND' => $unreachable]);
         self::assertSame(ExitCode::UNAVAILABLE, $result->exitCode, $result->output());
         self::assertStringContainsString('error Opening the restic repository failed (restic exit ', $result->stderr);
+        self::assertStringContainsString('(attempt 3 of 3)', $result->stderr, 'a connection failure is tried three times');
         self::assertStringContainsString('notice Check that the repository server is up and that this command works by hand: ' . $unreachable, $result->stderr);
 
         // a stale exclusive lock, as a run killed while holding it leaves it behind. Deterministic on
@@ -423,8 +424,9 @@ final class RestoreTest extends E2eTestCase
         $this->backup(['RESTIC_REPOSITORY' => $local]);
         $lock = $this->captureExclusiveLock($local);
         try {
-            $result = $this->ark(['restore', '--snapshot', 'latest', '--target', $target, '--yes'], ['RESTIC_REPOSITORY' => $local]);
+            $result = $this->ark(['restore', '--snapshot', 'latest', '--target', $target, '--yes'], ['RESTIC_REPOSITORY' => $local, 'LOCK_WAIT' => '8']);
             self::assertSame(ExitCode::TEMPORARY, $result->exitCode, $result->output());
+            self::assertMatchesRegularExpression('/warning .*: The restic repository is locked.*; trying again in \d+s \(waiting up to 8s in all, \d+s so far\)/', $result->stderr);
             self::assertStringContainsString('error The restic repository is locked', $result->stderr);
             self::assertStringContainsString("restic -r '{$local}' unlock (ArkHive never does this automatically)", $result->stderr);
             self::assertFileExists($lock, 'ArkHive did not remove the lock');

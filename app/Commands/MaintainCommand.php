@@ -6,6 +6,7 @@ namespace Mfonte\Arkhive\Commands;
 
 use Mfonte\Arkhive\Application\Maintenance\MaintainRunner;
 use Mfonte\Arkhive\Application\Port\SnapshotStoreFactory;
+use Mfonte\Arkhive\Application\Resilience\Retrier;
 use Mfonte\Arkhive\Domain\Configuration\Config;
 use Mfonte\Arkhive\Domain\Maintenance\MaintainReport;
 use Mfonte\Arkhive\Domain\Notification\Notification;
@@ -31,6 +32,7 @@ final class MaintainCommand extends ConfiguredCommand
             $this->clock,
             $this->terminal->environment(),
             posix_geteuid(),
+            $this->laravel->make(Retrier::class),
         );
         try {
             $report = $runner->run($config, $this->log);

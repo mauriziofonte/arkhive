@@ -14,5 +14,6 @@ final class TemporaryException extends ArkhiveException
     public function __construct(string $message, ?string $hint = null, ?\Throwable $previous = null)
     {
         parent::__construct($message, ExitCode::TEMPORARY, $hint, $previous);
+        $this->transient = true;
     }
 }

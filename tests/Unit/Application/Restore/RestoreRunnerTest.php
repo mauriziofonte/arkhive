@@ -8,6 +8,7 @@ use DateTimeImmutable;
 use Mfonte\Arkhive\Application\Output\Logger;
 use Mfonte\Arkhive\Application\Process\Cleanup;
 use Mfonte\Arkhive\Application\Process\Command;
+use Mfonte\Arkhive\Application\Resilience\Retrier;
 use Mfonte\Arkhive\Application\Restore\RestoreRunner;
 use Mfonte\Arkhive\Application\System\Lock;
 use Mfonte\Arkhive\Domain\Configuration\Config;
@@ -33,6 +34,7 @@ use Tests\Support\FakeBinaries;
 use Tests\Support\FakeProcessRunner;
 use Tests\Support\FakeRestic;
 use Tests\Support\FixedClock;
+use Tests\Support\RecordingPause;
 use Tests\Support\TempDir;
 
 final class RestoreRunnerTest extends TestCase
@@ -43,6 +45,7 @@ final class RestoreRunnerTest extends TestCase
     private FakeRestic $fake;
     private Restic $restic;
     private Cleanup $cleanup;
+    private RecordingPause $pause;
     private LogStream $stream;
     private string $root;
     private Snapshot $snapshot;
@@ -53,6 +56,7 @@ final class RestoreRunnerTest extends TestCase
         $this->fake = (new FakeRestic())->withRepository()->install($this->runner);
         $this->restic = new Restic(new ResticSettings('/srv/restic-repo', '/etc/arkhive/restic-password'), '/usr/bin/restic', $this->runner);
         $this->cleanup = new Cleanup();
+        $this->pause = new RecordingPause();
         $this->stream = LogStream::memory();
         $this->root = $this->tempDir();
         mkdir("{$this->root}/locks");
@@ -69,6 +73,7 @@ final class RestoreRunnerTest extends TestCase
             ['ARKHIVE_LOCK_DIR' => "{$this->root}/locks"],
             $uid,
             $uid,
+            new Retrier($this->pause),
         );
     }
 
@@ -233,6 +238,38 @@ final class RestoreRunnerTest extends TestCase
         self::assertStringContainsString('success Safety snapshot e8ecb7f4 saved (tag pre-restore); undo the restore with: arkhive restore --snapshot e8ecb7f4 --in-place --force', $this->stream->contents());
         self::assertSame([], $this->cleanup->runAll());
         self::assertFalse(Lock::forRepository('/srv/restic-repo', ['ARKHIVE_LOCK_DIR' => "{$this->root}/locks"], new FixedClock(), 0)->held(), 'released');
+    }
+
+    public function testInPlaceWaitsForTheLockAndForAResticLockHeldElsewhere(): void
+    {
+        $original = "{$this->root}/srv/www";
+        mkdir($original, 0755, true);
+        $snapshot = new Snapshot('aaaa1111', new DateTimeImmutable(), 'web1.example.com', [$original]);
+        $other = Lock::forRepository('/srv/restic-repo', ['ARKHIVE_LOCK_DIR' => "{$this->root}/locks"], new FixedClock(), 0);
+        $other->acquire('backup');
+        $this->pause->during = static function (int $wait) use ($other): void {
+            if ($wait === 1) {
+                $other->release();
+            }
+        };
+        $locked = [0, 0];
+        $this->fake->on['backup'] = static function () use (&$locked): array {
+            return $locked[0]++ === 0 ? [11, '', FakeRestic::fixture('locked-0.19.stderr')] : [0, FakeRestic::fixture('backup-0.19-first.jsonl'), ''];
+        };
+        $this->fake->on['restore'] = static function () use (&$locked): array {
+            return $locked[1]++ === 0 ? [11, '', FakeRestic::fixture('locked-0.19.stderr')] : [0, FakeRestic::fixture('restore-0.19.jsonl'), ''];
+        };
+
+        $report = $this->runner()->run($this->restic, $this->plan(Selection::everything(), '/', inPlace: true, force: true, snapshot: $snapshot), null, 'web1.example.com', $this->log(), self::sink());
+
+        self::assertTrue($report->verified);
+        self::assertSame([2, 2], $locked);
+        self::assertCount(3, $this->pause->waits);
+        $log = $this->stream->contents();
+        self::assertStringContainsString('warning Waiting for the repository: Another ArkHive run holds the lock for this repository', $log);
+        self::assertStringContainsString('warning The safety snapshot: The restic repository is locked', $log);
+        self::assertStringContainsString('warning restic restore: The restic repository is locked', $log);
+        $this->cleanup->runAll();
     }
 
     public function testInPlaceSafetySnapshotCoversTheIncludedPathsOnly(): void

@@ -8,12 +8,15 @@ use Illuminate\Support\Facades\Artisan;
 use Mfonte\Arkhive\Application\Port\Notifier;
 use Mfonte\Arkhive\Application\Port\ProcessRunner;
 use Mfonte\Arkhive\Application\System\Dependencies;
+use Mfonte\Arkhive\Application\System\Lock;
 use Mfonte\Arkhive\ExitCode;
 use Mfonte\Arkhive\Infrastructure\Mail\SmtpNotifier;
+use Symfony\Component\Mailer\Exception\UnexpectedResponseException;
 use Tests\Support\CapturingTransport;
 use Tests\Support\FakeBinaries;
 use Tests\Support\FakeProcessRunner;
 use Tests\Support\FakeRestic;
+use Tests\Support\FixedClock;
 use Tests\Support\TempDir;
 use Tests\Support\WritesConfig;
 use Tests\TestCase;
@@ -90,6 +93,84 @@ final class BackupCommandTest extends TestCase
         self::assertStringContainsString('success Snapshot e8ecb7f4 saved', $this->logOutput());
         self::assertStringContainsString('warning The notification e-mail could not be sent through smtp.example.com:25: Connection could not be established with host "smtp.example.com:25"', $this->logOutput());
         self::assertStringContainsString('notice Check SMTP_HOST, SMTP_PORT, SMTP_ENCRYPTION, SMTP_USER and SMTP_PASSWORD', $this->logOutput());
+    }
+
+    public function testANotificationFailureIsTriedThreeTimes(): void
+    {
+        $this->mail->failWith = 'Connection could not be established with host "smtp.example.com:25"';
+
+        self::assertSame(ExitCode::WARNING, Artisan::call('backup', ['--config' => $this->writeConfig(self::notify())]));
+        self::assertCount(2, $this->pause->waits);
+        self::assertCount(3, $this->mail->dsns);
+        self::assertMatchesRegularExpression('/warning Sending the notification: The notification e-mail could not be sent through smtp.example.com:25: .*; trying again in \d+s \(attempt 2 of 3\)/', $this->logOutput());
+    }
+
+    public function testAGreylistedNotificationIsSentOnTheNextTry(): void
+    {
+        $this->mail->throw = [new UnexpectedResponseException('Expected response code "250" but got code "451", with message "451 4.7.1 Greylisted, try again later".', 451)];
+
+        self::assertSame(ExitCode::SUCCESS, Artisan::call('backup', ['--config' => $this->writeConfig(self::notify())]));
+        self::assertCount(1, $this->mail->sent);
+        self::assertCount(1, $this->pause->waits);
+        self::assertEqualsWithDelta(15.0, $this->pause->waits[0], 3.0);
+        self::assertStringContainsString('Greylisted, try again later', $this->logOutput());
+    }
+
+    public function testARejectedNotificationIsNotTriedAgain(): void
+    {
+        $this->mail->throw = [new UnexpectedResponseException('Expected response code "250" but got code "550", with message "550 5.1.1 No such user".', 550)];
+
+        self::assertSame(ExitCode::WARNING, Artisan::call('backup', ['--config' => $this->writeConfig(self::notify())]));
+        self::assertSame([], $this->pause->waits);
+        self::assertCount(1, $this->mail->dsns);
+    }
+
+    public function testARepositoryLockedByAnotherClientIsWaitedFor(): void
+    {
+        $tries = 0;
+        $this->restic->on['backup'] = static function () use (&$tries): array {
+            return ++$tries < 3 ? [11, '', FakeRestic::fixture('locked-0.19.stderr')] : [0, FakeRestic::fixture('backup-0.19-first.jsonl'), ''];
+        };
+
+        self::assertSame(ExitCode::SUCCESS, Artisan::call('backup', ['--config' => $this->writeConfig()]));
+        self::assertSame(3, $tries);
+        self::assertCount(2, $this->pause->waits);
+        self::assertMatchesRegularExpression('/warning restic backup: The restic repository is locked by PID 25983 on host.example.com .*; trying again in \d+s \(waiting up to 300s in all, 0s so far\)/', $this->logOutput());
+        self::assertStringContainsString('success Snapshot e8ecb7f4 saved', $this->logOutput());
+    }
+
+    public function testLockWaitBoundsTheWaitThenTheRunIsExit75(): void
+    {
+        $this->restic->on['backup'] = static fn (): array => [11, '', FakeRestic::fixture('locked-0.19.stderr')];
+
+        self::assertSame(ExitCode::TEMPORARY, Artisan::call('backup', ['--config' => $this->writeConfig(['LOCK_WAIT' => '30'])]));
+        self::assertEqualsWithDelta(30.0, $this->pause->total(), 1e-6);
+        self::assertStringContainsString('error The restic repository is locked', $this->logOutput());
+    }
+
+    public function testLockWaitZeroFailsAtOnce(): void
+    {
+        $this->restic->on['backup'] = static fn (): array => [11, '', FakeRestic::fixture('locked-0.19.stderr')];
+
+        self::assertSame(ExitCode::TEMPORARY, Artisan::call('backup', ['--config' => $this->writeConfig(['LOCK_WAIT' => '0'])]));
+        self::assertSame([], $this->pause->waits);
+        self::assertCount(1, $this->restic->callsOf('backup'));
+    }
+
+    public function testAnotherArkhiveRunIsWaitedForUntilItReleasesTheLock(): void
+    {
+        $other = Lock::forRepository('/srv/restic-repo', $this->terminal->env, new FixedClock(), 0);
+        $other->acquire('maintain');
+        $this->pause->during = static function (int $wait) use ($other): void {
+            if ($wait === 2) {
+                $other->release();
+            }
+        };
+
+        self::assertSame(ExitCode::SUCCESS, Artisan::call('backup', ['--config' => $this->writeConfig()]));
+        self::assertCount(2, $this->pause->waits);
+        self::assertStringContainsString('warning Waiting for the repository: Another ArkHive run holds the lock for this repository', $this->logOutput());
+        self::assertCount(1, $this->restic->backups);
     }
 
     public function testAFailedBackupIsExit1AndNotified(): void

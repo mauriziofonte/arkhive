@@ -10,6 +10,7 @@ use Mfonte\Arkhive\Application\Output\Logger;
 use Mfonte\Arkhive\Application\Port\ProcessRunner;
 use Mfonte\Arkhive\Application\Port\SnapshotStore;
 use Mfonte\Arkhive\Application\Process\Cleanup;
+use Mfonte\Arkhive\Application\Resilience\Retrier;
 use Mfonte\Arkhive\Application\System\Dependencies;
 use Mfonte\Arkhive\Application\System\Lock;
 use Mfonte\Arkhive\Domain\Configuration\Config;
@@ -26,6 +27,7 @@ use Mfonte\Arkhive\Domain\Restore\RestoreReport;
 use Mfonte\Arkhive\Domain\Restore\SelectionKind;
 use Mfonte\Arkhive\Domain\Shared\Bytes;
 use Mfonte\Arkhive\Domain\Shared\Clock;
+use Mfonte\Arkhive\Domain\Shared\RetryPolicy;
 use Mfonte\Arkhive\Exceptions\DataException;
 use Mfonte\Arkhive\Exceptions\NoInputException;
 use Mfonte\Arkhive\Exceptions\RefusedException;
@@ -37,6 +39,7 @@ use Mfonte\Arkhive\Exceptions\UsageException;
  * into the target, `restic dump` to stdout, or an import into a new database. An in-place restore holds
  * the repository lock and first takes a safety snapshot (tag pre-restore) of what it will overwrite.
  * A target directory created by this run is removed again if the restore fails or is interrupted.
+ * A repository locked by another run is waited for, up to LOCK_WAIT.
  */
 final class RestoreRunner
 {
@@ -51,6 +54,7 @@ final class RestoreRunner
         private readonly array $environment,
         private readonly int $uid,
         private readonly int $gid,
+        private readonly Retrier $retrier,
     ) {
     }
 
@@ -106,15 +110,16 @@ final class RestoreRunner
     {
         assert($plan->target !== null);
         $safety = null;
+        $lockPolicy = RetryPolicy::lock($restic->settings()->lockWait);
         if ($plan->inPlace) {
             $repository = $restic->settings()->repository;
             $lock = Lock::forRepository($repository, $this->environment, $this->clock, $this->uid);
-            $stale = $lock->acquire('restore --in-place');
+            $stale = $this->retrier->whileLocked(static fn (): ?string => $lock->acquire('restore --in-place'), $lockPolicy, 'Waiting for the repository', $log);
             $this->cleanup->add('release the lock', $lock->release(...));
             if ($stale !== null) {
                 $log->warning($stale);
             }
-            $safety = $this->safetySnapshot($restic, $plan, $host, $log);
+            $safety = $this->safetySnapshot($restic, $plan, $host, $log, $lockPolicy);
         }
 
         $target = new TargetDirectory($plan->target);
@@ -137,9 +142,14 @@ final class RestoreRunner
 
         $log->info(sprintf('Restoring %s from snapshot %s (%s) to %s', $selection->describe(), $plan->snapshot->shortId(), $plan->snapshot->time->format('Y-m-d H:i'), $plan->target));
         try {
-            $summary = $restic->restore($request, static function (RestoreProgress $progress) use ($log): void {
-                $log->progress($progress->describe());
-            });
+            $summary = $this->retrier->whileLocked(
+                static fn () => $restic->restore($request, static function (RestoreProgress $progress) use ($log): void {
+                    $log->progress($progress->describe());
+                }),
+                $lockPolicy,
+                'restic restore',
+                $log,
+            );
         } finally {
             $log->endProgress();
         }
@@ -225,7 +235,7 @@ final class RestoreRunner
     /**
      * The safety snapshot of the paths an in-place restore overwrites, so that the restore can be undone.
      */
-    private function safetySnapshot(SnapshotStore $restic, RestorePlan $plan, string $host, Logger $log): ?string
+    private function safetySnapshot(SnapshotStore $restic, RestorePlan $plan, string $host, Logger $log, RetryPolicy $lockPolicy): ?string
     {
         $paths = array_values(array_filter($this->roots($plan), static fn (string $p): bool => file_exists($p) || is_link($p)));
         if ($paths === []) {
@@ -234,12 +244,13 @@ final class RestoreRunner
             return null;
         }
         $log->info('Taking a safety snapshot of ' . implode(' ', $paths) . ' before restoring in place');
-        $summary = $restic->backup(new BackupRequest(
+        $request = new BackupRequest(
             $paths,
             $host,
             [Snapshots::SAFETY_TAG],
             'The safety snapshot before the in-place restore (nothing was restored)',
-        ))->summary;
+        );
+        $summary = $this->retrier->whileLocked(static fn () => $restic->backup($request), $lockPolicy, 'The safety snapshot', $log)->summary;
         if (!$summary instanceof BackupSummary || $summary->snapshotId === '') {
             throw new SoftwareException('The safety snapshot reported no snapshot id: nothing was restored');
         }

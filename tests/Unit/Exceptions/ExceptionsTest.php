@@ -10,6 +10,7 @@ use Mfonte\Arkhive\Exceptions\ConfigException;
 use Mfonte\Arkhive\Exceptions\DataException;
 use Mfonte\Arkhive\Exceptions\InterruptedException;
 use Mfonte\Arkhive\Exceptions\IoException;
+use Mfonte\Arkhive\Exceptions\LockedException;
 use Mfonte\Arkhive\Exceptions\NoInputException;
 use Mfonte\Arkhive\Exceptions\OsException;
 use Mfonte\Arkhive\Exceptions\PermissionException;
@@ -34,6 +35,27 @@ final class ExceptionsTest extends TestCase
         self::assertSame(ExitCode::FAILURE, $e->exitCode());
         self::assertNull($e->hint());
         self::assertSame($previous, $e->getPrevious());
+    }
+
+    public function testOnlyLocksTimeoutsAndNetworkErrorsAreTransient(): void
+    {
+        $previous = new RuntimeException('inner');
+        $locked = new LockedException('locked', 'wait', $previous);
+        $network = UnavailableException::network('refused', 'check the server', $previous);
+
+        self::assertTrue($locked->transient());
+        self::assertSame(ExitCode::TEMPORARY, $locked->exitCode());
+        self::assertSame('wait', $locked->hint());
+        self::assertSame($previous, $locked->getPrevious());
+        self::assertTrue((new TemporaryException('timed out'))->transient());
+        self::assertTrue($network->transient());
+        self::assertSame(ExitCode::UNAVAILABLE, $network->exitCode());
+        self::assertSame('check the server', $network->hint());
+        self::assertSame($previous, $network->getPrevious());
+        self::assertFalse((new UnavailableException('no repository'))->transient());
+        self::assertFalse((new ArkhiveException('broken'))->transient());
+        self::assertFalse((new PermissionException('wrong password'))->transient());
+        self::assertFalse((new ConfigException('bad key'))->transient());
     }
 
     public function testUsageAndRefusedCarryTheirExitCodesAndHints(): void

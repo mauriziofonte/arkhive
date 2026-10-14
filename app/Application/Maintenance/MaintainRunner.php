@@ -8,18 +8,21 @@ use Mfonte\Arkhive\Application\Backup\BackupRunner;
 use Mfonte\Arkhive\Application\Output\Logger;
 use Mfonte\Arkhive\Application\Port\SnapshotStoreFactory;
 use Mfonte\Arkhive\Application\Process\Cleanup;
+use Mfonte\Arkhive\Application\Resilience\Retrier;
 use Mfonte\Arkhive\Application\System\Lock;
 use Mfonte\Arkhive\Domain\Configuration\Config;
 use Mfonte\Arkhive\Domain\Maintenance\MaintainReport;
 use Mfonte\Arkhive\Domain\Shared\Bytes;
 use Mfonte\Arkhive\Domain\Shared\Clock;
+use Mfonte\Arkhive\Domain\Shared\RetryPolicy;
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
 use Mfonte\Arkhive\Exceptions\InterruptedException;
 
 /**
  * spec §6 maintain: forget --prune with the 7/4/6 policy on this host's ArkHive snapshots, then
  * check, then check --read-data-subset. Holds the ArkHive lock so that it never runs during a backup.
- * A damaged repository is reported, never repaired.
+ * A damaged repository is reported, never repaired. A repository locked by another run (a backup of
+ * another host) is waited for, up to LOCK_WAIT.
  */
 final class MaintainRunner
 {
@@ -34,6 +37,7 @@ final class MaintainRunner
         private readonly Clock $clock,
         private readonly array $environment,
         private readonly int $uid,
+        private readonly Retrier $retrier,
     ) {
     }
 
@@ -44,15 +48,16 @@ final class MaintainRunner
         $version = $restic->requireSupportedVersion();
         $log->debug("Using {$restic->binary()} (restic {$version})");
 
+        $lockPolicy = RetryPolicy::lock($config->restic->lockWait);
         $lock = Lock::forRepository($config->restic->repository, $this->environment, $this->clock, $this->uid);
-        $stale = $lock->acquire('maintain');
+        $stale = $this->retrier->whileLocked(static fn (): ?string => $lock->acquire('maintain'), $lockPolicy, 'Waiting for the repository', $log);
         $this->cleanup->add('release the lock', $lock->release(...));
         if ($stale !== null) {
             $log->warning($stale);
         }
 
         $log->info("Opening the repository {$config->restic->repository}");
-        $restic->checkReachable();
+        $this->retrier->transient($restic->checkReachable(...), $lockPolicy, 'Opening the repository', $log);
 
         $log->info(sprintf(
             'Applying the retention policy to the snapshots of %s: %d daily, %d weekly, %d monthly',
@@ -61,19 +66,24 @@ final class MaintainRunner
             $config->keepWeekly,
             $config->keepMonthly,
         ));
-        $forget = $restic->forget($config->restic->host, BackupRunner::TAG, $config->keepDaily, $config->keepWeekly, $config->keepMonthly);
+        $forget = $this->retrier->whileLocked(
+            static fn () => $restic->forget($config->restic->host, BackupRunner::TAG, $config->keepDaily, $config->keepWeekly, $config->keepMonthly),
+            $lockPolicy,
+            'restic forget',
+            $log,
+        );
         $log->success(
             sprintf('Kept %d snapshots, removed %d and pruned the data they no longer share', count($forget->kept), count($forget->removed)),
             ['kept' => count($forget->kept), 'removed' => count($forget->removed)],
         );
 
         $log->info('Checking the repository structure');
-        $structure = $restic->check();
+        $structure = $this->retrier->whileLocked(static fn () => $restic->check(), $lockPolicy, 'restic check', $log);
         $data = null;
         if ($structure->ok) {
             $log->success('Repository structure: ' . $structure->describe());
             $log->info("Reading back {$config->checkSubset} of the stored data");
-            $data = $restic->check($config->checkSubset);
+            $data = $this->retrier->whileLocked(static fn () => $restic->check($config->checkSubset), $lockPolicy, 'restic check', $log);
             if ($data->ok) {
                 $log->success("Data read back ({$config->checkSubset}): " . $data->describe());
             }

@@ -7,6 +7,7 @@ namespace Mfonte\Arkhive\Commands;
 use Mfonte\Arkhive\Application\Backup\BackupRunner;
 use Mfonte\Arkhive\Application\Database\DatabaseDumps;
 use Mfonte\Arkhive\Application\Port\SnapshotStoreFactory;
+use Mfonte\Arkhive\Application\Resilience\Retrier;
 use Mfonte\Arkhive\Domain\Backup\BackupReport;
 use Mfonte\Arkhive\Domain\Configuration\Config;
 use Mfonte\Arkhive\Domain\Notification\Notification;
@@ -40,6 +41,7 @@ final class BackupCommand extends ConfiguredCommand
             $this->clock,
             $this->terminal->environment(),
             posix_geteuid(),
+            $this->laravel->make(Retrier::class),
         );
         try {
             $report = $runner->run($config, $this->log);

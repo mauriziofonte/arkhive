@@ -6,9 +6,9 @@ namespace Mfonte\Arkhive\Application\System;
 
 use Mfonte\Arkhive\Domain\Shared\Clock;
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
+use Mfonte\Arkhive\Exceptions\LockedException;
 use Mfonte\Arkhive\Exceptions\PermissionException;
 use Mfonte\Arkhive\Exceptions\RefusedException;
-use Mfonte\Arkhive\Exceptions\TemporaryException;
 
 /**
  * One flock per restic repository: a parallel run fails at once. The file records the holder's PID,
@@ -96,7 +96,7 @@ final class Lock
             $holder = self::describe(self::read($handle));
             fclose($handle);
 
-            throw new TemporaryException("Another ArkHive run holds the lock for this repository{$holder}: {$this->path}");
+            throw new LockedException("Another ArkHive run holds the lock for this repository{$holder}: {$this->path}");
         }
 
         $previous = self::read($handle);

@@ -141,6 +141,7 @@ final class MaintainCommandTest extends TestCase
         self::assertSame(ExitCode::TEMPORARY, Artisan::call('maintain', ['--config' => $this->writeConfig(self::notify())]));
 
         self::assertStringContainsString('error The restic repository is locked', $this->logOutput());
+        self::assertEqualsWithDelta(300.0, $this->pause->total(), 1e-6, 'tried again until LOCK_WAIT');
         self::assertSame([], $this->restic->callsOf('check'));
         self::assertSame('[ArkHive] maintenance FAILED on web1.example.com', $this->mail->sent[0]->getSubject());
         self::assertStringStartsWith('The maintenance failed: The restic repository is locked', (string) $this->mail->sent[0]->getTextBody());
@@ -158,6 +159,7 @@ final class MaintainCommandTest extends TestCase
         }
 
         self::assertStringContainsString('error Another ArkHive run holds the lock for this repository', $this->logOutput());
+        self::assertStringContainsString('warning Waiting for the repository: Another ArkHive run holds the lock', $this->logOutput());
         self::assertSame([], $this->restic->callsOf('forget'));
     }
 

@@ -41,6 +41,7 @@ final class DatabaseErrorsTest extends TestCase
         self::assertSame($exit, $exception->exitCode());
         self::assertStringStartsWith('PostgreSQL dump of database shop failed (pg_dump exit 1): ', $exception->getMessage());
         self::assertSame($exit !== ExitCode::FAILURE, $exception->hint() !== null);
+        self::assertSame($exit === ExitCode::UNAVAILABLE, $exception->transient(), 'only an unreachable server may answer later');
     }
 
     public function testATimeoutIsTemporary(): void

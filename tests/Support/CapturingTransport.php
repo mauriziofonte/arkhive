@@ -24,6 +24,9 @@ final class CapturingTransport implements TransportInterface
 
     public ?string $failWith = null;
 
+    /** @var list<\Throwable> thrown by the next sends, in order, before failWith applies */
+    public array $throw = [];
+
     public function factory(): \Closure
     {
         return function (string $dsn): TransportInterface {
@@ -35,6 +38,10 @@ final class CapturingTransport implements TransportInterface
 
     public function send(RawMessage $message, ?Envelope $envelope = null): ?SentMessage
     {
+        $next = array_shift($this->throw);
+        if ($next !== null) {
+            throw $next;
+        }
         if ($this->failWith !== null) {
             throw new TransportException($this->failWith);
         }

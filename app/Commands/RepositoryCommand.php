@@ -7,8 +7,10 @@ namespace Mfonte\Arkhive\Commands;
 use Mfonte\Arkhive\Application\Configuration\PasswordFile;
 use Mfonte\Arkhive\Application\Port\SnapshotStore;
 use Mfonte\Arkhive\Application\Port\SnapshotStoreFactory;
+use Mfonte\Arkhive\Application\Resilience\Retrier;
 use Mfonte\Arkhive\Domain\Configuration\Config;
 use Mfonte\Arkhive\Domain\Configuration\ResticSettings;
+use Mfonte\Arkhive\Domain\Shared\RetryPolicy;
 use Mfonte\Arkhive\Exceptions\UsageException;
 use Symfony\Component\Console\Input\InputOption;
 
@@ -58,7 +60,8 @@ abstract class RepositoryCommand extends ConfiguredCommand
     }
 
     /**
-     * restic found and recent enough, repository reachable and password valid.
+     * restic found and recent enough, repository reachable and password valid. Network errors are
+     * tried again; a repository locked by another run is waited for, up to LOCK_WAIT.
      */
     protected function openRepository(ResticSettings $settings, string $purpose): SnapshotStore
     {
@@ -66,7 +69,7 @@ abstract class RepositoryCommand extends ConfiguredCommand
         $version = $restic->requireSupportedVersion();
         $this->log->debug("Using {$restic->binary()} (restic {$version})");
         $this->log->info("Opening the repository {$settings->repository}");
-        $restic->checkReachable();
+        $this->laravel->make(Retrier::class)->transient($restic->checkReachable(...), RetryPolicy::lock($settings->lockWait), 'Opening the repository', $this->log);
 
         return $restic;
     }

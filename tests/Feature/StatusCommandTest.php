@@ -126,5 +126,29 @@ final class StatusCommandTest extends TestCase
 
         self::assertSame(ExitCode::UNAVAILABLE, Artisan::call('status', ['--config' => $this->writeConfig()]));
         self::assertStringContainsString('error There is no restic repository at /srv/restic-repo', $this->logOutput());
+        self::assertSame([], $this->pause->waits, 'a missing repository is not tried again');
+    }
+
+    public function testANetworkFailureWhileOpeningTheRepositoryIsTriedAgain(): void
+    {
+        $tries = 0;
+        $this->restic->on['cat'] = static function () use (&$tries): array {
+            return ++$tries < 3 ? [1, '', FakeRestic::fixture('sftp-unreachable-0.19.stderr')] : [0, "{\"version\": 2}\n", ''];
+        };
+
+        self::assertSame(ExitCode::SUCCESS, Artisan::call('status', ['--config' => $this->writeConfig()]));
+        self::assertSame(3, $tries);
+        self::assertCount(2, $this->pause->waits);
+        self::assertStringContainsString('warning Opening the repository: Opening the restic repository failed (restic exit 1): subprocess ssh: ssh: connect to host backup.example.com port 2299: Connection refused', $this->logOutput());
+        self::assertStringContainsString('(attempt 3 of 3)', $this->logOutput());
+    }
+
+    public function testARepositoryThatStaysUnreachableIsExit69AfterThreeTries(): void
+    {
+        $this->restic->catConfig = [1, '', FakeRestic::fixture('sftp-unreachable-0.19.stderr')];
+
+        self::assertSame(ExitCode::UNAVAILABLE, Artisan::call('status', ['--config' => $this->writeConfig()]));
+        self::assertCount(3, $this->restic->callsOf('cat'));
+        self::assertCount(2, $this->pause->waits);
     }
 }

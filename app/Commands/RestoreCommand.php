@@ -7,6 +7,7 @@ namespace Mfonte\Arkhive\Commands;
 use Mfonte\Arkhive\Application\Port\ProcessRunner;
 use Mfonte\Arkhive\Application\Port\Prompter;
 use Mfonte\Arkhive\Application\Port\SnapshotStore;
+use Mfonte\Arkhive\Application\Resilience\Retrier;
 use Mfonte\Arkhive\Application\Restore\RestorePlanner;
 use Mfonte\Arkhive\Application\Restore\RestoreRunner;
 use Mfonte\Arkhive\Application\Restore\TargetDirectory;
@@ -73,6 +74,7 @@ final class RestoreCommand extends RepositoryCommand
             $this->terminal->environment(),
             posix_geteuid(),
             posix_getegid(),
+            $this->laravel->make(Retrier::class),
         );
         $needed = $runner->preflight($restic, $plan, $config);
         $planner->confirm($plan, $needed, $this->freeSpace($plan), $options->yes);

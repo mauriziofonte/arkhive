@@ -8,6 +8,7 @@ use Mfonte\Arkhive\Application\Process\ProcessResult;
 use Mfonte\Arkhive\Domain\Configuration\ResticSettings;
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
 use Mfonte\Arkhive\Exceptions\IoException;
+use Mfonte\Arkhive\Exceptions\LockedException;
 use Mfonte\Arkhive\Exceptions\PermissionException;
 use Mfonte\Arkhive\Exceptions\TemporaryException;
 use Mfonte\Arkhive\Exceptions\UnavailableException;
@@ -44,7 +45,7 @@ final class ResticErrors
             $holder = preg_match('/already locked (?:exclusively )?by (.+)$/m', $stderr, $m) === 1 ? ' by ' . trim($m[1]) : '';
             $since = preg_match('/lock was created at (.+)$/m', $stderr, $c) === 1 ? ', created at ' . trim($c[1]) : '';
 
-            return new TemporaryException(
+            return new LockedException(
                 "The restic repository is locked{$holder}{$since}",
                 hint: 'If no other restic process is using the repository the lock is stale; remove it with: RESTIC_PASSWORD_FILE='
                     . escapeshellarg($settings->passwordFile) . ' restic -r ' . escapeshellarg($settings->repository) . ' unlock (ArkHive never does this automatically)',
@@ -60,7 +61,10 @@ final class ResticErrors
             return new IoException($result->failure($what), hint: 'The filesystem holding the repository (or the restic cache) is full: free space, or prune old snapshots with arkhive maintain');
         }
         if (self::looksLikeSsh($stderr)) {
-            return new UnavailableException($result->failure($what), hint: self::reachHint($settings));
+            // a refused key or an unknown host key stays refused: only connection failures are retried
+            return self::refusedBySsh($stderr)
+                ? new UnavailableException($result->failure($what), self::reachHint($settings))
+                : UnavailableException::network($result->failure($what), self::reachHint($settings));
         }
 
         return new ArkhiveException($result->failure($what));
@@ -79,6 +83,11 @@ final class ResticErrors
         }
 
         return false;
+    }
+
+    private static function refusedBySsh(string $stderr): bool
+    {
+        return str_contains($stderr, 'Permission denied (') || str_contains($stderr, 'Host key verification failed');
     }
 
     private static function reachHint(ResticSettings $settings): string

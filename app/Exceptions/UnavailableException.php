@@ -15,4 +15,15 @@ final class UnavailableException extends ArkhiveException
     {
         parent::__construct($message, ExitCode::UNAVAILABLE, $hint, $previous);
     }
+
+    /**
+     * Unreachable over the network (connection refused or lost, name resolution): worth retrying.
+     */
+    public static function network(string $message, ?string $hint = null, ?\Throwable $previous = null): self
+    {
+        $exception = new self($message, $hint, $previous);
+        $exception->transient = true;
+
+        return $exception;
+    }
 }

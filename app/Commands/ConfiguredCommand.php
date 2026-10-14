@@ -7,8 +7,10 @@ namespace Mfonte\Arkhive\Commands;
 use Mfonte\Arkhive\Application\Configuration\ConfigLoader;
 use Mfonte\Arkhive\Application\Configuration\ConfigLocator;
 use Mfonte\Arkhive\Application\Port\Notifier;
+use Mfonte\Arkhive\Application\Resilience\Retrier;
 use Mfonte\Arkhive\Domain\Configuration\Config;
 use Mfonte\Arkhive\Domain\Notification\Notification;
+use Mfonte\Arkhive\Domain\Shared\RetryPolicy;
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
 use Symfony\Component\Console\Input\InputOption;
 
@@ -45,7 +47,8 @@ abstract class ConfiguredCommand extends ArkhiveCommand
     }
 
     /**
-     * Sends the notification if configured. A failure is logged, never fatal: returns false (exit 3).
+     * Sends the notification if configured; a temporary SMTP error (4xx) or an unreachable server is
+     * tried again. A failure is logged, never fatal: returns false (exit 3).
      */
     protected function sendNotification(Config $config, Notification $notification): bool
     {
@@ -54,7 +57,14 @@ abstract class ConfiguredCommand extends ArkhiveCommand
         }
         try {
             // resolved here, not in the constructor: commands are built when the application boots
-            $this->laravel->make(Notifier::class)->send($config->notify, $notification);
+            $notifier = $this->laravel->make(Notifier::class);
+            $notify = $config->notify;
+            $this->laravel->make(Retrier::class)->run(
+                static fn () => $notifier->send($notify, $notification),
+                RetryPolicy::mail(),
+                'Sending the notification',
+                $this->log,
+            );
             $this->log->debug('Notification sent to ' . implode(', ', $config->notify->to));
 
             return true;

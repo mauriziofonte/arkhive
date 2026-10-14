@@ -10,6 +10,7 @@ use Mfonte\Arkhive\Application\Database\DatabaseDumps;
 use Mfonte\Arkhive\Application\Output\Logger;
 use Mfonte\Arkhive\Application\Process\Cleanup;
 use Mfonte\Arkhive\Application\Process\Command;
+use Mfonte\Arkhive\Application\Resilience\Retrier;
 use Mfonte\Arkhive\Application\System\Lock;
 use Mfonte\Arkhive\Domain\Configuration\Config;
 use Mfonte\Arkhive\Domain\Execution\ExecutionContext;
@@ -22,6 +23,7 @@ use Tests\Support\FakeBinaries;
 use Tests\Support\FakeProcessRunner;
 use Tests\Support\FakeRestic;
 use Tests\Support\FixedClock;
+use Tests\Support\RecordingPause;
 use Tests\Support\TempDir;
 
 final class BackupRunnerTest extends TestCase
@@ -31,6 +33,7 @@ final class BackupRunnerTest extends TestCase
     private FakeProcessRunner $runner;
     private FakeRestic $restic;
     private Cleanup $cleanup;
+    private RecordingPause $pause;
     private LogStream $stream;
     private string $root;
     private string $lockDir;
@@ -40,6 +43,7 @@ final class BackupRunnerTest extends TestCase
         $this->runner = new FakeProcessRunner();
         $this->restic = (new FakeRestic())->install($this->runner);
         $this->cleanup = new Cleanup();
+        $this->pause = new RecordingPause();
         $this->stream = LogStream::memory();
         $this->root = $this->tempDir();
         $this->lockDir = "{$this->root}/locks";
@@ -62,6 +66,7 @@ final class BackupRunnerTest extends TestCase
             new FixedClock(),
             ['ARKHIVE_LOCK_DIR' => $this->lockDir],
             posix_geteuid(),
+            new Retrier($this->pause),
         );
     }
 

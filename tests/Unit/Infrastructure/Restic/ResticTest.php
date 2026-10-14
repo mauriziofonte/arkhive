@@ -135,6 +135,24 @@ final class ResticTest extends TestCase
         self::assertSame($arkhiveExit, $e->exitCode());
     }
 
+    public function testOnlyLocksTimeoutsAndConnectionFailuresAreRetried(): void
+    {
+        $command = new Command(['/usr/bin/restic', 'cat', 'config']);
+        $transient = static fn (string $stderr, int $exit = 1): bool => ResticErrors::exception(new ProcessResult($command, $exit, '', $stderr), 'Opening the restic repository', self::settings())->transient();
+
+        self::assertTrue($transient(self::fixture('locked-0.19.stderr'), 11));
+        self::assertTrue($transient(self::fixture('sftp-unreachable-0.19.stderr')));
+        self::assertTrue($transient(self::fixture('sftp-unreachable-no-ssh-line-0.19.stderr')));
+        self::assertTrue($transient("subprocess ssh: ssh: Could not resolve hostname backup.example.com: Temporary failure in name resolution\n"));
+        self::assertTrue(ResticErrors::exception(new ProcessResult($command->withTimeout(300.0), 143, '', '', 300.0, true), 'x', self::settings())->transient());
+        self::assertFalse($transient(self::fixture('wrong-password-0.19.stderr'), 12));
+        self::assertFalse($transient(self::fixture('no-repository-0.19.stderr'), 10));
+        self::assertFalse($transient("subprocess ssh: backup-user@backup.example.com: Permission denied (publickey).\nFatal: unable to open repository: unable to start the sftp session\n"));
+        self::assertFalse($transient("subprocess ssh: Host key verification failed.\nFatal: unable to start the sftp session\n"));
+        self::assertFalse($transient("Fatal: pack 1234 damaged\n"));
+        self::assertFalse($transient("Fatal: unable to save snapshot: write /srv/restic-repo/data/ab/abcd: no space left on device\n"));
+    }
+
     public function testAFullRepositoryFilesystemIsAnIoErrorAndALostSshSessionUnavailable(): void
     {
         $command = new Command(['/usr/bin/restic', 'backup']);

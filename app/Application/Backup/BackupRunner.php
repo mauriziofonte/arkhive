@@ -11,6 +11,7 @@ use Mfonte\Arkhive\Application\Output\Logger;
 use Mfonte\Arkhive\Application\Port\SnapshotStore;
 use Mfonte\Arkhive\Application\Port\SnapshotStoreFactory;
 use Mfonte\Arkhive\Application\Process\Cleanup;
+use Mfonte\Arkhive\Application\Resilience\Retrier;
 use Mfonte\Arkhive\Application\System\Lock;
 use Mfonte\Arkhive\Domain\Backup\BackupReport;
 use Mfonte\Arkhive\Domain\Configuration\Config;
@@ -19,12 +20,14 @@ use Mfonte\Arkhive\Domain\Repository\BackupRequest;
 use Mfonte\Arkhive\Domain\Repository\BackupStatus;
 use Mfonte\Arkhive\Domain\Repository\BackupSummary;
 use Mfonte\Arkhive\Domain\Shared\Clock;
+use Mfonte\Arkhive\Domain\Shared\RetryPolicy;
 use Mfonte\Arkhive\Exceptions\SoftwareException;
 
 /**
  * spec §6 backup: preflight (restic and its version, lock, repository reachable, dump space) →
  * dumps → restic backup --json → summary. restic exit 3 (snapshot saved, some files unreadable) is a
- * warning. The dump directory is emptied and the lock released however the run ends.
+ * warning. The dump directory is emptied and the lock released however the run ends. A repository
+ * locked by another run is waited for (LOCK_WAIT); network errors while opening it are retried.
  */
 final class BackupRunner
 {
@@ -42,6 +45,7 @@ final class BackupRunner
         private readonly Clock $clock,
         private readonly array $environment,
         private readonly int $uid,
+        private readonly Retrier $retrier,
     ) {
     }
 
@@ -52,19 +56,20 @@ final class BackupRunner
         $version = $restic->requireSupportedVersion();
         $log->debug("Using {$restic->binary()} (restic {$version})");
 
+        $lockPolicy = RetryPolicy::lock($config->restic->lockWait);
         $lock = Lock::forRepository($config->restic->repository, $this->environment, $this->clock, $this->uid);
-        $stale = $lock->acquire('backup');
+        $stale = $this->retrier->whileLocked(static fn (): ?string => $lock->acquire('backup'), $lockPolicy, 'Waiting for the repository', $log);
         $this->cleanup->add('release the lock', $lock->release(...));
         if ($stale !== null) {
             $log->warning($stale);
         }
 
         $log->info("Opening the repository {$config->restic->repository}");
-        $restic->checkReachable();
+        $this->retrier->transient($restic->checkReachable(...), $lockPolicy, 'Opening the repository', $log);
 
         $dumps = $this->dumps->run($config, $log);
         try {
-            [$summary, $warnings] = $this->backup($restic, $config, $dumps, $log);
+            [$summary, $warnings] = $this->backup($restic, $config, $dumps, $log, $lockPolicy);
         } finally {
             if ($dumps !== null) {
                 $this->dumps->clear($dumps);
@@ -77,7 +82,7 @@ final class BackupRunner
     /**
      * @return array{BackupSummary, list<string>}
      */
-    private function backup(SnapshotStore $restic, Config $config, ?DumpRun $dumps, Logger $log): array
+    private function backup(SnapshotStore $restic, Config $config, ?DumpRun $dumps, Logger $log, RetryPolicy $lockPolicy): array
     {
         $excludes = SecretFile::create('arkhive-exclude-', ExclusionConverter::excludeFile($config->resticExcludes));
         $cleanupId = $this->cleanup->add('remove the exclude file', $excludes->remove(...));
@@ -98,9 +103,14 @@ final class BackupRunner
 
         $log->info('Backing up ' . implode(' ', $paths));
         try {
-            $outcome = $restic->backup($request, static function (BackupStatus $status) use ($log): void {
-                $log->progress($status->describe());
-            });
+            $outcome = $this->retrier->whileLocked(
+                static fn () => $restic->backup($request, static function (BackupStatus $status) use ($log): void {
+                    $log->progress($status->describe());
+                }),
+                $lockPolicy,
+                'restic backup',
+                $log,
+            );
         } finally {
             $log->endProgress();
             $this->cleanup->runOne($cleanupId);

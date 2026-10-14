@@ -9,6 +9,10 @@ use Mfonte\Arkhive\Application\Port\Notifier;
 use Mfonte\Arkhive\Domain\Configuration\NotifyConfig;
 use Mfonte\Arkhive\Domain\Notification\Notification;
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
+use Mfonte\Arkhive\Exceptions\TemporaryException;
+use Mfonte\Arkhive\Exceptions\UnavailableException;
+use Symfony\Component\Mailer\Exception\TransportException;
+use Symfony\Component\Mailer\Exception\UnexpectedResponseException;
 use Symfony\Component\Mailer\Mailer;
 use Symfony\Component\Mailer\Transport;
 use Symfony\Component\Mailer\Transport\TransportInterface;
@@ -56,7 +60,9 @@ final class SmtpNotifier implements Notifier
     }
 
     /**
-     * @throws ArkhiveException when the message could not be delivered (the caller turns it into exit 3)
+     * @throws TemporaryException   when the server answers 4xx (greylisting, rate limit): worth retrying
+     * @throws UnavailableException when the server cannot be reached: worth retrying
+     * @throws ArkhiveException     when the message is refused for good (the caller turns it into exit 3)
      */
     public function send(NotifyConfig $config, Notification $notification): void
     {
@@ -68,12 +74,33 @@ final class SmtpNotifier implements Notifier
         try {
             (new Mailer(($this->transportFactory)(self::dsn($config))))->send($email);
         } catch (Throwable $e) {
-            $message = $config->password === null || $config->password === '' ? $e->getMessage() : str_replace([$config->password, rawurlencode($config->password)], '***', $e->getMessage());
-
-            throw new ArkhiveException(
-                "The notification e-mail could not be sent through {$config->host}:{$config->port}: {$message}",
-                hint: 'Check SMTP_HOST, SMTP_PORT, SMTP_ENCRYPTION, SMTP_USER and SMTP_PASSWORD',
-            );
+            throw self::failure($config, $e);
         }
+    }
+
+    public static function failure(NotifyConfig $config, Throwable $e): ArkhiveException
+    {
+        $detail = $config->password === null || $config->password === '' ? $e->getMessage() : str_replace([$config->password, rawurlencode($config->password)], '***', $e->getMessage());
+        $message = "The notification e-mail could not be sent through {$config->host}:{$config->port}: {$detail}";
+        $hint = 'Check SMTP_HOST, SMTP_PORT, SMTP_ENCRYPTION, SMTP_USER and SMTP_PASSWORD';
+        if ($e instanceof UnexpectedResponseException && $e->getCode() >= 400 && $e->getCode() < 500) {
+            return new TemporaryException($message, 'The SMTP server refused the message for now (' . $e->getCode() . '); it usually accepts it later');
+        }
+        if ($e instanceof TransportException && !$e instanceof UnexpectedResponseException && self::unreachable($e->getMessage())) {
+            return UnavailableException::network($message, $hint);
+        }
+
+        return new ArkhiveException($message, hint: $hint);
+    }
+
+    private static function unreachable(string $message): bool
+    {
+        foreach (['Connection could not be established', 'Connection to ', 'Unable to connect', 'timed out', 'Connection refused', 'Connection reset', 'getaddrinfo'] as $needle) {
+            if (stripos($message, $needle) !== false) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

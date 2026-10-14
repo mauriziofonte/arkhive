@@ -10,6 +10,12 @@ namespace Mfonte\Arkhive\Domain\Configuration;
  */
 final readonly class ResticSettings
 {
+    /** seconds to wait for a repository locked by another run (LOCK_WAIT) */
+    public const DEFAULT_LOCK_WAIT = 300;
+
+    /**
+     * @param int $lockWait seconds to wait for a lock held by another run; 0 fails at once
+     */
     public function __construct(
         public string $repository,
         public string $passwordFile,
@@ -17,6 +23,7 @@ final readonly class ResticSettings
         public string $binary = 'restic',
         public string $host = '',
         public string $compression = 'auto',
+        public int $lockWait = self::DEFAULT_LOCK_WAIT,
     ) {
     }
 }

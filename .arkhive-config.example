@@ -25,6 +25,9 @@ RESTIC_PASSWORD_FILE=/etc/arkhive/restic-password
 #RESTIC_KEEP_WEEKLY=4
 #RESTIC_KEEP_MONTHLY=6
 #RESTIC_CHECK_SUBSET=5%
+# Seconds to wait for a repository locked by another run (another ArkHive run, or restic on
+# another host); 0 fails at once with exit 75.
+#LOCK_WAIT=300
 
 # Database dumps: one plain .sql file per database, written to DUMP_DIRECTORY (a dedicated directory,
 # emptied after each successful backup) and included in the snapshot.
