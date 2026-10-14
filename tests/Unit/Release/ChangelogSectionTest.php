@@ -78,6 +78,14 @@ final class ChangelogSectionTest extends TestCase
         self::assertStringEndsWith("has no non-empty section \"## [1.7.0]\"\n", $result->stderr);
     }
 
+    public function testTheRepositoryChangelogHasTheCurrentVersion(): void
+    {
+        $version = (require __DIR__ . '/../../../config/app.php')['version'];
+        $result = self::script([PHP_BINARY, self::SCRIPT, __DIR__ . '/../../../CHANGELOG.md', $version]);
+
+        self::assertSame(0, $result->exitCode, $result->stderr);
+    }
+
     public function testUsage(): void
     {
         self::assertSame(2, self::script([PHP_BINARY, self::SCRIPT])->exitCode);
