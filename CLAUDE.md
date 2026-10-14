@@ -1,7 +1,7 @@
 # ArkHive: instructions for coding agents
 
 - Laravel Zero CLI distributed as a PHAR. Entry point `arkhive`, commands in `app/Commands/`, logic in `app/Services/`, helpers in `app/helpers.php`.
-- Current work: release 2.0 (restic backend, guided restore, execution-context awareness, Linux portability, release automation, self-update). The specification is `docs/2.0-RESTIC-SPEC.md`: follow it; if something in it is wrong or impossible, say so in the PR description instead of working around it.
+- Current work: release 2.1 (systemd interoperability, journald/syslog logging, resilience, sysexits exit codes, Domain-Driven layout, restic compatibility from Debian 11). The plan is `docs/2.1-PLAN.md`; `docs/2.0-RESTIC-SPEC.md` remains the reference for everything the plan does not change. If something in either is wrong or impossible, say so in the PR description instead of working around it.
 - The bar is a serious, dependable product: every behaviour in the spec is covered by tests; a feature without tests is not done.
 - Runtime target PHP 8.4 (minimum 8.3: Laravel Zero 13). If `php -v` shows an older version, install 8.4 first (`ppa:ondrej/php`) and run everything with it.
 - Tests: `vendor/bin/phpunit` (unit), `tests/e2e/run.sh` (Docker: SFTP server, MariaDB, PostgreSQL, fake releases server), distro matrix and quality gates as in spec §13. All relevant ones must pass before any commit that claims a feature done. Never test against a real host or the real GitHub Releases API.
