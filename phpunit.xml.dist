@@ -32,6 +32,9 @@
         <testsuite name="architecture">
             <directory>tests/Architecture</directory>
         </testsuite>
+        <testsuite name="compat">
+            <directory>tests/Compat</directory>
+        </testsuite>
         <testsuite name="e2e">
             <directory>tests/e2e</directory>
         </testsuite>
