@@ -15,10 +15,14 @@ use Mfonte\Arkhive\Services\Context\Terminal;
 use Mfonte\Arkhive\Services\Output\LogFile;
 use Mfonte\Arkhive\Services\Output\Logger;
 use Mfonte\Arkhive\Services\Output\LogStream;
+use Mfonte\Arkhive\Services\Output\UsageErrors;
 use Mfonte\Arkhive\Services\Process\Cleanup;
 use Mfonte\Arkhive\Services\Process\Signals;
 use Mfonte\Arkhive\Support\Clock;
+use Symfony\Component\Console\Exception\ExceptionInterface;
+use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
+use Symfony\Component\Console\Output\OutputInterface;
 use Throwable;
 
 /**
@@ -41,6 +45,20 @@ abstract class ArkhiveCommand extends Command
         $this->addOption('interactive', null, InputOption::VALUE_NONE, 'Force interactive mode (needs a terminal)');
         $this->addOption('log-format', null, InputOption::VALUE_REQUIRED, 'Log format: text or json', 'text');
         $this->addOption('log-file', null, InputOption::VALUE_REQUIRED, 'Also append log lines to this file (rotated by size)');
+    }
+
+    /**
+     * Options and arguments are bound before handle(): an unknown option, a missing or an extra
+     * argument is a usage error (exit 2), not the console's generic failure (exit 1).
+     */
+    #[\Override]
+    public function run(InputInterface $input, OutputInterface $output): int
+    {
+        try {
+            return parent::run($input, $output);
+        } catch (ExceptionInterface $e) {
+            return UsageErrors::report($e->getMessage(), "See the options with: arkhive {$this->getName()} --help");
+        }
     }
 
     final public function handle(Terminal $terminal, LogStream $stream, Clock $clock, Signals $signals, Cleanup $cleanup): int
