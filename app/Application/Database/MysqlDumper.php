@@ -11,7 +11,6 @@ use Mfonte\Arkhive\Application\System\Dependencies;
 use Mfonte\Arkhive\Domain\Backup\DumpResult;
 use Mfonte\Arkhive\Domain\Configuration\MysqlConfig;
 use Mfonte\Arkhive\Domain\System\Dependency;
-use Mfonte\Arkhive\Exceptions\ArkhiveException;
 use Mfonte\Arkhive\Exceptions\SoftwareException;
 use Mfonte\Arkhive\Exceptions\UnavailableException;
 
@@ -120,7 +119,7 @@ final class MysqlDumper
         if (!$result->succeeded()) {
             @unlink($partial);
 
-            throw new ArkhiveException($result->failure("MySQL dump of database {$database}"));
+            throw DatabaseErrors::exception($result, "MySQL dump of database {$database}");
         }
         if (!is_file($partial) || !@rename($partial, $path)) {
             @unlink($partial);

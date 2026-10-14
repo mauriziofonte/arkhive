@@ -13,6 +13,8 @@ All notable changes to ArkHive are documented in this file. The format follows
   enough space 73 (were 4), a lock held by another run 75, an unreachable repository or a missing
   tool 69, a wrong password 77, a failed `drill` or repository check 65 (were 1). 0, 1, 3, 10, 130
   and 143 keep their meaning. systemd shows the names (`status=75/TEMPFAIL`).
+- A failed database dump or import exits with its cause: server down 69, credentials refused 77,
+  unknown database 66, disk full 74, timeout 75 (all were 1).
 
 ## [2.0.0-rc.1] - 2026-10-14
 

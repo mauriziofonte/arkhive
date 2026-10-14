@@ -103,7 +103,7 @@ final class OperationsTest extends E2eTestCase
         file_put_contents($other, "another-password-placeholder\n");
         chmod($other, 0600);
         $wrong = self::arkhive(['init', '--config', $this->writeConfig("{$this->dir}/config", ['BACKUP_PATHS' => $this->tree, 'RESTIC_REPOSITORY' => $repository, 'RESTIC_PASSWORD_FILE' => $other])], $this->runEnv());
-        self::assertSame(1, $wrong->exitCode, $wrong->output());
+        self::assertSame(ExitCode::NO_PERMISSION, $wrong->exitCode, $wrong->output());
         self::assertStringContainsString("error Wrong password for the restic repository {$repository}", $wrong->stderr);
     }
 

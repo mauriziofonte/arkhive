@@ -12,7 +12,6 @@ use Mfonte\Arkhive\Domain\Backup\DumpResult;
 use Mfonte\Arkhive\Domain\Configuration\PgsqlConfig;
 use Mfonte\Arkhive\Domain\System\Dependency;
 use Mfonte\Arkhive\Domain\System\InstallHints;
-use Mfonte\Arkhive\Exceptions\ArkhiveException;
 use Mfonte\Arkhive\Exceptions\SoftwareException;
 use Mfonte\Arkhive\Exceptions\UnavailableException;
 
@@ -113,7 +112,7 @@ final class PgsqlDumper
                 ? 'pg_dump must be the same major version as the server or newer: ' . InstallHints::forDependency(Dependency::PgDump, $this->dependencies->distro())
                 : null;
 
-            throw new ArkhiveException($result->failure("PostgreSQL dump of database {$database}"), hint: $hint);
+            throw DatabaseErrors::exception($result, "PostgreSQL dump of database {$database}", $hint);
         }
         if (!is_file($partial) || !@rename($partial, $path)) {
             @unlink($partial);

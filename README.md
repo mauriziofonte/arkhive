@@ -516,7 +516,7 @@ ArkHive follows the `sysexits.h` convention, so scripts and systemd can tell a c
 | 10 | UPDATE | `self-update --check`: an update is available |
 | 64 | USAGE | Bad option or argument, a required answer missing in unattended mode, `--in-place` without `--force`, `self-update` across a major version without `--allow-major` |
 | 65 | DATAERR | Data verified and found wrong: `maintain` check errors, a failed `drill`, a damaged 1.x archive, a download that does not match its checksum |
-| 66 | NOINPUT | Something named does not exist: configuration file, password file, snapshot, path in a snapshot, dump, release |
+| 66 | NOINPUT | Something named does not exist: configuration file, password file, snapshot, path in a snapshot, dump, database, release |
 | 69 | UNAVAILABLE | A service or dependency is unavailable: repository unreachable or missing, restic or a dump tool missing or too old, database server down, PHP too old or missing an extension |
 | 70 | SOFTWARE | Internal error, or output of restic that ArkHive cannot understand |
 | 71 | OSERR | The operating system refused to start a process |
@@ -524,7 +524,7 @@ ArkHive follows the `sysexits.h` convention, so scripts and systemd can tell a c
 | 74 | IOERR | A write failed because a filesystem is full (repository, dump staging, extraction) |
 | 75 | TEMPFAIL | Temporary, retry later: another ArkHive run or restic holds the repository lock, a timeout, the GitHub API rate limit |
 | 76 | PROTOCOL | The releases API answered something that is not a valid release |
-| 77 | NOPERM | Wrong repository or archive password, permission denied, a password file readable by others or owned by another user |
+| 77 | NOPERM | Wrong repository or archive password, database credentials refused, permission denied, a password file readable by others or owned by another user |
 | 78 | CONFIG | Configuration missing or invalid, including removed 1.x keys |
 | 130 | SIGINT | Interrupted by SIGINT (cleanup done, lock released) |
 | 143 | SIGTERM | Interrupted by SIGTERM (cleanup done, lock released) |

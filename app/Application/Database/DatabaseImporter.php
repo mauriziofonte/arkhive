@@ -13,7 +13,6 @@ use Mfonte\Arkhive\Domain\Configuration\Config;
 use Mfonte\Arkhive\Domain\Configuration\MysqlConfig;
 use Mfonte\Arkhive\Domain\Configuration\PgsqlConfig;
 use Mfonte\Arkhive\Domain\System\Dependency;
-use Mfonte\Arkhive\Exceptions\ArkhiveException;
 use Mfonte\Arkhive\Exceptions\ConfigException;
 use Mfonte\Arkhive\Exceptions\RefusedException;
 use Mfonte\Arkhive\Exceptions\UnavailableException;
@@ -116,7 +115,7 @@ final class DatabaseImporter
         }
         $result = $this->runner->run($command);
         if (!$result->succeeded()) {
-            throw new ArkhiveException($result->failure("Importing the dump into database {$name}"));
+            throw DatabaseErrors::exception($result, "Importing the dump into database {$name}");
         }
 
         return $result;

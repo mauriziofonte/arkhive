@@ -10,6 +10,7 @@ use Mfonte\Arkhive\Application\Process\Cleanup;
 use Mfonte\Arkhive\Application\Process\Command;
 use Mfonte\Arkhive\Domain\Configuration\PgsqlConfig;
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
+use Mfonte\Arkhive\ExitCode;
 use PHPUnit\Framework\TestCase;
 use Tests\Support\FakeBinaries;
 use Tests\Support\FakeProcessRunner;
@@ -132,7 +133,8 @@ final class PgsqlDumperTest extends TestCase
             self::fail('expected a failure');
         } catch (ArkhiveException $e) {
             self::assertSame('PostgreSQL dump of database inventory failed (pg_dump exit 1): pg_dump: error: connection to server at "pg.example.com", port 5433 failed: FATAL:  password authentication failed for user "backup"', $e->getMessage());
-            self::assertNull($e->hint());
+            self::assertSame(ExitCode::NO_PERMISSION, $e->exitCode());
+            self::assertNotNull($e->hint());
         }
         self::assertSame([], glob($this->staging->directory . '/pgsql/*') ?: []);
     }
