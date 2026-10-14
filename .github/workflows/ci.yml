@@ -182,6 +182,27 @@ jobs:
           grep -q '^ArkHive needs PHP 8.3 or newer; this is PHP ${{ matrix.php }}' err.txt
           grep -q 'ppa:ondrej/php' err.txt
 
+  systemd:
+    name: Units under a real systemd
+    needs: phar
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2.37.2
+        with:
+          php-version: '8.4'
+          extensions: pcntl, posix, mbstring, curl, zlib
+          coverage: none
+      - name: Install the pinned restic release
+        run: sudo tests/bin/install-restic.sh /usr/local/bin/restic
+      - uses: actions/download-artifact@v4
+        with:
+          name: arkhive-phar
+          path: build
+      - name: tests/systemd/run.sh
+        # the runner's own systemd (PID 1): schedule --install, units that succeed and fail, the journal
+        run: sudo tests/systemd/run.sh build/arkhive.phar
+
   e2e:
     name: End-to-end (Docker)
     needs: phar

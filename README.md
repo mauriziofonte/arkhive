@@ -755,6 +755,8 @@ Requires PHP 8.3+ (CI runs 8.3 and 8.4), Composer, and restic in `PATH` for the 
 composer install
 vendor/bin/phpunit                                    # unit and feature tests
 sudo -E tests/e2e/run.sh                              # end-to-end, Docker: SFTP, MariaDB, PostgreSQL, fake releases server
+ARKHIVE_TEST_RESTIC=/path/to/restic vendor/bin/phpunit --testsuite compat   # the commands against one restic release
+sudo tests/systemd/run.sh build/arkhive.phar          # the units under the host's systemd (throw-away hosts only)
 vendor/bin/php-cs-fixer check --diff                  # coding standard (PSR-12)
 vendor/bin/phpstan analyse --memory-limit=1G          # static analysis, level 8
 vendor/bin/phpunit --coverage-clover build/coverage/clover.xml && php tests/bin/coverage-gate.php build/coverage/clover.xml 90
@@ -762,7 +764,7 @@ vendor/bin/infection --threads=max --show-mutations=0 # mutation testing, MSI >=
 tests/bin/build-phar.sh build/arkhive.phar            # build the PHAR locally (box), then: php build/arkhive.phar --version
 ```
 
-The e2e suite builds the PHAR, generates a throw-away SSH key and repository password, starts the services with `docker compose` and tears them down; nothing touches a real host or the real GitHub API. CI runs it as root so the ownership cases run (`E2E_FILTER` narrows it to some tests). The distribution matrix (`.github/workflows/distro.yml`) runs the built PHAR in a container of every supported distribution, set up with `tests/distro/setup.sh`.
+The e2e suite builds the PHAR, generates a throw-away SSH key and repository password, starts the services with `docker compose` and tears them down; nothing touches a real host or the real GitHub API. CI runs it as root so the ownership cases run (`E2E_FILTER` narrows it to some tests). The distribution matrix (`.github/workflows/distro.yml`) runs the built PHAR in a container of every supported distribution, set up with `tests/distro/setup.sh`. `tests/systemd/run.sh` (CI job `systemd`, on the runner's own systemd) installs the units with `schedule --install`, runs a backup unit that succeeds and one that fails, and checks the unit status ArkHive reports, the journal fields and `MESSAGE_ID` events, `OnFailure=`, `schedule --status`, the message catalog and the syslog target.
 
 Releases: the PHAR is never committed. When the maintainer pushes a `v*` tag, `.github/workflows/release.yml` checks that the tag equals the version in `config/app.php`, runs the full CI, builds the PHAR, checks that it prints the tag, writes `arkhive.phar.sha256`, runs the distribution matrix on amd64 and arm64, attests the build provenance and publishes the GitHub Release with the notes of that version from `CHANGELOG.md`. Tags with a `-` (e.g. `v2.0.0-rc.1`) are published as pre-releases.
 
