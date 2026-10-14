@@ -530,7 +530,7 @@ ArkHive follows the `sysexits.h` convention, so scripts and systemd can tell a c
 | 70 | SOFTWARE | Internal error, or output of restic that ArkHive cannot understand |
 | 71 | OSERR | The operating system refused to start a process |
 | 73 | CANTCREAT | An output cannot be created: non-empty restore target, not enough space, an existing database for `--import-as`, an unwritable log file |
-| 74 | IOERR | A write failed because a filesystem is full (repository, dump staging, extraction) |
+| 74 | IOERR | A write failed because a filesystem is full (local repository, restic cache, dump staging, restore target, extraction); the message gives the free space found on each |
 | 75 | TEMPFAIL | Temporary, retry later: another ArkHive run or restic holds the repository lock, a timeout, the GitHub API rate limit |
 | 76 | PROTOCOL | The releases API answered something that is not a valid release |
 | 77 | NOPERM | Wrong repository or archive password, database credentials refused, permission denied, a password file readable by others or owned by another user |

@@ -26,4 +26,15 @@ final readonly class ResticSettings
         public int $lockWait = self::DEFAULT_LOCK_WAIT,
     ) {
     }
+
+    /**
+     * The directory of a repository on a local filesystem ("/srv/restic", "local:/srv/restic"),
+     * null for a remote one.
+     */
+    public function localPath(): ?string
+    {
+        $path = str_starts_with($this->repository, 'local:') ? substr($this->repository, 6) : $this->repository;
+
+        return str_starts_with($path, '/') ? $path : null;
+    }
 }

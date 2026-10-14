@@ -122,6 +122,21 @@ final class SystemProcessRunnerTest extends TestCase
         self::assertStringContainsString('the output stream was closed before ' . basename(PHP_BINARY) . ' finished', $result->stderr);
     }
 
+    public function testAFullOutputFilesystemIsNamedAsSuch(): void
+    {
+        if (!is_writable('/dev/full')) {
+            self::markTestSkipped('needs /dev/full');
+        }
+        $sink = fopen('/dev/full', 'wb');
+        self::assertIsResource($sink);
+
+        $result = $this->runner->run(self::php('while (true) { echo str_repeat("x", 65536); }')->withOutput($sink)->withTimeout(20));
+        fclose($sink);
+
+        self::assertFalse($result->timedOut);
+        self::assertStringContainsString('the output stream was closed before ' . basename(PHP_BINARY) . ' finished (No space left on device)', $result->stderr);
+    }
+
     public function testLargeInputAndOutputDoNotDeadlock(): void
     {
         $input = str_repeat("0123456789abcdef\n", 200000);

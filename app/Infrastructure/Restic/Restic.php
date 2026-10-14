@@ -8,6 +8,7 @@ use Mfonte\Arkhive\Application\Port\ProcessRunner;
 use Mfonte\Arkhive\Application\Port\SnapshotStore;
 use Mfonte\Arkhive\Application\Process\Command;
 use Mfonte\Arkhive\Application\Process\ProcessResult;
+use Mfonte\Arkhive\Application\System\DiskSpace;
 use Mfonte\Arkhive\Domain\Configuration\ResticSettings;
 use Mfonte\Arkhive\Domain\Exclusion\ResticPatternMatcher;
 use Mfonte\Arkhive\Domain\Repository\BackupOutcome;
@@ -25,6 +26,7 @@ use Mfonte\Arkhive\Domain\Repository\RestoreRequest;
 use Mfonte\Arkhive\Domain\Repository\SftpLocation;
 use Mfonte\Arkhive\Domain\Repository\Snapshot;
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
+use Mfonte\Arkhive\Exceptions\IoException;
 use Mfonte\Arkhive\Exceptions\SoftwareException;
 use Mfonte\Arkhive\Exceptions\UnavailableException;
 
@@ -98,8 +100,9 @@ final class Restic implements SnapshotStore
      * @param (callable(string): void)|null $onStdoutLine
      * @param list<int>                     $acceptedExitCodes
      * @param resource|null                 $output            receives stdout as it arrives (restic dump)
+     * @param list<string>                  $writes            local paths written besides the repository and the cache (a restore target)
      */
-    public function run(array $args, string $what, array $env = [], ?callable $onStdoutLine = null, array $acceptedExitCodes = [0], ?float $timeout = null, ?callable $onStderrLine = null, $output = null): ProcessResult
+    public function run(array $args, string $what, array $env = [], ?callable $onStdoutLine = null, array $acceptedExitCodes = [0], ?float $timeout = null, ?callable $onStderrLine = null, $output = null, array $writes = []): ProcessResult
     {
         $command = $this->command($args, $env);
         if ($timeout !== null) {
@@ -110,10 +113,24 @@ final class Restic implements SnapshotStore
         }
         $result = $this->runner->run($command, $onStdoutLine, $onStderrLine);
         if (!in_array($result->exitCode, $acceptedExitCodes, true) || $result->timedOut) {
-            throw ResticErrors::exception($result, $what, $this->settings);
+            $failure = ResticErrors::exception($result, $what, $this->settings);
+
+            throw $failure instanceof IoException ? DiskSpace::annotate($failure, $this->localPaths($writes)) : $failure;
         }
 
         return $result;
+    }
+
+    /**
+     * The local directories a failed write may have filled: a local repository, the cache, $writes.
+     *
+     * @param list<string> $writes
+     *
+     * @return list<string>
+     */
+    private function localPaths(array $writes): array
+    {
+        return array_values(array_filter([...$writes, $this->settings->localPath(), $this->cacheDirectory], static fn (?string $path): bool => $path !== null));
     }
 
     /**
@@ -339,7 +356,10 @@ final class Restic implements SnapshotStore
      */
     public function dump(string $snapshotId, string $path, $output): void
     {
-        $this->run(['dump', '--', $snapshotId, $path], "Reading {$path} from snapshot {$snapshotId}", output: $output);
+        $meta = stream_get_meta_data($output);
+        // a file on this host: its filesystem is the one a "no space left" concerns
+        $file = $meta['wrapper_type'] === 'plainfile' ? ($meta['uri'] ?? null) : null;
+        $this->run(['dump', '--', $snapshotId, $path], "Reading {$path} from snapshot {$snapshotId}", output: $output, writes: $file === null ? [] : [$file]);
     }
 
     public function backup(BackupRequest $request, ?callable $onStatus = null): BackupOutcome
@@ -437,6 +457,7 @@ final class Restic implements SnapshotStore
                     $summary = ResticOutput::restoreProgress($data);
                 }
             },
+            writes: [$request->target],
         );
 
         if ($summary === null && !$capabilities->jsonRestore()) {

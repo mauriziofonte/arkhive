@@ -8,6 +8,7 @@ use Mfonte\Arkhive\Application\Output\Logger;
 use Mfonte\Arkhive\Application\Port\ProcessRunner;
 use Mfonte\Arkhive\Application\Process\Cleanup;
 use Mfonte\Arkhive\Application\System\Dependencies;
+use Mfonte\Arkhive\Application\System\DiskSpace;
 use Mfonte\Arkhive\Domain\Backup\DumpFailure;
 use Mfonte\Arkhive\Domain\Configuration\Config;
 use Mfonte\Arkhive\Domain\Shared\Bytes;
@@ -85,7 +86,7 @@ final class DatabaseDumps
                 }
                 foreach ($databases as $database) {
                     $log->info("Dumping {$engine} database {$database}");
-                    $result = $this->attempt($engine, $database, static fn () => $dumper->dump($database, $staging), $failures, $log);
+                    $result = $this->attempt($engine, $database, static fn () => DiskSpace::whenFull(static fn () => $dumper->dump($database, $staging), $staging->directory), $failures, $log);
                     if ($result === null) {
                         continue;
                     }

@@ -110,7 +110,8 @@ final class SystemProcessRunner implements ProcessRunner
         $stderr = '';
         $partial = [1 => '', 2 => ''];
         $timedOut = false;
-        $outputClosed = false;
+        /** @var string|null $outputClosed why the output stream stopped taking data */
+        $outputClosed = null;
         $killAt = null;
         $exitCode = null;
 
@@ -149,10 +150,11 @@ final class SystemProcessRunner implements ProcessRunner
                         }
                         if ($fd === 1) {
                             if ($command->output !== null) {
-                                if (!self::copy($command->output, $chunk)) {
-                                    // the reader went away (e.g. `| head`): stop the producer instead of filling memory
+                                $copyError = self::copy($command->output, $chunk);
+                                if ($copyError !== null) {
+                                    // the reader went away (e.g. `| head`) or the file filled the disk: stop the producer instead of filling memory
                                     unset($readers[$fd]);
-                                    $outputClosed = true;
+                                    $outputClosed = $copyError;
                                     proc_terminate($process, InterruptedException::SIGTERM);
                                 }
                             } elseif ($onStdoutLine === null) {
@@ -195,29 +197,35 @@ final class SystemProcessRunner implements ProcessRunner
         if (strlen($stderr) > self::STDERR_LIMIT) {
             $stderr = substr($stderr, -self::STDERR_LIMIT);
         }
-        if ($outputClosed) {
-            $stderr .= ($stderr === '' || str_ends_with($stderr, "\n") ? '' : "\n") . "ArkHive: the output stream was closed before {$command->name()} finished\n";
+        if ($outputClosed !== null) {
+            $why = $outputClosed === '' ? '' : " ({$outputClosed})";
+            $stderr .= ($stderr === '' || str_ends_with($stderr, "\n") ? '' : "\n") . "ArkHive: the output stream was closed before {$command->name()} finished{$why}\n";
         }
 
         return [$stdout, $stderr, $exitCode, $timedOut];
     }
 
     /**
+     * Writes all of $chunk; null when done, else why not ("No space left on device", or "" unknown).
+     *
      * @param resource $stream
      */
-    private static function copy($stream, string $chunk): bool
+    private static function copy($stream, string $chunk): ?string
     {
         $offset = 0;
         $length = strlen($chunk);
         while ($offset < $length) {
+            error_clear_last();
             $written = @fwrite($stream, substr($chunk, $offset));
             if ($written === false || $written === 0) {
-                return false;
+                $error = error_get_last()['message'] ?? '';
+
+                return preg_match('/errno=\d+ (.+)$/', $error, $m) === 1 ? $m[1] : '';
             }
             $offset += $written;
         }
 
-        return true;
+        return null;
     }
 
     /**

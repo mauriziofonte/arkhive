@@ -6,9 +6,12 @@ namespace Tests\Unit\Infrastructure\Restic;
 
 use Mfonte\Arkhive\Application\Process\Command;
 use Mfonte\Arkhive\Application\Process\ProcessResult;
+use Mfonte\Arkhive\Application\System\DiskSpace;
 use Mfonte\Arkhive\Domain\Configuration\ResticSettings;
 use Mfonte\Arkhive\Domain\Repository\BackupStatus;
+use Mfonte\Arkhive\Domain\Repository\RestoreRequest;
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
+use Mfonte\Arkhive\Exceptions\IoException;
 use Mfonte\Arkhive\ExitCode;
 use Mfonte\Arkhive\Infrastructure\Restic\Restic;
 use Mfonte\Arkhive\Infrastructure\Restic\ResticErrors;
@@ -203,6 +206,59 @@ final class ResticTest extends TestCase
 
         $local = new Restic(self::settings('/srv/restic-repo'), '/usr/bin/restic', new FakeProcessRunner());
         self::assertSame(['/usr/bin/restic', 'cat', 'config'], $local->command(['cat', 'config'])->argv);
+    }
+
+    public function testAFullFilesystemNamesTheFreeSpaceOfEachLocalPathWritten(): void
+    {
+        $dir = $this->tempDir();
+        mkdir("{$dir}/repo");
+        mkdir("{$dir}/target");
+        $runner = (new FakeProcessRunner())->on('restic', static fn (Command $command): array => match ($command->argv[1]) {
+            'version' => [0, "restic 0.19.1 compiled with go1.24 on linux/amd64\n", ''],
+            default => [1, '', "Fatal: write {$dir}/x: no space left on device\n"],
+        });
+        $restic = new Restic(self::settings("local:{$dir}/repo"), '/usr/bin/restic', $runner, "{$dir}/cache/restic");
+        $free = '\d+(?:\.\d\d [KMGTPE]iB| B) free in ';
+        $quoted = preg_quote($dir, '~');
+
+        try {
+            $restic->run(['backup', '/srv'], 'restic backup');
+            self::fail('expected a failure');
+        } catch (IoException $e) {
+            self::assertMatchesRegularExpression("~^restic backup failed \\(restic exit 1\\): Fatal: write {$quoted}/x: no space left on device \\({$free}{$quoted}/repo, {$free}{$quoted}\\)$~", $e->getMessage());
+        }
+        try {
+            $restic->restore(new RestoreRequest(str_repeat('a', 64), "{$dir}/target/new", 'restic restore'));
+            self::fail('expected a failure');
+        } catch (IoException $e) {
+            self::assertMatchesRegularExpression("~ \\({$free}{$quoted}/target, {$free}{$quoted}/repo, {$free}{$quoted}\\)$~", $e->getMessage(), 'the restore target first');
+        }
+        $file = "{$dir}/target/shop.sql";
+        $handle = fopen($file, 'xb');
+        self::assertIsResource($handle);
+        try {
+            $restic->dump(str_repeat('a', 64), '/srv/dumps/mysql/shop.sql', $handle);
+            self::fail('expected a failure');
+        } catch (IoException $e) {
+            self::assertMatchesRegularExpression("~ \\({$free}{$quoted}/target, {$free}{$quoted}/repo, {$free}{$quoted}\\)$~", $e->getMessage(), 'the file written by restic dump');
+        } finally {
+            fclose($handle);
+        }
+
+        $remote = new Restic(self::settings('/srv/r'), '/usr/bin/restic', (new FakeProcessRunner())->on('restic', static fn (): array => [1, '', "Fatal: no space left on device\n"]));
+        try {
+            $remote->run(['backup', '/srv'], 'restic backup');
+            self::fail('expected a failure');
+        } catch (IoException $e) {
+            self::assertSame('restic backup failed (restic exit 1): Fatal: no space left on device (' . DiskSpace::describe('/srv/r') . ')', $e->getMessage());
+        }
+        $locked = new Restic(self::settings("{$dir}/repo"), '/usr/bin/restic', (new FakeProcessRunner())->on('restic', static fn (): array => [1, '', "Fatal: wrong password or no key found\n"]));
+        try {
+            $locked->run(['snapshots'], 'restic snapshots');
+            self::fail('expected a failure');
+        } catch (ArkhiveException $e) {
+            self::assertStringNotContainsString(' free in ', $e->getMessage(), 'only write failures');
+        }
     }
 
     public function testTheCacheDirectoryReachesResticAsResticCacheDir(): void

@@ -6,6 +6,7 @@ namespace Mfonte\Arkhive\Application\Restore;
 
 use DateTimeImmutable;
 use FilesystemIterator;
+use Mfonte\Arkhive\Application\System\DiskSpace;
 use Mfonte\Arkhive\Domain\Shared\Bytes;
 use Mfonte\Arkhive\Exceptions\PermissionException;
 use Mfonte\Arkhive\Exceptions\RefusedException;
@@ -104,19 +105,12 @@ final class TargetDirectory
      */
     public function existingAncestor(): string
     {
-        $path = $this->path;
-        while ($path !== '/' && !is_dir($path)) {
-            $path = dirname($path);
-        }
-
-        return $path;
+        return DiskSpace::nearestDirectory($this->path);
     }
 
     public function freeSpace(): ?int
     {
-        $free = @disk_free_space($this->existingAncestor());
-
-        return $free === false ? null : (int) $free;
+        return DiskSpace::available($this->path);
     }
 
     /**

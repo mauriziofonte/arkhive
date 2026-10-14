@@ -211,6 +211,7 @@ final class DatabaseDumpsTest extends TestCase
             self::fail('expected a failure');
         } catch (ArkhiveException $e) {
             self::assertSame(ExitCode::IO_ERROR, $e->exitCode());
+            self::assertMatchesRegularExpression('~No space left on device \(\d+(?:\.\d\d [KMGTPE]iB| B) free in ' . preg_quote($this->dumpDir, '~') . '[^,)]*\)$~', $e->getMessage(), 'the free space found in the dump directory');
         }
         self::assertSame([], glob("{$this->dumpDir}/*/*") ?: [], 'the MySQL dumps written before are gone');
         self::assertSame(0, $this->cleanup->pending());

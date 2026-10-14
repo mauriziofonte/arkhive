@@ -27,11 +27,15 @@ All notable changes to ArkHive are documented in this file. The format follows
   run of a job failed.
 - Under systemd, restic's cache goes in the unit's `CacheDirectory=` (`$CACHE_DIRECTORY/restic`)
   unless `RESTIC_CACHE_DIR` is set, so hardened units keep a writable, persistent cache.
+- A full filesystem (exit 74) is reported with the free space found on each local filesystem
+  involved: the dump directory, a local repository, the restic cache, the restore target.
 - `tests/Compat`: ArkHive's commands against a real restic (`ARKHIVE_TEST_RESTIC`), run in CI for
   every release from 0.11.0 to the current one, including an `sftp:` repository on a local sshd.
 
 ### Fixed
 
+- A database dump restored for `--import-as` into a full filesystem failed as "the output
+  stream was closed" (exit 1); it is now "No space left on device" (exit 74).
 - `sftp:` repositories failed on restic older than 0.16.1 ("option sftp.args is not known"), and
   `maintain` failed on restic older than 0.12 with the default `RESTIC_CHECK_SUBSET=5%`.
 - A repository of format 2 opened by restic older than 0.14 is reported as such (exit 69, with
