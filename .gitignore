@@ -9,3 +9,4 @@ reference.sh
 /build
 /.php-cs-fixer.cache
 /tests/e2e/work
+/builds

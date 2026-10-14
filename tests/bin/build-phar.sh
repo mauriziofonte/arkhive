@@ -10,8 +10,5 @@ version="${2:-$(php -r 'echo (require $argv[1])["version"];' "$root/config/app.p
 cd "$root"
 php -d phar.readonly=0 arkhive app:build --build-version "$version" --no-interaction arkhive.phar >/dev/null
 mv builds/arkhive.phar "$dest"
-# builds/ is still tracked until the 2.0 release work removes it: restore the committed file
-if git ls-files --error-unmatch builds/arkhive.phar >/dev/null 2>&1; then
-    git checkout -- builds/arkhive.phar
-fi
+rmdir builds 2>/dev/null || true
 php "$dest" --version
