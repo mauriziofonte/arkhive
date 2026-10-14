@@ -11,13 +11,15 @@ use Mfonte\Arkhive\Domain\Configuration\ResticSettings;
 use Mfonte\Arkhive\Domain\System\Dependency;
 
 /**
- * Finds the restic binary (RESTIC_BINARY, or restic in PATH) and builds the client.
+ * Finds the restic binary (RESTIC_BINARY, or restic in PATH) and builds the client; $cacheDirectory
+ * is the RESTIC_CACHE_DIR to give it (null: restic's own choice).
  */
 final class ResticFactory implements SnapshotStoreFactory
 {
     public function __construct(
         private readonly ProcessRunner $runner,
         private readonly Dependencies $dependencies,
+        private readonly ?string $cacheDirectory = null,
     ) {
     }
 
@@ -27,6 +29,6 @@ final class ResticFactory implements SnapshotStoreFactory
             ? $this->dependencies->require(Dependency::Restic, $purpose)
             : $this->dependencies->requireConfigured($settings->binary, Dependency::Restic, $purpose, 'RESTIC_BINARY');
 
-        return new Restic($settings, $binary, $this->runner);
+        return new Restic($settings, $binary, $this->runner, $this->cacheDirectory);
     }
 }

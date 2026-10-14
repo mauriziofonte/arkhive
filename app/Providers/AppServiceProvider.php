@@ -15,6 +15,8 @@ use Mfonte\Arkhive\Application\Port\SnapshotStoreFactory;
 use Mfonte\Arkhive\Application\Port\Terminal;
 use Mfonte\Arkhive\Application\Process\Cleanup;
 use Mfonte\Arkhive\Application\System\BinaryFinder;
+use Mfonte\Arkhive\Application\System\CacheDirectory;
+use Mfonte\Arkhive\Application\System\Dependencies;
 use Mfonte\Arkhive\Application\System\StateDirectory;
 use Mfonte\Arkhive\Domain\Shared\Clock;
 use Mfonte\Arkhive\Domain\System\Distro;
@@ -44,7 +46,12 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(Cleanup::class);
         $this->app->singleton(ProcessRunner::class, SystemProcessRunner::class);
         $this->app->singleton(BinaryFinder::class, static fn (): BinaryFinder => BinaryFinder::fromEnvironment());
-        $this->app->bind(SnapshotStoreFactory::class, ResticFactory::class);
+        // restic's cache goes in systemd's CacheDirectory= when the unit has one
+        $this->app->bind(SnapshotStoreFactory::class, static fn ($app): SnapshotStoreFactory => new ResticFactory(
+            $app->make(ProcessRunner::class),
+            $app->make(Dependencies::class),
+            CacheDirectory::restic($app->make(Terminal::class)->environment()),
+        ));
         $this->app->bind(Notifier::class, SmtpNotifier::class);
         // waits between retries end at once on SIGINT or SIGTERM
         $this->app->bind(Pause::class, SignalAwarePause::class);

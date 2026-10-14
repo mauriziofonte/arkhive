@@ -409,6 +409,8 @@ The latest backup of this host (`RESTIC_HOST`, or `--host`), its age, the snapsh
 
 Each `backup`, `maintain` and `drill` records how it ended in the state directory, one JSON file per job, replaced atomically: `$STATE_DIRECTORY` under systemd (`StateDirectory=arkhive`), otherwise `/var/lib/arkhive` as root and `$XDG_STATE_HOME/arkhive` (or `~/.local/state/arkhive`) for other users. A state directory that cannot be written is a warning, never a failure of the run.
 
+Under systemd with `CacheDirectory=arkhive`, restic keeps its cache in `$CACHE_DIRECTORY/restic` (so a unit with `ProtectHome=` still has one); an exported `RESTIC_CACHE_DIR` wins, and elsewhere restic uses its own default (`~/.cache/restic`).
+
 ### init
 
 ```sh

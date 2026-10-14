@@ -205,6 +205,16 @@ final class ResticTest extends TestCase
         self::assertSame(['/usr/bin/restic', 'cat', 'config'], $local->command(['cat', 'config'])->argv);
     }
 
+    public function testTheCacheDirectoryReachesResticAsResticCacheDir(): void
+    {
+        $restic = new Restic(self::settings('/srv/restic-repo'), '/usr/bin/restic', new FakeProcessRunner(), '/var/cache/arkhive/restic');
+
+        self::assertSame('/var/cache/arkhive/restic', $restic->command(['snapshots'])->env['RESTIC_CACHE_DIR']);
+        self::assertSame('/srv/c', $restic->command(['snapshots'], ['RESTIC_CACHE_DIR' => '/srv/c'])->env['RESTIC_CACHE_DIR'], 'a call can still choose');
+        $default = new Restic(self::settings('/srv/restic-repo'), '/usr/bin/restic', new FakeProcessRunner());
+        self::assertArrayNotHasKey('RESTIC_CACHE_DIR', $default->command(['snapshots'])->env, 'without one, restic keeps its own (and an exported RESTIC_CACHE_DIR)');
+    }
+
     /**
      * @return iterable<string, array{string, string, string}>
      */
@@ -318,6 +328,9 @@ final class ResticTest extends TestCase
         $factory = new ResticFactory(new FakeProcessRunner(), $dependencies);
 
         self::assertSame("{$dir}/bin/restic", $factory->create(self::settings(), 'to back up')->binary);
+        self::assertArrayNotHasKey('RESTIC_CACHE_DIR', $factory->create(self::settings('/srv/r'), 'to back up')->command(['snapshots'])->env);
+        $cached = new ResticFactory(new FakeProcessRunner(), $dependencies, '/var/cache/arkhive/restic');
+        self::assertSame('/var/cache/arkhive/restic', $cached->create(self::settings('/srv/r'), 'to back up')->command(['snapshots'])->env['RESTIC_CACHE_DIR']);
         $custom = new ResticSettings('/srv/r', '/etc/p', null, 'restic-0.19');
         self::assertSame("{$dir}/bin/restic-0.19", $factory->create($custom, 'to back up')->binary);
 

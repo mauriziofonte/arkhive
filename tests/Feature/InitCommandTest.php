@@ -60,6 +60,24 @@ final class InitCommandTest extends TestCase
         self::assertSame(['repository' => '/srv/restic-repo', 'id' => 'ee41a6504385d9d7e770eff36c1845d1b6ae457ffa7ec3452445d6832b025c00', 'created' => true, 'password_generated' => false], json_decode(Artisan::output(), true));
     }
 
+    public function testUnderSystemdResticKeepsItsCacheInTheUnitsCacheDirectory(): void
+    {
+        $seen = [];
+        $this->restic->on['init'] = static function (array $args, Command $command) use (&$seen): array {
+            $seen[] = $command->env['RESTIC_CACHE_DIR'] ?? 'unset';
+
+            return [0, '{"message_type":"initialized","id":"ee41a650","repository":"/srv/restic-repo"}' . "\n", ''];
+        };
+
+        self::assertSame(ExitCode::SUCCESS, Artisan::call('init', ['--config' => $this->writeConfig()]));
+        $this->terminal->env = ['CACHE_DIRECTORY' => '/var/cache/arkhive'];
+        self::assertSame(ExitCode::SUCCESS, Artisan::call('init', ['--config' => $this->writeConfig()]));
+        $this->terminal->env = ['CACHE_DIRECTORY' => '/var/cache/arkhive', 'RESTIC_CACHE_DIR' => '/srv/restic-cache'];
+        self::assertSame(ExitCode::SUCCESS, Artisan::call('init', ['--config' => $this->writeConfig()]));
+
+        self::assertSame(['unset', '/var/cache/arkhive/restic', 'unset'], $seen);
+    }
+
     public function testGeneratesAMissingPasswordFile(): void
     {
         $config = $this->writeConfig(['RESTIC_PASSWORD_FILE' => "{$this->dir}/new-password"]);

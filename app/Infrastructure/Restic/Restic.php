@@ -52,6 +52,7 @@ final class Restic implements SnapshotStore
         public readonly ResticSettings $settings,
         public readonly string $binary,
         private readonly ProcessRunner $runner,
+        private readonly ?string $cacheDirectory = null,
     ) {
     }
 
@@ -84,6 +85,7 @@ final class Restic implements SnapshotStore
             'RESTIC_PASSWORD' => null,
             'RESTIC_PASSWORD_COMMAND' => null,
             'RESTIC_REPOSITORY_FILE' => null,
+            ...($this->cacheDirectory === null ? [] : ['RESTIC_CACHE_DIR' => $this->cacheDirectory]),
             ...$env,
         ]);
     }
