@@ -89,6 +89,44 @@ jobs:
           name: infection
           path: build/infection/*.log
 
+  restic-compat:
+    name: restic ${{ matrix.restic }} compatibility
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        # docs/2.1-PLAN.md §3: Debian 11, Ubuntu 22.04, Debian 12, the 0.15 and 0.17 feature
+        # boundaries, Ubuntu 24.04, Debian 13 and the pinned current release
+        restic: ['0.11.0', '0.12.1', '0.14.0', '0.15.2', '0.16.4', '0.17.3', '0.18.0', 'pinned']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2.37.2
+        with:
+          php-version: '8.4'
+          extensions: pcntl, posix, mbstring, curl, zlib
+          coverage: none
+      - run: composer install --no-interaction --no-progress --prefer-dist
+      - name: Install OpenSSH (for the sftp case)
+        run: |
+          sudo apt-get update -q
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends openssh-server openssh-client
+      - name: Install restic ${{ matrix.restic }} and the pinned release
+        run: |
+          mkdir -p build/restic
+          tests/bin/install-restic.sh build/restic/restic-pinned
+          if [ "$VERSION" = pinned ]; then
+            cp build/restic/restic-pinned build/restic/restic
+          else
+            tests/bin/install-restic.sh build/restic/restic "$VERSION"
+          fi
+        env:
+          VERSION: ${{ matrix.restic }}
+      - name: tests/Compat
+        run: vendor/bin/phpunit --testsuite compat --log-junit build/compat-junit.xml
+        env:
+          ARKHIVE_TEST_RESTIC: ${{ github.workspace }}/build/restic/restic
+          ARKHIVE_TEST_RESTIC_V2: ${{ github.workspace }}/build/restic/restic-pinned
+
   phar:
     name: PHAR build and smoke test
     runs-on: ubuntu-24.04

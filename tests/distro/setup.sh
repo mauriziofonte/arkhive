@@ -6,12 +6,12 @@ set -eu
 
 . /etc/os-release
 case "$ID:${VERSION_ID:-}" in
-    debian:12*)
+    debian:11* | debian:12*)
         apt-get update -q
         DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends ca-certificates curl
         curl -fsSLo /tmp/sury-keyring.deb https://packages.sury.org/debsuryorg-archive-keyring.deb
         dpkg -i /tmp/sury-keyring.deb
-        echo "deb [signed-by=/usr/share/keyrings/debsuryorg-archive-keyring.gpg] https://packages.sury.org/php/ bookworm main" > /etc/apt/sources.list.d/php.list
+        echo "deb [signed-by=/usr/share/keyrings/debsuryorg-archive-keyring.gpg] https://packages.sury.org/php/ ${VERSION_CODENAME} main" > /etc/apt/sources.list.d/php.list
         apt-get update -q
         DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends php8.4-cli php8.4-mbstring php8.4-curl
         ;;

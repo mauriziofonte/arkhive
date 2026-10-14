@@ -19,12 +19,23 @@ permissions:
 
 jobs:
   distro:
-    name: ${{ matrix.image }} (${{ inputs.platform }})
+    name: ${{ matrix.image }} (${{ inputs.platform }})${{ matrix.restic == 'distro' && ', distro restic' || '' }}
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
         include:
+          # restic: pinned (the official static release) or distro (the distribution's own package,
+          # docs/2.1-PLAN.md §3: Debian 11 has 0.11.0, Ubuntu 22.04 0.12.1, Debian 12 0.14.0)
+          - image: debian:11
+            hint: 'Run: apt install restic'
+            restic: distro
+          - image: debian:12
+            hint: 'Run: apt install restic'
+            restic: distro
+          - image: ubuntu:22.04
+            hint: 'Run: apt install restic'
+            restic: distro
           - image: debian:12
             hint: 'Run: apt install restic'
           - image: debian:13
@@ -71,9 +82,10 @@ jobs:
           -v "$PWD/build/arkhive.phar:/opt/arkhive/arkhive.phar:ro"
           -v "$PWD/build/restic:/opt/restic:ro"
           "$IMAGE"
-          sh -c 'sh /distro/setup.sh && php /distro/check.php /opt/arkhive/arkhive.phar /opt/restic/restic "$0"'
-          "$HINT"
+          sh -c 'sh /distro/setup.sh && if [ "$1" = distro ]; then sh /distro/distro-restic.sh /opt/distro-restic/restic && restic=/opt/distro-restic/restic; else restic=/opt/restic/restic; fi && php /distro/check.php /opt/arkhive/arkhive.phar "$restic" "$0"'
+          "$HINT" "$RESTIC_SOURCE"
         env:
           PLATFORM: ${{ inputs.platform }}
           IMAGE: ${{ matrix.image }}
           HINT: ${{ matrix.hint }}
+          RESTIC_SOURCE: ${{ matrix.restic || 'pinned' }}
