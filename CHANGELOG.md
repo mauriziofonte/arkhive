@@ -29,6 +29,8 @@ All notable changes to ArkHive are documented in this file. The format follows
   unless `RESTIC_CACHE_DIR` is set, so hardened units keep a writable, persistent cache.
 - A full filesystem (exit 74) is reported with the free space found on each local filesystem
   involved: the dump directory, a local repository, the restic cache, the restore target.
+- Quick calls have deadlines (exit 75 when exceeded): database metadata queries, restic opening,
+  creating or reading the repository's metadata (300 s each), and `--version` checks (30 s).
 - `tests/Compat`: ArkHive's commands against a real restic (`ARKHIVE_TEST_RESTIC`), run in CI for
   every release from 0.11.0 to the current one, including an `sftp:` repository on a local sshd.
 

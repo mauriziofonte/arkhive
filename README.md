@@ -531,7 +531,7 @@ ArkHive follows the `sysexits.h` convention, so scripts and systemd can tell a c
 | 71 | OSERR | The operating system refused to start a process |
 | 73 | CANTCREAT | An output cannot be created: non-empty restore target, not enough space, an existing database for `--import-as`, an unwritable log file |
 | 74 | IOERR | A write failed because a filesystem is full (local repository, restic cache, dump staging, restore target, extraction); the message gives the free space found on each |
-| 75 | TEMPFAIL | Temporary, retry later: another ArkHive run or restic holds the repository lock, a timeout, the GitHub API rate limit |
+| 75 | TEMPFAIL | Temporary, retry later: another ArkHive run or restic holds the repository lock, a timeout (see Deadlines below), the GitHub API rate limit |
 | 76 | PROTOCOL | The releases API answered something that is not a valid release |
 | 77 | NOPERM | Wrong repository or archive password, database credentials refused, permission denied, a password file readable by others or owned by another user |
 | 78 | CONFIG | Configuration missing or invalid, including removed 1.x keys |
@@ -549,6 +549,10 @@ Failures that may pass on their own are tried again within the same run, each re
 - The notification e-mail, refused with a 4xx answer (greylisting, a rate limit) or not delivered for a network error: three tries, about 15 and 45 seconds apart. Its failure only turns the exit code into 3.
 
 A wrong password, a missing repository, a configuration error or a damaged repository are never tried again. Each wait ends at once on SIGINT or SIGTERM.
+
+### Deadlines
+
+Calls that should be quick have a deadline, so a hung database server or network mount fails the run with 75 instead of holding it until the unit's `TimeoutStartSec`: a database query on metadata (the list of databases, their sizes, create and drop for `--import-as`) 300 seconds after a 10-second connect timeout, restic opening the repository, creating it or reading its snapshots, locks and statistics 300 seconds, and a `--version` 30 seconds. The long work (backup, restore, check, a dump, an import) has no deadline of its own: the systemd units bound it with `TimeoutStartSec`.
 
 ## My server is gone
 

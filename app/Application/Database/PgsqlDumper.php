@@ -7,6 +7,7 @@ namespace Mfonte\Arkhive\Application\Database;
 use Mfonte\Arkhive\Application\Port\ProcessRunner;
 use Mfonte\Arkhive\Application\Process\Cleanup;
 use Mfonte\Arkhive\Application\Process\Command;
+use Mfonte\Arkhive\Application\Process\Timeouts;
 use Mfonte\Arkhive\Application\System\Dependencies;
 use Mfonte\Arkhive\Domain\Backup\DumpResult;
 use Mfonte\Arkhive\Domain\Configuration\PgsqlConfig;
@@ -75,7 +76,7 @@ final class PgsqlDumper
     public function versionWarning(): ?string
     {
         $binary = $this->dependencies->require(Dependency::PgDump, 'to dump PostgreSQL databases (WITH_PGSQL=true)');
-        $client = $this->runner->run(new Command([$binary, '--version']));
+        $client = $this->runner->run((new Command([$binary, '--version']))->withTimeout(Timeouts::VERSION));
         $server = (int) trim($this->query("SELECT current_setting('server_version_num')", 'Reading the PostgreSQL server version'));
         if (!$client->succeeded() || preg_match('/(\d+)(?:\.(\d+))?/', $client->stdout, $match) !== 1 || $server === 0) {
             return null;
@@ -135,7 +136,7 @@ final class PgsqlDumper
     private function query(string $sql, string $what): string
     {
         $client = $this->dependencies->require(Dependency::PgClient, 'to query PostgreSQL (WITH_PGSQL=true)');
-        $result = $this->runner->run(new Command([
+        $result = $this->runner->run((new Command([
             $client,
             ...$this->connectionOptions(),
             '--dbname=' . ($this->config->databases[0] ?? 'postgres'),
@@ -143,7 +144,10 @@ final class PgsqlDumper
             '--tuples-only',
             '--no-align',
             '--command=' . $sql,
-        ], $this->environment()));
+        ], $this->environment()))->withTimeout(Timeouts::QUERY));
+        if ($result->timedOut) {
+            throw DatabaseErrors::exception($result, $what);
+        }
         if (!$result->succeeded()) {
             throw new UnavailableException($result->failure($what), hint: 'Check PGSQL_HOST, PGSQL_PORT, PGSQL_USER and PGSQL_PASSWORD, and that the server is running');
         }

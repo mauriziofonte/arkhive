@@ -8,6 +8,7 @@ use Mfonte\Arkhive\Application\Port\ProcessRunner;
 use Mfonte\Arkhive\Application\Process\Cleanup;
 use Mfonte\Arkhive\Application\Process\Command;
 use Mfonte\Arkhive\Application\Process\ProcessResult;
+use Mfonte\Arkhive\Application\Process\Timeouts;
 use Mfonte\Arkhive\Application\System\Dependencies;
 use Mfonte\Arkhive\Domain\Configuration\Config;
 use Mfonte\Arkhive\Domain\Configuration\MysqlConfig;
@@ -168,7 +169,10 @@ final class DatabaseImporter
             ], $this->pgsqlEnvironment());
             $hint = 'Check PGSQL_HOST, PGSQL_PORT, PGSQL_USER and PGSQL_PASSWORD, and that the user may create databases (CREATEDB)';
         }
-        $result = $this->runner->run($command);
+        $result = $this->runner->run($command->withTimeout(Timeouts::QUERY));
+        if ($result->timedOut) {
+            throw DatabaseErrors::exception($result, $what);
+        }
         if (!$result->succeeded()) {
             throw new UnavailableException($result->failure($what), hint: $hint);
         }

@@ -8,8 +8,11 @@ use Mfonte\Arkhive\Application\Database\DumpStaging;
 use Mfonte\Arkhive\Application\Database\MysqlDumper;
 use Mfonte\Arkhive\Application\Process\Cleanup;
 use Mfonte\Arkhive\Application\Process\Command;
+use Mfonte\Arkhive\Application\Process\ProcessResult;
+use Mfonte\Arkhive\Application\Process\Timeouts;
 use Mfonte\Arkhive\Domain\Configuration\MysqlConfig;
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
+use Mfonte\Arkhive\ExitCode;
 use PHPUnit\Framework\TestCase;
 use Tests\Support\FakeBinaries;
 use Tests\Support\FakeProcessRunner;
@@ -156,6 +159,22 @@ final class MysqlDumperTest extends TestCase
         self::assertSame(['blog', 'shop'], $this->dumper(['*'])->databases());
         $command = $this->runner->commands[0];
         self::assertSame(['--connect-timeout=10', '--batch', '--skip-column-names', '--raw', '--execute=SHOW DATABASES'], array_slice($command->argv, 2));
+    }
+
+    public function testAQueryHasADeadlineAndATimeoutIsTemporary(): void
+    {
+        $this->runner->on('mariadb', static fn (Command $command): ProcessResult => new ProcessResult($command, 143, '', '', 300.0, true));
+
+        try {
+            $this->dumper(['*'])->databases();
+            self::fail('expected a failure');
+        } catch (ArkhiveException $e) {
+            self::assertSame(ExitCode::TEMPORARY, $e->exitCode());
+            self::assertTrue($e->transient());
+            self::assertSame('Listing the MySQL databases timed out after 300s (mariadb)', $e->getMessage());
+            self::assertSame('The database server did not answer in time: check its load, then run again', $e->hint());
+        }
+        self::assertSame(Timeouts::QUERY, $this->runner->commands[0]->timeout);
     }
 
     public function testSystemSchemasListedNextToStarAreKept(): void

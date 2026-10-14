@@ -8,6 +8,7 @@ use Mfonte\Arkhive\Application\Port\ProcessRunner;
 use Mfonte\Arkhive\Application\Port\SnapshotStore;
 use Mfonte\Arkhive\Application\Process\Command;
 use Mfonte\Arkhive\Application\Process\ProcessResult;
+use Mfonte\Arkhive\Application\Process\Timeouts;
 use Mfonte\Arkhive\Application\System\DiskSpace;
 use Mfonte\Arkhive\Domain\Configuration\ResticSettings;
 use Mfonte\Arkhive\Domain\Exclusion\ResticPatternMatcher;
@@ -45,8 +46,8 @@ final class Restic implements SnapshotStore
     /** keepalives so that a server that stops answering fails the run instead of hanging it */
     public const SFTP_ARGS = '-o ServerAliveInterval=15 -o ServerAliveCountMax=4 -o BatchMode=yes';
 
-    /** seconds allowed for the reachability check */
-    public const REACH_TIMEOUT = 300.0;
+    /** seconds allowed for the reachability check and the other metadata reads */
+    public const REACH_TIMEOUT = Timeouts::REPOSITORY;
 
     private ?string $version = null;
 
@@ -141,7 +142,7 @@ final class Restic implements SnapshotStore
         if ($this->version !== null) {
             return $this->version;
         }
-        $result = $this->runner->run(new Command([$this->binary, 'version']));
+        $result = $this->runner->run((new Command([$this->binary, 'version']))->withTimeout(Timeouts::VERSION));
         $version = self::parseVersion($result->stdout);
         if (!$result->succeeded() || $version === null) {
             throw new UnavailableException($result->failure("Running {$this->binary} version"));
@@ -190,7 +191,7 @@ final class Restic implements SnapshotStore
      */
     public function init(): ?string
     {
-        $result = $this->run(['init', '--json'], 'Creating the restic repository', acceptedExitCodes: [0, 1]);
+        $result = $this->run(['init', '--json'], 'Creating the restic repository', acceptedExitCodes: [0, 1], timeout: self::REACH_TIMEOUT);
         if ($result->exitCode !== 0) {
             if (str_contains($result->stdout . $result->stderr, 'config file already exists')) {
                 return null;

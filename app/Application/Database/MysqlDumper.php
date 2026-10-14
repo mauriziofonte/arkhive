@@ -7,6 +7,7 @@ namespace Mfonte\Arkhive\Application\Database;
 use Mfonte\Arkhive\Application\Port\ProcessRunner;
 use Mfonte\Arkhive\Application\Process\Cleanup;
 use Mfonte\Arkhive\Application\Process\Command;
+use Mfonte\Arkhive\Application\Process\Timeouts;
 use Mfonte\Arkhive\Application\System\Dependencies;
 use Mfonte\Arkhive\Domain\Backup\DumpResult;
 use Mfonte\Arkhive\Domain\Configuration\MysqlConfig;
@@ -145,7 +146,7 @@ final class MysqlDumper
     private function query(string $sql, string $what): string
     {
         $client = $this->dependencies->require(Dependency::MysqlClient, 'to query MySQL/MariaDB (WITH_MYSQL=true)');
-        $result = $this->runner->run(new Command([
+        $result = $this->runner->run((new Command([
             $client,
             '--defaults-extra-file=' . $this->credentials()->path,
             '--connect-timeout=' . self::CONNECT_TIMEOUT,
@@ -153,7 +154,10 @@ final class MysqlDumper
             '--skip-column-names',
             '--raw',
             '--execute=' . $sql,
-        ]));
+        ]))->withTimeout(Timeouts::QUERY));
+        if ($result->timedOut) {
+            throw DatabaseErrors::exception($result, $what);
+        }
         if (!$result->succeeded()) {
             throw new UnavailableException($result->failure($what), hint: 'Check MYSQL_HOST, MYSQL_PORT, MYSQL_USER and MYSQL_PASSWORD, and that the server is running');
         }

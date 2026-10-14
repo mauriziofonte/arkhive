@@ -8,6 +8,8 @@ use Mfonte\Arkhive\Application\Database\DumpStaging;
 use Mfonte\Arkhive\Application\Database\PgsqlDumper;
 use Mfonte\Arkhive\Application\Process\Cleanup;
 use Mfonte\Arkhive\Application\Process\Command;
+use Mfonte\Arkhive\Application\Process\ProcessResult;
+use Mfonte\Arkhive\Application\Process\Timeouts;
 use Mfonte\Arkhive\Domain\Configuration\PgsqlConfig;
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
 use Mfonte\Arkhive\ExitCode;
@@ -204,6 +206,22 @@ final class PgsqlDumperTest extends TestCase
             self::assertSame('Reading the PostgreSQL server version failed (psql exit 2): psql: error: connection to server at "pg.example.com" (192.0.2.1), port 5433 failed: timeout expired', $e->getMessage());
             self::assertSame('Check PGSQL_HOST, PGSQL_PORT, PGSQL_USER and PGSQL_PASSWORD, and that the server is running', $e->hint());
         }
+    }
+
+    public function testQueriesAndTheVersionHaveDeadlines(): void
+    {
+        $this->runner
+            ->on('pg_dump', static fn (): array => [0, "pg_dump (PostgreSQL) 16.1\n", ''])
+            ->on('psql', static fn (Command $command): ProcessResult => new ProcessResult($command, 143, '', '', 300.0, true));
+
+        try {
+            $this->dumper()->versionWarning();
+            self::fail('expected a failure');
+        } catch (ArkhiveException $e) {
+            self::assertSame(ExitCode::TEMPORARY, $e->exitCode());
+            self::assertSame('Reading the PostgreSQL server version timed out after 300s (psql)', $e->getMessage());
+        }
+        self::assertSame([Timeouts::VERSION, Timeouts::QUERY], array_map(static fn (Command $command): ?float => $command->timeout, $this->runner->commands));
     }
 
     public function testEstimateSumsDatabaseSizes(): void

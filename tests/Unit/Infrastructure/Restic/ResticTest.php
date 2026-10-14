@@ -6,6 +6,7 @@ namespace Tests\Unit\Infrastructure\Restic;
 
 use Mfonte\Arkhive\Application\Process\Command;
 use Mfonte\Arkhive\Application\Process\ProcessResult;
+use Mfonte\Arkhive\Application\Process\Timeouts;
 use Mfonte\Arkhive\Application\System\DiskSpace;
 use Mfonte\Arkhive\Domain\Configuration\ResticSettings;
 use Mfonte\Arkhive\Domain\Repository\BackupStatus;
@@ -259,6 +260,30 @@ final class ResticTest extends TestCase
         } catch (ArkhiveException $e) {
             self::assertStringNotContainsString(' free in ', $e->getMessage(), 'only write failures');
         }
+    }
+
+    public function testShortResticCallsHaveDeadlines(): void
+    {
+        $runner = (new FakeProcessRunner())->on('restic', static fn (Command $command): array => match ($command->argv[1]) {
+            'version' => [0, "restic 0.19.1 compiled with go1.24 on linux/amd64\n", ''],
+            'init' => [0, '{"message_type":"initialized","id":"1a94dab1","repository":"/srv/r"}' . "\n", ''],
+            default => [0, '[]', ''],
+        });
+        $restic = new Restic(self::settings('/srv/r'), '/usr/bin/restic', $runner);
+        $restic->version();
+        $restic->init();
+        $restic->checkReachable();
+        $restic->snapshots();
+
+        self::assertSame([
+            'version' => Timeouts::VERSION,
+            'init' => Timeouts::REPOSITORY,
+            'cat' => Timeouts::REPOSITORY,
+            'snapshots' => Timeouts::REPOSITORY,
+        ], array_combine(
+            array_map(static fn (Command $command): string => $command->argv[1], $runner->commands),
+            array_map(static fn (Command $command): ?float => $command->timeout, $runner->commands),
+        ));
     }
 
     public function testTheCacheDirectoryReachesResticAsResticCacheDir(): void

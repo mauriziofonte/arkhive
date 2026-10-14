@@ -6,8 +6,12 @@ namespace Tests\Unit\Application\Database;
 
 use Mfonte\Arkhive\Application\Database\DatabaseImporter;
 use Mfonte\Arkhive\Application\Process\Cleanup;
+use Mfonte\Arkhive\Application\Process\Command;
+use Mfonte\Arkhive\Application\Process\ProcessResult;
+use Mfonte\Arkhive\Application\Process\Timeouts;
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
 use Mfonte\Arkhive\Exceptions\UsageException;
+use Mfonte\Arkhive\ExitCode;
 use PHPUnit\Framework\TestCase;
 use Tests\Support\Configs;
 use Tests\Support\FakeBinaries;
@@ -55,6 +59,22 @@ final class DatabaseImporterTest extends TestCase
             self::assertStringStartsWith('Checking whether database crm_copy exists failed (psql exit 2): psql: error: connection to server', $e->getMessage());
             self::assertStringContainsString('CREATEDB', (string) $e->hint());
         }
+    }
+
+    public function testAQueryThatHangsTimesOutAsTemporary(): void
+    {
+        $runner = (new FakeProcessRunner())->on('mariadb', static fn (Command $command): ProcessResult => new ProcessResult($command, 143, '', '', 300.0, true));
+        $importer = new DatabaseImporter(Configs::make(Configs::mysql()), 'mysql', $runner, FakeBinaries::dependencies($this->tempDir(), ['mariadb']), new Cleanup());
+
+        try {
+            $importer->exists('shop_copy');
+            self::fail('expected a failure');
+        } catch (ArkhiveException $e) {
+            self::assertSame(ExitCode::TEMPORARY, $e->exitCode());
+            self::assertSame('Checking whether database shop_copy exists timed out after 300s (mariadb)', $e->getMessage());
+        }
+        self::assertSame(Timeouts::QUERY, $runner->commands[0]->timeout);
+        $importer->close();
     }
 
     public function testCredentialsFileIsRemovedOnClose(): void
