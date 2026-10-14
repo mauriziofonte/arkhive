@@ -31,6 +31,9 @@ final class UnitStateTest extends TestCase
         self::assertSame(['other.service', '', 0, 0, null, '', ''], [$bare->unit, $bare->result, $bare->mainCode, $bare->mainStatus, $bare->invocationId, $bare->started, $bare->ended]);
         self::assertNull($bare->job());
         self::assertSame('not started', $bare->describe());
+
+        $older = UnitState::fromProperties('arkhive-drill.service', ['ExecMainStartTimestamp' => 'n/a', 'ExecMainExitTimestamp' => '0']);
+        self::assertSame(['', ''], [$older->started, $older->ended], 'a timestamp never set reads empty, whatever the systemd version prints');
     }
 
     /**

@@ -17,6 +17,9 @@ final readonly class UnitState
     private const KILLED = 2;
     private const DUMPED = 3;
 
+    /** the `systemctl show` properties fromProperties() reads */
+    public const PROPERTIES = ['Id', 'LoadState', 'Result', 'ExecMainCode', 'ExecMainStatus', 'InvocationID', 'ExecMainStartTimestamp', 'ExecMainExitTimestamp'];
+
     private const SIGNALS = [1 => 'HUP', 2 => 'INT', 3 => 'QUIT', 6 => 'ABRT', 9 => 'KILL', 11 => 'SEGV', 13 => 'PIPE', 15 => 'TERM'];
 
     public function __construct(
@@ -43,9 +46,17 @@ final readonly class UnitState
             (int) ($properties['ExecMainCode'] ?? 0),
             (int) ($properties['ExecMainStatus'] ?? 0),
             preg_match('/^[0-9a-f]{32}$/', $invocation) === 1 ? $invocation : null,
-            $properties['ExecMainStartTimestamp'] ?? '',
-            $properties['ExecMainExitTimestamp'] ?? '',
+            self::timestamp($properties['ExecMainStartTimestamp'] ?? ''),
+            self::timestamp($properties['ExecMainExitTimestamp'] ?? ''),
         );
+    }
+
+    /**
+     * A `systemctl show` timestamp; never set reads '' (older systemd prints n/a, or 0 for a raw value).
+     */
+    public static function timestamp(string $value): string
+    {
+        return in_array($value, ['', 'n/a', '0'], true) ? '' : $value;
     }
 
     /**

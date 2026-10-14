@@ -44,6 +44,10 @@ All notable changes to ArkHive are documented in this file. The format follows
   start with `OnFailure=`: a scheduled run that ends without sending its own notification
   (killed by the timeout or the OOM killer, failed before reading its configuration) is reported
   with its outcome and its last journal lines. Run records gain `invocation` and `notified`.
+- `arkhive schedule --install` (as root) writes the systemd units, reloads systemd and enables the
+  timers; it rewrites only what changed and never overwrites a unit it did not generate.
+  `arkhive schedule --status [--json]` shows each timer's state, next and last run and last
+  result, exit 1 when a timer is missing, disabled or its last run failed.
 - `tests/Compat`: ArkHive's commands against a real restic (`ARKHIVE_TEST_RESTIC`), run in CI for
   every release from 0.11.0 to the current one, including an `sftp:` repository on a local sshd.
 

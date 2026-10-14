@@ -441,9 +441,11 @@ Checks, in order, and says how to fix each problem: PHP version and extensions, 
 ```sh
 arkhive schedule --systemd [--at HH:MM]
 arkhive schedule --cron [--at HH:MM]
+arkhive schedule --install [--at HH:MM]
+arkhive schedule --status [--json]
 ```
 
-Prints (never installs) the systemd units or the cron lines that run `backup` daily at `--at` (default `02:30`), `maintain` on Sundays and `drill` on Wednesdays three hours later, for the current configuration, user and ArkHive path. See [Scheduling](#scheduling).
+Prints the systemd units or the cron lines that run `backup` daily at `--at` (default `02:30`), `maintain` on Sundays and `drill` on Wednesdays three hours later, for the current configuration, user and ArkHive path. `--install` (as root) writes the systemd units under `/etc/systemd/system` instead of printing them, then runs `systemctl daemon-reload` and enables the timers; it rewrites only units that changed and never overwrites a unit file it did not generate (exit 73). `--status` shows each timer as systemd sees it: enabled or not, next run, last run and how it ended; exit 0 when all three are installed, enabled and their last run (if any) succeeded, 1 otherwise. See [Scheduling](#scheduling).
 
 ### notify
 
@@ -507,14 +509,23 @@ SIGINT and SIGTERM during a run stop restic cleanly, remove temporary files and 
 
 ## Scheduling
 
-`arkhive schedule` prints the schedule for the configuration it loads; save what it prints:
+`arkhive schedule` prints the schedule for the configuration it loads; save what it prints, or let it install the systemd units:
 
 ```sh
-arkhive schedule --systemd --config /etc/arkhive/config
+arkhive schedule --install --config /etc/arkhive/config     # as root: write, reload, enable
+arkhive schedule --status                                    # the timers, their next and last run
+arkhive schedule --systemd --config /etc/arkhive/config     # print the units instead
 arkhive schedule --cron --at 01:00 --config /etc/arkhive/config
 ```
 
-- **systemd**: six units (`arkhive-backup`, `arkhive-maintain`, `arkhive-drill`, each a `.service` and a `.timer`) with `Nice=10`, `IOSchedulingClass=idle`, `CPUSchedulingPolicy=batch`, `TimeoutStartSec=` and `Persistent=true` timers that start within 10 minutes of their time (`RandomizedDelaySec`, so hosts with the same `--at` do not reach the repository server together). The services are hardened: `ProtectSystem=full` and `ProtectHome=read-only` (the backup reads everything, writes only `StateDirectory=arkhive`, `CacheDirectory=arkhive`, `/tmp` and, through `ReadWritePaths=`, the `DUMP_DIRECTORY` and a local repository), `PrivateTmp`, `NoNewPrivileges`, `ProtectKernelTunables`, `ProtectKernelModules`, `ProtectControlGroups`, `RestrictSUIDSGID`, `LockPersonality`. `maintain` and `drill` are ordered after `backup` (`After=`), so after a boot, when missed timers fire together, they wait for it. A seventh unit, the template `arkhive-failure@.service`, is started by `OnFailure=` when a job fails and runs [`arkhive notify`](#notify). Save each under `/etc/systemd/system/`, then `systemctl daemon-reload && systemctl enable --now arkhive-backup.timer arkhive-maintain.timer arkhive-drill.timer`. Logs: `journalctl -u arkhive-backup.service`; timers: `systemctl list-timers 'arkhive-*'`.
+```text
+JOB       TIMER    NEXT RUN                     LAST RUN                     LAST RESULT
+backup    enabled  Thu 2026-10-15 02:34:51 UTC  Wed 2026-10-14 02:31:12 UTC  succeeded
+maintain  enabled  Sun 2026-10-18 05:37:02 UTC  Sun 2026-10-11 05:33:40 UTC  succeeded
+drill     enabled  Wed 2026-10-21 05:31:18 UTC  Wed 2026-10-14 05:38:09 UTC  FAILED: exit 65 (DATAERR)
+```
+
+- **systemd**: six units (`arkhive-backup`, `arkhive-maintain`, `arkhive-drill`, each a `.service` and a `.timer`) with `Nice=10`, `IOSchedulingClass=idle`, `CPUSchedulingPolicy=batch`, `TimeoutStartSec=` and `Persistent=true` timers that start within 10 minutes of their time (`RandomizedDelaySec`, so hosts with the same `--at` do not reach the repository server together). The services are hardened: `ProtectSystem=full` and `ProtectHome=read-only` (the backup reads everything, writes only `StateDirectory=arkhive`, `CacheDirectory=arkhive`, `/tmp` and, through `ReadWritePaths=`, the `DUMP_DIRECTORY` and a local repository), `PrivateTmp`, `NoNewPrivileges`, `ProtectKernelTunables`, `ProtectKernelModules`, `ProtectControlGroups`, `RestrictSUIDSGID`, `LockPersonality`. `maintain` and `drill` are ordered after `backup` (`After=`), so after a boot, when missed timers fire together, they wait for it. A seventh unit, the template `arkhive-failure@.service`, is started by `OnFailure=` when a job fails and runs [`arkhive notify`](#notify). `--install` saves each under `/etc/systemd/system/` and runs `systemctl daemon-reload && systemctl enable --now arkhive-backup.timer arkhive-maintain.timer arkhive-drill.timer`; run it again after changing `--at`, the configuration path or `DUMP_DIRECTORY`. Logs: `journalctl -u arkhive-backup.service`; timers: `systemctl list-timers 'arkhive-*'`.
 - **cron**: lines for `/etc/cron.d/arkhive` (root:root, 0644) or `crontab -e` for another user, logging with `--log-file` (`/var/log/arkhive.log` for root, `$XDG_STATE_HOME/arkhive/arkhive.log` or `~/.local/state/arkhive/arkhive.log` otherwise).
 
 Under systemd ArkHive speaks the service manager's notify protocol (`NotifyAccess=main` in the units; nothing is sent when `NOTIFY_SOCKET` is unset). `systemctl status arkhive-backup` shows the current step and its progress (`Status: "Backing up /srv/www /etc: 42.0% 120/300 files 1.20 GiB/3.10 GiB"`), then how the run ended (`arkhive backup failed with exit 69 (UNAVAILABLE): ...`). While a backup or a restore still advances, each progress report gives the unit 30 more minutes (`EXTEND_TIMEOUT_USEC`), so `TimeoutStartSec` stops a run that is stuck, not one that is slow. With `WatchdogSec=` in a unit, ArkHive pings the watchdog while it works and waits.

@@ -7,6 +7,7 @@ namespace Mfonte\Arkhive\Infrastructure\Systemd;
 use Mfonte\Arkhive\Application\Port\ProcessRunner;
 use Mfonte\Arkhive\Application\Port\ServiceUnits;
 use Mfonte\Arkhive\Application\Process\Command;
+use Mfonte\Arkhive\Application\Process\ProcessResult;
 use Mfonte\Arkhive\Application\Process\Timeouts;
 use Mfonte\Arkhive\Application\System\Dependencies;
 use Mfonte\Arkhive\Domain\Schedule\UnitState;
@@ -19,25 +20,41 @@ use Mfonte\Arkhive\Exceptions\UnavailableException;
  */
 final class Systemctl implements ServiceUnits
 {
-    private const PROPERTIES = ['Id', 'LoadState', 'Result', 'ExecMainCode', 'ExecMainStatus', 'InvocationID', 'ExecMainStartTimestamp', 'ExecMainExitTimestamp'];
-
     public function __construct(private readonly ProcessRunner $runner, private readonly Dependencies $dependencies)
     {
     }
 
     public function state(string $unit): UnitState
     {
-        $systemctl = $this->dependencies->require(Dependency::Systemctl, 'to read the state of a systemd unit');
-        $result = $this->runner->run((new Command([$systemctl, 'show', '--no-pager', '--property=' . implode(',', self::PROPERTIES), '--', $unit]))->withTimeout(Timeouts::VERSION));
-        if (!$result->succeeded()) {
-            throw new UnavailableException($result->failure("Reading the state of {$unit}"), hint: 'Is this host running systemd? systemctl must reach the service manager');
-        }
-        $properties = self::properties($result->stdout);
+        $properties = $this->properties([$unit], UnitState::PROPERTIES)[$unit];
         if (($properties['LoadState'] ?? '') === 'not-found') {
             throw new NoInputException("systemd has no unit {$unit}", hint: 'Name the unit as systemctl list-units shows it, e.g. arkhive-backup.service');
         }
 
         return UnitState::fromProperties($unit, $properties);
+    }
+
+    public function properties(array $units, array $names): array
+    {
+        $result = $this->systemctl(['show', '--no-pager', '--property=' . implode(',', $names), '--', ...$units], 'Reading the state of ' . implode(', ', $units));
+        // one block per unit, in the order asked, separated by an empty line
+        $blocks = preg_split('/\R\R/', trim($result->stdout)) ?: [];
+        $properties = [];
+        foreach ($units as $i => $unit) {
+            $properties[$unit] = self::parse($blocks[$i] ?? '');
+        }
+
+        return $properties;
+    }
+
+    public function reload(): void
+    {
+        $this->systemctl(['daemon-reload'], 'Reloading the systemd units');
+    }
+
+    public function enableNow(array $units): void
+    {
+        $this->systemctl(['enable', '--now', '--', ...$units], 'Enabling ' . implode(', ', $units));
     }
 
     public function journal(string $invocationId, int $lines): array
@@ -55,9 +72,23 @@ final class Systemctl implements ServiceUnits
     }
 
     /**
+     * @param list<string> $args
+     */
+    private function systemctl(array $args, string $what): ProcessResult
+    {
+        $systemctl = $this->dependencies->require(Dependency::Systemctl, 'to work with systemd units');
+        $result = $this->runner->run((new Command([$systemctl, ...$args]))->withTimeout(Timeouts::QUERY));
+        if (!$result->succeeded()) {
+            throw new UnavailableException($result->failure($what), hint: 'Is this host running systemd? systemctl must reach the service manager (as root to change units)');
+        }
+
+        return $result;
+    }
+
+    /**
      * @return array<string, string>
      */
-    public static function properties(string $output): array
+    public static function parse(string $output): array
     {
         $properties = [];
         foreach (preg_split('/\R/', $output) ?: [] as $line) {

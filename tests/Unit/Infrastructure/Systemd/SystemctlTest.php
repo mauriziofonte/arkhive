@@ -32,7 +32,43 @@ final class SystemctlTest extends TestCase
             '--property=Id,LoadState,Result,ExecMainCode,ExecMainStatus,InvocationID,ExecMainStartTimestamp,ExecMainExitTimestamp',
             '--', 'arkhive-backup.service',
         ], $runner->commands[0]->argv);
-        self::assertSame(Timeouts::VERSION, $runner->commands[0]->timeout);
+        self::assertSame(Timeouts::QUERY, $runner->commands[0]->timeout);
+    }
+
+    public function testThePropertiesOfSeveralUnits(): void
+    {
+        $dir = $this->tempDir();
+        $runner = (new FakeProcessRunner())->on('systemctl', static fn (): array => [0, "LoadState=loaded\nUnitFileState=enabled\n\nLoadState=not-found\nUnitFileState=\n", '']);
+        $properties = (new Systemctl($runner, FakeBinaries::dependencies($dir, ['systemctl'])))->properties(['arkhive-backup.timer', 'arkhive-drill.timer', 'arkhive-maintain.timer'], ['LoadState', 'UnitFileState']);
+
+        self::assertSame([
+            'arkhive-backup.timer' => ['LoadState' => 'loaded', 'UnitFileState' => 'enabled'],
+            'arkhive-drill.timer' => ['LoadState' => 'not-found', 'UnitFileState' => ''],
+            'arkhive-maintain.timer' => [],
+        ], $properties);
+        self::assertSame(["{$dir}/systemctl", 'show', '--no-pager', '--property=LoadState,UnitFileState', '--', 'arkhive-backup.timer', 'arkhive-drill.timer', 'arkhive-maintain.timer'], $runner->commands[0]->argv);
+    }
+
+    public function testReloadingAndEnablingUnits(): void
+    {
+        $dir = $this->tempDir();
+        $runner = (new FakeProcessRunner())->on('systemctl', static fn (): array => [0, '', '']);
+        $systemctl = new Systemctl($runner, FakeBinaries::dependencies($dir, ['systemctl']));
+        $systemctl->reload();
+        $systemctl->enableNow(['arkhive-backup.timer', 'arkhive-drill.timer']);
+
+        self::assertSame(["{$dir}/systemctl", 'daemon-reload'], $runner->commands[0]->argv);
+        self::assertSame(["{$dir}/systemctl", 'enable', '--now', '--', 'arkhive-backup.timer', 'arkhive-drill.timer'], $runner->commands[1]->argv);
+        self::assertSame(Timeouts::QUERY, $runner->commands[1]->timeout);
+
+        $denied = (new FakeProcessRunner())->on('systemctl', static fn (): array => [1, '', "Failed to enable unit: Access denied\n"]);
+        try {
+            (new Systemctl($denied, FakeBinaries::dependencies($dir, ['systemctl'])))->enableNow(['arkhive-backup.timer']);
+            self::fail('expected a failure');
+        } catch (ArkhiveException $e) {
+            self::assertSame(ExitCode::UNAVAILABLE, $e->exitCode());
+            self::assertStringStartsWith('Enabling arkhive-backup.timer failed (systemctl exit 1): Failed to enable unit: Access denied', $e->getMessage());
+        }
     }
 
     public function testAnUnknownUnitAndAFailingSystemctl(): void
@@ -84,6 +120,6 @@ final class SystemctlTest extends TestCase
 
     public function testPropertiesParsing(): void
     {
-        self::assertSame(['A' => 'b=c', 'Empty' => ''], Systemctl::properties("A=b=c\n=nokey\nnoequals\nEmpty=\n"));
+        self::assertSame(['A' => 'b=c', 'Empty' => ''], Systemctl::parse("A=b=c\n=nokey\nnoequals\nEmpty=\n"));
     }
 }

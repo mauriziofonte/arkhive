@@ -8,10 +8,38 @@ use Mfonte\Arkhive\Domain\Schedule\UnitState;
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
 
 /**
- * The service manager's view of a unit: how it last ended and what it logged.
+ * The service manager's units: how they last ended, what they logged, and installing them.
  */
 interface ServiceUnits
 {
+    /**
+     * `systemctl show` of several units.
+     *
+     * @param list<string> $units
+     * @param list<string> $names properties to read
+     *
+     * @return array<string, array<string, string>> unit => property => value
+     *
+     * @throws ArkhiveException systemctl is missing or fails
+     */
+    public function properties(array $units, array $names): array;
+
+    /**
+     * `systemctl daemon-reload`, after unit files changed.
+     *
+     * @throws ArkhiveException
+     */
+    public function reload(): void;
+
+    /**
+     * `systemctl enable --now`.
+     *
+     * @param list<string> $units
+     *
+     * @throws ArkhiveException
+     */
+    public function enableNow(array $units): void;
+
     /**
      * @throws ArkhiveException systemctl is missing or does not know the unit
      */
