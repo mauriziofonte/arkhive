@@ -120,6 +120,7 @@ final class ResticTest extends TestCase
         yield 'locked 0.19' => ['locked-0.19.stderr', 11, 'The restic repository is locked by PID 25983 on host.example.com by root (UID 0, GID 0), created at 2026-10-12 13:58:02 (1.554904747s ago)', $unlock];
         yield 'locked 0.16' => ['locked-0.19.stderr', 1, 'The restic repository is locked by PID 25983 on host.example.com by root (UID 0, GID 0), created at 2026-10-12 13:58:02 (1.554904747s ago)', $unlock];
         yield 'sftp unreachable' => ['sftp-unreachable-0.19.stderr', 1, 'Opening the restic repository failed (restic exit 1): subprocess ssh: ssh: connect to host backup.example.com port 2299: Connection refused | Fatal: unable to open repository at sftp:e2e@backup.example.com:/nothere: unable to start the sftp session, error: error receiving version packet from server: server unexpectedly closed connection: unexpected EOF', 'Check that the SFTP server is up and accepts the SSH key of this user; for a non-standard port or key set RESTIC_SFTP_COMMAND'];
+        yield 'sftp unreachable, ssh stderr not relayed' => ['sftp-unreachable-no-ssh-line-0.19.stderr', 1, 'Opening the restic repository failed (restic exit 1): Fatal: unable to open repository at sftp:e2e@backup.example.com:/nothere: unable to start the sftp session, error: error receiving version packet from server: server unexpectedly closed connection: unexpected EOF', 'Check that the SFTP server is up and accepts the SSH key of this user; for a non-standard port or key set RESTIC_SFTP_COMMAND'];
     }
 
     #[DataProvider('failures')]

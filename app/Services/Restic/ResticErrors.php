@@ -53,9 +53,13 @@ final class ResticErrors
         return new ArkhiveException($result->failure($what));
     }
 
+    /**
+     * restic relays ssh's own stderr asynchronously and can exit before it arrives, so its own
+     * "unable to start the sftp session" counts as well.
+     */
     private static function looksLikeSsh(string $stderr): bool
     {
-        foreach (['ssh:', 'subprocess ssh', 'Permission denied (publickey', 'Connection refused', 'Connection timed out', 'Host key verification failed', 'Could not resolve hostname', 'connection lost'] as $needle) {
+        foreach (['ssh:', 'subprocess ssh', 'Permission denied (publickey', 'Connection refused', 'Connection timed out', 'Host key verification failed', 'Could not resolve hostname', 'connection lost', 'unable to start the sftp session'] as $needle) {
             if (str_contains($stderr, $needle)) {
                 return true;
             }
