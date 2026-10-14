@@ -180,3 +180,51 @@ jobs:
           path: |
             tests/e2e/work/junit.xml
             tests/e2e/work/e2e-summary.txt
+
+  distro:
+    name: Distro matrix (${{ matrix.image }})
+    needs: phar
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: debian:12
+            hint: 'Run: apt install restic'
+          - image: debian:13
+            hint: 'Run: apt install restic'
+          - image: ubuntu:22.04
+            hint: 'Run: apt install restic'
+          - image: ubuntu:24.04
+            hint: 'Run: apt install restic'
+          - image: rockylinux/rockylinux:9
+            hint: 'Run: dnf install epel-release, then: dnf install restic'
+          - image: almalinux:9
+            hint: 'Run: dnf install epel-release, then: dnf install restic'
+          - image: fedora:latest
+            hint: 'Run: dnf install restic'
+          - image: alpine:3.20
+            hint: 'Run: apk add restic'
+          - image: archlinux:latest
+            hint: 'Run: pacman -S restic'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@v4
+        with:
+          name: arkhive-phar
+          path: build
+      - name: Download the pinned restic release
+        # into /opt/restic in the container: outside PATH and the standard directories, so the
+        # missing-restic case of check.php really has no restic
+        run: |
+          mkdir -p build/restic
+          tests/bin/install-restic.sh build/restic/restic
+      - name: Install PHP and run the built PHAR in ${{ matrix.image }}
+        run: >-
+          docker run --rm
+          -v "$PWD/tests/distro:/distro:ro"
+          -v "$PWD/build/arkhive.phar:/opt/arkhive/arkhive.phar:ro"
+          -v "$PWD/build/restic:/opt/restic:ro"
+          "${{ matrix.image }}"
+          sh -c 'sh /distro/setup.sh && php /distro/check.php /opt/arkhive/arkhive.phar /opt/restic/restic "$0"'
+          '${{ matrix.hint }}'
