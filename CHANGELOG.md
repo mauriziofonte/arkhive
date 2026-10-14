@@ -6,6 +6,14 @@ All notable changes to ArkHive are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [2.1.0-rc.1] - 2026-10-14
+
+ArkHive 2.1 works with the tools of the host: systemd (status, progress, watchdog, failure
+notifications, hardened units installed by `schedule --install`), the journal and syslog
+(structured fields, message ids), exit codes from `sysexits.h`, and the restic packaged by
+Debian 11 and later. Transient failures are tried again within the run, and a failed database
+dump no longer costs the backup of the files.
+
 ### Added
 
 - restic 0.11.0 or newer is supported (2.0 needed 0.14.0), so the restic package of Debian 11,
@@ -169,6 +177,7 @@ encryption, deduplication and retention. The configuration is not compatible wit
 
 - Restrict the remote `chmod` to the backup directory of the day.
 
-[Unreleased]: https://github.com/mauriziofonte/arkhive/compare/v2.0.0-rc.1...HEAD
+[Unreleased]: https://github.com/mauriziofonte/arkhive/compare/v2.1.0-rc.1...HEAD
+[2.1.0-rc.1]: https://github.com/mauriziofonte/arkhive/compare/v2.0.0-rc.1...v2.1.0-rc.1
 [2.0.0-rc.1]: https://github.com/mauriziofonte/arkhive/compare/v1.7.1...v2.0.0-rc.1
 [1.7.1]: https://github.com/mauriziofonte/arkhive/releases/tag/v1.7.1
