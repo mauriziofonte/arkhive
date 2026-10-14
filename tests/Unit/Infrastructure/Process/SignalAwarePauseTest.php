@@ -21,6 +21,16 @@ final class SignalAwarePauseTest extends TestCase
         self::assertLessThan(1.0, $elapsed);
     }
 
+    public function testTheHeartbeatRunsDuringTheWait(): void
+    {
+        $beats = 0;
+        (new SignalAwarePause(new Signals(), static function () use (&$beats): void {
+            $beats++;
+        }))->sleep(0.35);
+
+        self::assertGreaterThanOrEqual(3, $beats);
+    }
+
     public function testAZeroOrNegativeWaitReturnsAtOnce(): void
     {
         $started = hrtime(true);

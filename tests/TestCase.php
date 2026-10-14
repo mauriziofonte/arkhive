@@ -8,6 +8,7 @@ use Illuminate\Contracts\Console\Kernel;
 use LaravelZero\Framework\Testing\TestCase as BaseTestCase;
 use Mfonte\Arkhive\Application\Port\Pause;
 use Mfonte\Arkhive\Application\Port\RunStateStore;
+use Mfonte\Arkhive\Application\Port\ServiceManager;
 use Mfonte\Arkhive\Application\Port\Terminal;
 use Mfonte\Arkhive\Domain\Shared\Clock;
 use Mfonte\Arkhive\Infrastructure\Logging\LogStream;
@@ -16,10 +17,11 @@ use Tests\Support\FakeTerminal;
 use Tests\Support\FixedClock;
 use Tests\Support\InMemoryRunStateStore;
 use Tests\Support\RecordingPause;
+use Tests\Support\RecordingServiceManager;
 
 /**
  * In-process command tests: the terminal, the log stream, the clock, the waits between retries and
- * the run state store are fakes.
+ * the run state store and systemd's notify socket are fakes.
  */
 abstract class TestCase extends BaseTestCase
 {
@@ -28,6 +30,8 @@ abstract class TestCase extends BaseTestCase
     protected FixedClock $clock;
     protected RecordingPause $pause;
     protected InMemoryRunStateStore $runs;
+    /** systemd's notify socket; not listening unless a test turns it on */
+    protected RecordingServiceManager $systemd;
 
     protected function setUp(): void
     {
@@ -43,6 +47,8 @@ abstract class TestCase extends BaseTestCase
         $this->app->instance(Pause::class, $this->pause);
         $this->runs = new InMemoryRunStateStore();
         $this->app->instance(RunStateStore::class, $this->runs);
+        $this->systemd = new RecordingServiceManager(listening: false);
+        $this->app->instance(ServiceManager::class, $this->systemd);
     }
 
     protected function registerCommand(Command $command): void

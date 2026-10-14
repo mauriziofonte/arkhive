@@ -122,6 +122,17 @@ final class SystemProcessRunnerTest extends TestCase
         self::assertStringContainsString('the output stream was closed before ' . basename(PHP_BINARY) . ' finished', $result->stderr);
     }
 
+    public function testTheHeartbeatRunsWhileTheChildRuns(): void
+    {
+        $beats = 0;
+        $runner = new SystemProcessRunner($this->signals, heartbeat: static function () use (&$beats): void {
+            $beats++;
+        });
+
+        self::assertSame(0, $runner->run(self::php('usleep(700000);'))->exitCode);
+        self::assertGreaterThanOrEqual(3, $beats, 'at least every 200 ms');
+    }
+
     public function testAFullOutputFilesystemIsNamedAsSuch(): void
     {
         if (!is_writable('/dev/full')) {

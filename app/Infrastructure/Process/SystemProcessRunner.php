@@ -26,11 +26,13 @@ final class SystemProcessRunner implements ProcessRunner
     /**
      * @param array<string, string>|null $environment the inherited environment (default: getenv())
      * @param float                      $killGrace   after a timeout SIGTERM, seconds before SIGKILL
+     * @param (\Closure(): void)|null      $heartbeat   called between reads while a child runs (watchdog pings)
      */
     public function __construct(
         private readonly Signals $signals,
         private readonly ?array $environment = null,
         private readonly float $killGrace = 10.0,
+        private readonly ?\Closure $heartbeat = null,
     ) {
     }
 
@@ -116,6 +118,9 @@ final class SystemProcessRunner implements ProcessRunner
         $exitCode = null;
 
         while ($readers !== [] || $writers !== [] || $exitCode === null) {
+            if ($this->heartbeat !== null) {
+                ($this->heartbeat)();
+            }
             if ($readers === [] && $writers === []) {
                 $exitCode = $this->exitCodeIfDone($process);
                 if ($exitCode === null) {

@@ -137,7 +137,7 @@ final class RestoreRunner
             'restic restore',
             $selection->includes,
             $selection->excludes,
-            $log->context()->interactive,
+            $log->wantsProgress(),
         );
 
         $log->info(sprintf('Restoring %s from snapshot %s (%s) to %s', $selection->describe(), $plan->snapshot->shortId(), $plan->snapshot->time->format('Y-m-d H:i'), $plan->target));

@@ -13,7 +13,10 @@ final class SignalAwarePause implements Pause
 {
     private const SLICE = 0.1;
 
-    public function __construct(private readonly Signals $signals)
+    /**
+     * @param (\Closure(): void)|null $heartbeat called between slices (watchdog pings)
+     */
+    public function __construct(private readonly Signals $signals, private readonly ?\Closure $heartbeat = null)
     {
     }
 
@@ -24,6 +27,9 @@ final class SignalAwarePause implements Pause
         while (($left = $deadline - hrtime(true)) > 0) {
             usleep((int) (min(self::SLICE, $left / 1e9) * 1e6));
             $this->signals->check();
+            if ($this->heartbeat !== null) {
+                ($this->heartbeat)();
+            }
         }
     }
 }

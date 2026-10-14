@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Unit\Application\Output;
 
 use Mfonte\Arkhive\Application\Output\Logger;
+use Mfonte\Arkhive\Application\Service\ServiceStatus;
 use Mfonte\Arkhive\Domain\Execution\ExecutionContext;
 use Mfonte\Arkhive\Domain\Execution\LogFormat;
 use Mfonte\Arkhive\Domain\Execution\LogLevel;
@@ -13,6 +14,7 @@ use Mfonte\Arkhive\Infrastructure\Logging\LogStream;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Tests\Support\FixedClock;
+use Tests\Support\RecordingServiceManager;
 use Tests\Support\TempDir;
 
 final class LoggerTest extends TestCase
@@ -126,6 +128,38 @@ final class LoggerTest extends TestCase
         $log->info('done');
         $log->endProgress();
         self::assertSame("\r\033[2K42%\r\033[2K• done\n", $interactive->contents());
+    }
+
+    public function testUnderAServiceManagerStepsAndProgressBecomeTheUnitStatus(): void
+    {
+        $manager = new RecordingServiceManager();
+        $time = 0.0;
+        $service = new ServiceStatus($manager, static function () use (&$time): float {
+            return $time += 10.0;
+        });
+        $stream = LogStream::memory();
+        $log = new Logger(self::context(LogFormat::Journald), $stream->resource(), null, new FixedClock(), false, $service);
+
+        self::assertTrue($log->wantsProgress(), 'unattended, but systemd shows the progress');
+        $log->info('Backing up /srv /etc');
+        $log->progress('  42.0%  120/300 files  1.20 GiB/3.10 GiB');
+        $log->debug('not a step');
+        $log->notice('nor a hint');
+        $log->warning('nor a warning');
+        $log->success('Snapshot 6118b3c5 saved');
+        $log->progress('100.0%');
+        $log->error('restic check failed');
+
+        self::assertSame([
+            'Backing up /srv /etc',
+            'Backing up /srv /etc: 42.0% 120/300 files 1.20 GiB/3.10 GiB',
+            'Snapshot 6118b3c5 saved',
+            '100.0%',
+            'restic check failed',
+        ], $manager->statuses());
+        self::assertStringNotContainsString('42.0%', $stream->contents(), 'never drawn when unattended');
+        self::assertFalse($this->logger(self::context(LogFormat::Journald), LogStream::memory())->wantsProgress());
+        self::assertTrue($this->logger(self::context(LogFormat::Human, interactive: true), LogStream::memory())->wantsProgress());
     }
 
     public function testCountsWarningsAndErrors(): void

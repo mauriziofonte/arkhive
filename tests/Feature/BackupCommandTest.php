@@ -75,6 +75,47 @@ final class BackupCommandTest extends TestCase
         self::assertSame($run, $this->runs->load('backup')->lastSuccess);
     }
 
+    public function testUnderSystemdTheUnitStatusFollowsTheBackup(): void
+    {
+        $this->systemd->listening = true;
+        $status = '{"message_type":"status","percent_done":0.42,"total_files":300,"files_done":120,"total_bytes":3328599654,"bytes_done":1288490188}';
+        $this->restic->backup = [0, $status . "\n" . FakeRestic::fixture('backup-0.19-first.jsonl'), ''];
+
+        self::assertSame(ExitCode::SUCCESS, Artisan::call('backup', ['--config' => $this->writeConfig()]));
+
+        $statuses = $this->systemd->statuses();
+        self::assertSame('arkhive backup started', $statuses[0]);
+        self::assertContains('Backing up /srv/www: 42.0% 120/300 files 1.20 GiB/3.10 GiB', $statuses);
+        self::assertSame(['READY' => '1', 'STATUS' => 'arkhive backup started'], $this->systemd->messages[0]);
+        self::assertContains(['STATUS' => 'Backing up /srv/www: 42.0% 120/300 files 1.20 GiB/3.10 GiB', 'EXTEND_TIMEOUT_USEC' => '1800000000'], $this->systemd->messages);
+        self::assertSame(['STOPPING' => '1', 'STATUS' => 'arkhive backup succeeded', 'EXIT_STATUS' => '0'], $this->systemd->messages[count($this->systemd->messages) - 1]);
+        $backup = array_values(array_filter($this->runner->commands, static fn (Command $c): bool => in_array('backup', $c->argv, true)))[0];
+        self::assertSame('2', $backup->env['RESTIC_PROGRESS_FPS'] ?? null, 'restic reports progress for the unit status');
+        self::assertStringNotContainsString('42.0%', $this->logOutput(), 'and the log does not draw it');
+    }
+
+    public function testUnderSystemdAFailureIsTheFinalStatus(): void
+    {
+        $this->systemd->listening = true;
+        $this->restic->catConfig = [10, '', FakeRestic::fixture('no-repository-0.19.stderr')];
+
+        self::assertSame(ExitCode::UNAVAILABLE, Artisan::call('backup', ['--config' => $this->writeConfig()]));
+
+        self::assertSame(
+            ['STOPPING' => '1', 'STATUS' => 'arkhive backup failed with exit 69 (UNAVAILABLE): There is no restic repository at /srv/restic-repo', 'EXIT_STATUS' => '69'],
+            $this->systemd->messages[count($this->systemd->messages) - 1],
+        );
+    }
+
+    public function testOutsideSystemdNothingIsSentAndProgressIsNotAskedFor(): void
+    {
+        self::assertSame(ExitCode::SUCCESS, Artisan::call('backup', ['--config' => $this->writeConfig()]));
+
+        self::assertSame([], $this->systemd->messages);
+        $backup = array_values(array_filter($this->runner->commands, static fn (Command $c): bool => in_array('backup', $c->argv, true)))[0];
+        self::assertArrayNotHasKey('RESTIC_PROGRESS_FPS', $backup->env);
+    }
+
     public function testAFailedBackupIsRecordedWithItsCauseAndKeepsTheLastSuccess(): void
     {
         $config = $this->writeConfig();

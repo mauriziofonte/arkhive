@@ -9,6 +9,7 @@ use LaravelZero\Framework\Commands\Command;
 use Mfonte\Arkhive\Application\Output\Logger;
 use Mfonte\Arkhive\Application\Port\Terminal;
 use Mfonte\Arkhive\Application\Process\Cleanup;
+use Mfonte\Arkhive\Application\Service\ServiceStatus;
 use Mfonte\Arkhive\Commands\Support\UsageErrors;
 use Mfonte\Arkhive\Domain\Execution\ContextDetector;
 use Mfonte\Arkhive\Domain\Execution\ExecutionContext;
@@ -38,6 +39,7 @@ abstract class ArkhiveCommand extends Command
     protected Cleanup $cleanup;
     protected Terminal $terminal;
     protected Clock $clock;
+    protected ServiceStatus $service;
 
     public function __construct()
     {
@@ -62,8 +64,9 @@ abstract class ArkhiveCommand extends Command
         }
     }
 
-    final public function handle(Terminal $terminal, LogStream $stream, Clock $clock, Signals $signals, Cleanup $cleanup): int
+    final public function handle(Terminal $terminal, LogStream $stream, Clock $clock, Signals $signals, Cleanup $cleanup, ServiceStatus $service): int
     {
+        $this->service = $service;
         $this->interrupts = $signals;
         $this->cleanup = $cleanup;
         $this->terminal = $terminal;
@@ -99,7 +102,8 @@ abstract class ArkhiveCommand extends Command
             return $e->exitCode();
         }
 
-        $this->log = new Logger($this->context, $stream->resource(), $file, $clock, $this->output->isVerbose());
+        $this->log = new Logger($this->context, $stream->resource(), $file, $clock, $this->output->isVerbose(), $service);
+        $service->started("arkhive {$this->getName()} started");
 
         $installed = $signals->installed() || !$signals->install();
         $started = $clock->now();
@@ -120,6 +124,7 @@ abstract class ArkhiveCommand extends Command
                 $failure = $e;
             }
             $this->finished($exit, $failure, $started);
+            $service->finished($exit, $this->outcome($exit, $failure));
 
             return $exit;
         } finally {
@@ -138,6 +143,23 @@ abstract class ArkhiveCommand extends Command
      */
     protected function finished(int $exit, ?Throwable $failure, DateTimeImmutable $started): void
     {
+    }
+
+    /**
+     * "arkhive backup failed with exit 69 (UNAVAILABLE): ...", for the service manager's status.
+     */
+    private function outcome(int $exit, ?Throwable $failure): string
+    {
+        $name = "arkhive {$this->getName()}";
+        if ($exit === ExitCode::SUCCESS) {
+            return "{$name} succeeded";
+        }
+        if ($exit === ExitCode::WARNING) {
+            return "{$name} succeeded with warnings";
+        }
+        $label = isset(ExitCode::TABLE[$exit]) ? ' (' . ExitCode::TABLE[$exit][0] . ')' : '';
+
+        return "{$name} failed with exit {$exit}{$label}" . ($failure === null ? '' : ': ' . $failure->getMessage());
     }
 
     /**

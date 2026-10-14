@@ -32,6 +32,7 @@ final class SystemdUnitsTest extends TestCase
             . "\n"
             . "[Service]\n"
             . "Type=oneshot\n"
+            . "NotifyAccess=main\n"
             . "User=root\n"
             . "ExecStart=/usr/local/bin/arkhive backup --config /etc/arkhive/config\n"
             . "Nice=10\n"

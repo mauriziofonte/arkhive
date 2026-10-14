@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Mfonte\Arkhive\Application\Output;
 
 use Mfonte\Arkhive\Application\Port\LogSink;
+use Mfonte\Arkhive\Application\Service\ServiceStatus;
 use Mfonte\Arkhive\Domain\Execution\ExecutionContext;
 use Mfonte\Arkhive\Domain\Execution\LogFormat;
 use Mfonte\Arkhive\Domain\Execution\LogLevel;
@@ -13,6 +14,7 @@ use Mfonte\Arkhive\Domain\Shared\Clock;
 /**
  * Every log event goes through here, formatted for the execution context (spec §11).
  * Events go to stderr, so stdout carries only command results (tables, JSON, restored file bytes).
+ * Under a service manager, each step and the progress within it also become the unit's status.
  */
 final class Logger
 {
@@ -36,6 +38,7 @@ final class Logger
     private bool $progressActive = false;
     private int $warnings = 0;
     private int $errors = 0;
+    private string $step = '';
 
     /**
      * @param resource $stream where events are written (stderr)
@@ -46,6 +49,7 @@ final class Logger
         private readonly ?LogSink $sink,
         private readonly Clock $clock,
         private readonly bool $verbose = false,
+        private readonly ?ServiceStatus $service = null,
     ) {
     }
 
@@ -115,10 +119,21 @@ final class Logger
     }
 
     /**
-     * Redraws a single progress line; interactive mode only, never in unattended mode.
+     * Whether progress reports are wanted: a terminal shows them, a service manager makes them the
+     * unit's status.
+     */
+    public function wantsProgress(): bool
+    {
+        return $this->context->interactive || ($this->service?->supervised() ?? false);
+    }
+
+    /**
+     * Redraws a single progress line in interactive mode (never in unattended mode); under a service
+     * manager, the status of the current step.
      */
     public function progress(string $line): void
     {
+        $this->service?->progress(($this->step === '' ? '' : $this->step . ': ') . trim($line));
         if (!$this->context->interactive) {
             return;
         }
@@ -145,6 +160,10 @@ final class Logger
 
         $this->endProgress();
         fwrite($this->stream, $this->format($this->context->logFormat, $level, $message, $data) . "\n");
+        if ($this->service !== null && in_array($level, [LogLevel::Info, LogLevel::Success, LogLevel::Error], true)) {
+            $this->step = $level === LogLevel::Info ? $message : '';
+            $this->service->step($message);
+        }
 
         if ($this->sink !== null) {
             $fileFormat = $this->context->logFormat === LogFormat::Json ? LogFormat::Json : LogFormat::Plain;

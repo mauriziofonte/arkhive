@@ -108,7 +108,7 @@ final class BackupRunner
             compression: $config->restic->compression,
             excludeFile: $excludes->path,
             allowIncomplete: true,
-            showProgress: $log->context()->interactive,
+            showProgress: $log->wantsProgress(),
         );
 
         $log->info('Backing up ' . implode(' ', $paths));

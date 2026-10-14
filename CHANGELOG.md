@@ -31,6 +31,10 @@ All notable changes to ArkHive are documented in this file. The format follows
   involved: the dump directory, a local repository, the restic cache, the restore target.
 - Quick calls have deadlines (exit 75 when exceeded): database metadata queries, restic opening,
   creating or reading the repository's metadata (300 s each), and `--version` checks (30 s).
+- Under systemd, ArkHive reports to the service manager (sd_notify protocol, in PHP):
+  `systemctl status` shows the current step and its progress, then the outcome; a run that still
+  makes progress gets more time (`EXTEND_TIMEOUT_USEC`) instead of being stopped by
+  `TimeoutStartSec`; `WatchdogSec=` is supported. The units set `NotifyAccess=main`.
 - `tests/Compat`: ArkHive's commands against a real restic (`ARKHIVE_TEST_RESTIC`), run in CI for
   every release from 0.11.0 to the current one, including an `sftp:` repository on a local sshd.
 

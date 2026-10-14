@@ -48,6 +48,8 @@ final class SystemdUnits
             . "\n"
             . "[Service]\n"
             . "Type=oneshot\n"
+            // the unit status (systemctl status), more time while progress is made, watchdog pings
+            . "NotifyAccess=main\n"
             // explicit even for root: systemd then sets HOME, where restic keeps its cache and ssh its known_hosts
             . "User={$schedule->user}\n"
             . "ExecStart={$command}\n"
