@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Tests\Integration;
 
+use Mfonte\Arkhive\Application\Port\HttpClient;
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
-use Mfonte\Arkhive\Services\Update\CurlHttpClient;
-use Mfonte\Arkhive\Services\Update\HttpClient;
-use Mfonte\Arkhive\Services\Update\StreamHttpClient;
+use Mfonte\Arkhive\Infrastructure\Http\CurlHttpClient;
+use Mfonte\Arkhive\Infrastructure\Http\StreamHttpClient;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Tests\Support\TempDir;

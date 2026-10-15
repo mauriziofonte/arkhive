@@ -4,25 +4,26 @@ declare(strict_types=1);
 
 namespace Tests\Integration;
 
+use Mfonte\Arkhive\Application\Legacy\LegacyArchive;
+use Mfonte\Arkhive\Application\Legacy\LegacyExtractor;
+use Mfonte\Arkhive\Application\Output\Logger;
+use Mfonte\Arkhive\Application\Port\ProcessRunner;
+use Mfonte\Arkhive\Application\Process\Cleanup;
+use Mfonte\Arkhive\Application\Process\Command;
+use Mfonte\Arkhive\Application\Process\ProcessResult;
+use Mfonte\Arkhive\Application\Restore\TargetDirectory;
+use Mfonte\Arkhive\Application\System\BinaryFinder;
+use Mfonte\Arkhive\Application\System\Dependencies;
+use Mfonte\Arkhive\Domain\Execution\ExecutionContext;
+use Mfonte\Arkhive\Domain\Execution\LogFormat;
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
+use Mfonte\Arkhive\Exceptions\DataException;
 use Mfonte\Arkhive\Exceptions\RefusedException;
 use Mfonte\Arkhive\ExitCode;
-use Mfonte\Arkhive\Services\Context\ExecutionContext;
-use Mfonte\Arkhive\Services\Context\LogFormat;
-use Mfonte\Arkhive\Services\Legacy\LegacyArchive;
-use Mfonte\Arkhive\Services\Legacy\LegacyExtractor;
-use Mfonte\Arkhive\Services\Output\Logger;
-use Mfonte\Arkhive\Services\Output\LogStream;
-use Mfonte\Arkhive\Services\Process\Cleanup;
-use Mfonte\Arkhive\Services\Process\Command;
-use Mfonte\Arkhive\Services\Process\ProcessResult;
-use Mfonte\Arkhive\Services\Process\ProcessRunner;
-use Mfonte\Arkhive\Services\Process\Signals;
-use Mfonte\Arkhive\Services\Process\SystemProcessRunner;
-use Mfonte\Arkhive\Services\Restore\TargetDirectory;
-use Mfonte\Arkhive\Services\System\BinaryFinder;
-use Mfonte\Arkhive\Services\System\Dependencies;
-use Mfonte\Arkhive\Services\System\Distro;
+use Mfonte\Arkhive\Infrastructure\Logging\LogStream;
+use Mfonte\Arkhive\Infrastructure\Process\Signals;
+use Mfonte\Arkhive\Infrastructure\Process\SystemProcessRunner;
+use Mfonte\Arkhive\Infrastructure\System\OsRelease;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Tests\Support\FakeBinaries;
@@ -114,7 +115,7 @@ final class LegacyExtractorTest extends TestCase
             self::fail('a wrong password was accepted');
         } catch (ArkhiveException $e) {
             self::assertSame('Cannot decrypt the archive: the password is wrong (openssl: bad decrypt)', $e->getMessage());
-            self::assertSame(ExitCode::FAILURE, $e->exitCode());
+            self::assertSame(ExitCode::NO_PERMISSION, $e->exitCode());
         }
         self::assertDirectoryDoesNotExist("{$this->dir}/out");
         $this->assertNoLeftovers();
@@ -200,7 +201,7 @@ final class LegacyExtractorTest extends TestCase
         try {
             $this->extractor()->extract(LegacyArchive::open("{$this->dir}/evil.tar"), new TargetDirectory("{$this->dir}/out"), null, $this->logger());
             self::fail('a path outside the target was accepted');
-        } catch (RefusedException $e) {
+        } catch (DataException $e) {
             self::assertSame('The archive contains the path ../escaped.txt, which would be written outside the target: not extracted', $e->getMessage());
         }
         self::assertFileDoesNotExist("{$this->dir}/escaped.txt");
@@ -257,20 +258,20 @@ final class LegacyExtractorTest extends TestCase
         self::assertSame('backup.bin.extracted', LegacyArchive::open("{$this->dir}/backup.bin")->baseName());
 
         touch("{$this->dir}/empty.arbk");
-        foreach (["{$this->dir}/missing.arbk" => 'does not exist', $this->dir => 'is not a regular file', "{$this->dir}/empty.arbk" => 'is empty'] as $path => $problem) {
+        foreach (["{$this->dir}/missing.arbk" => ['does not exist', ExitCode::NO_INPUT], $this->dir => ['is not a regular file', ExitCode::NO_INPUT], "{$this->dir}/empty.arbk" => ['is empty', ExitCode::DATA_ERROR]] as $path => [$problem, $exit]) {
             try {
                 LegacyArchive::open($path);
                 self::fail("{$path} was accepted");
             } catch (ArkhiveException $e) {
                 self::assertSame("The archive {$path} {$problem}", $e->getMessage());
-                self::assertSame(ExitCode::USAGE, $e->exitCode());
+                self::assertSame($exit, $e->exitCode());
             }
         }
     }
 
     private function extractor(): LegacyExtractor
     {
-        return new LegacyExtractor($this->runner(), new Dependencies(BinaryFinder::fromEnvironment(), Distro::detect()), $this->cleanup);
+        return new LegacyExtractor($this->runner(), new Dependencies(BinaryFinder::fromEnvironment(), OsRelease::detect()), $this->cleanup);
     }
 
     private function runner(): ProcessRunner

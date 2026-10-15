@@ -18,6 +18,7 @@
             <directory>tests/Unit</directory>
             <directory>tests/Integration</directory>
             <directory>tests/Feature</directory>
+            <directory>tests/Architecture</directory>
         </testsuite>
         <testsuite name="unit">
             <directory>tests/Unit</directory>
@@ -27,6 +28,12 @@
         </testsuite>
         <testsuite name="feature">
             <directory>tests/Feature</directory>
+        </testsuite>
+        <testsuite name="architecture">
+            <directory>tests/Architecture</directory>
+        </testsuite>
+        <testsuite name="compat">
+            <directory>tests/Compat</directory>
         </testsuite>
         <testsuite name="e2e">
             <directory>tests/e2e</directory>

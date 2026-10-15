@@ -6,6 +6,93 @@ All notable changes to ArkHive are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [2.1.0-rc.1] - 2026-10-14
+
+ArkHive 2.1 works with the tools of the host: systemd (status, progress, watchdog, failure
+notifications, hardened units installed by `schedule --install`), the journal and syslog
+(structured fields, message ids), exit codes from `sysexits.h`, and the restic packaged by
+Debian 11 and later. Transient failures are tried again within the run, and a failed database
+dump no longer costs the backup of the files.
+
+### Added
+
+- restic 0.11.0 or newer is supported (2.0 needed 0.14.0), so the restic package of Debian 11,
+  Ubuntu 22.04 and Debian 12 works as is. Where an older restic lacks a feature ArkHive falls
+  back: keepalives for `sftp:` repositories go in a whole `sftp.command` before 0.16.1, `init`
+  and `restore` totals are read without JSON, short snapshot ids are resolved to full ones,
+  `RESTIC_CHECK_SUBSET` becomes the nearest fraction before 0.12 (percentages) and 0.14 (sizes),
+  and `--compression` is left out before 0.14. `doctor` names what the installed restic lacks.
+- Transient failures are tried again within the run, each retry logged with its reason: a
+  repository locked by another run or another restic client is waited for up to `LOCK_WAIT`
+  seconds (new optional key, default 300; `0` keeps the 2.0 behaviour of failing at once), a
+  repository that cannot be reached is tried three times, and a notification refused with a 4xx
+  answer (greylisting) or not delivered for a network error is tried three times. Permanent
+  failures (wrong password, missing repository, refused SSH key) are never retried.
+- Each `backup`, `maintain` and `drill` records how it ended (start, end, exit code, snapshot,
+  warnings, error) in the state directory: `$STATE_DIRECTORY` under systemd, `/var/lib/arkhive`
+  as root, `$XDG_STATE_HOME/arkhive` otherwise. `status` shows the last run of each job (and the
+  last good one after a failure), `status --json` adds `runs`, and `doctor` warns when the last
+  run of a job failed.
+- Under systemd, restic's cache goes in the unit's `CacheDirectory=` (`$CACHE_DIRECTORY/restic`)
+  unless `RESTIC_CACHE_DIR` is set, so hardened units keep a writable, persistent cache.
+- A full filesystem (exit 74) is reported with the free space found on each local filesystem
+  involved: the dump directory, a local repository, the restic cache, the restore target.
+- Quick calls have deadlines (exit 75 when exceeded): database metadata queries, restic opening,
+  creating or reading the repository's metadata (300 s each), and `--version` checks (30 s).
+- Under systemd, ArkHive reports to the service manager (sd_notify protocol, in PHP):
+  `systemctl status` shows the current step and its progress, then the outcome; a run that still
+  makes progress gets more time (`EXTEND_TIMEOUT_USEC`) instead of being stopped by
+  `TimeoutStartSec`; `WatchdogSec=` is supported. The units set `NotifyAccess=main`.
+- Hardened systemd units: `StateDirectory=` and `CacheDirectory=`, `ProtectSystem=full`,
+  `ProtectHome=read-only` with the dump directory and a local repository writable, and the
+  kernel and privilege protections; `CPUSchedulingPolicy=batch`; timers spread over 10 minutes
+  (`RandomizedDelaySec`); maintain and drill wait for a backup due at the same time. Regenerate
+  and reinstall the units (`arkhive schedule --systemd`) to get them.
+- `arkhive notify --failed-unit <unit>` and the `arkhive-failure@.service` template the units
+  start with `OnFailure=`: a scheduled run that ends without sending its own notification
+  (killed by the timeout or the OOM killer, failed before reading its configuration) is reported
+  with its outcome and its last journal lines. Run records gain `invocation` and `notified`.
+- `arkhive schedule --install` (as root) writes the systemd units, reloads systemd and enables the
+  timers; it rewrites only what changed and never overwrites a unit it did not generate.
+  `arkhive schedule --status [--json]` shows each timer's state, next and last run and last
+  result, exit 1 when a timer is missing, disabled or its last run failed.
+- Logging to the systemd journal through its native protocol, with structured fields
+  (`ARKHIVE_COMMAND`, `ARKHIVE_RUN_ID`, `ARKHIVE_PHASE`, `ARKHIVE_LEVEL`, the event's data as
+  `ARKHIVE_<KEY>`), chosen automatically when stderr is connected to the journal; or to the local
+  syslog daemon (`/dev/log`, facility `SYSLOG_FACILITY`) for hosts without systemd. New option
+  `--log-target auto|stderr|journal|syslog` and keys `LOG_TARGET`, `SYSLOG_FACILITY`; stderr is
+  the fallback when neither can be reached, and `doctor` reports the target.
+- `backup`, `maintain`, `drill` and `restore` open and close with journal events that carry a
+  `MESSAGE_ID` (`journalctl MESSAGE_ID=...` lists every failed backup) and `ARKHIVE_EXIT_STATUS`;
+  `contrib/systemd/arkhive.catalog` explains them in `journalctl -x`.
+- `tests/Compat`: ArkHive's commands against a real restic (`ARKHIVE_TEST_RESTIC`), run in CI for
+  every release from 0.11.0 to the current one, including an `sftp:` repository on a local sshd.
+
+### Fixed
+
+- A database dump restored for `--import-as` into a full filesystem failed as "the output
+  stream was closed" (exit 1); it is now "No space left on device" (exit 74).
+- `sftp:` repositories failed on restic older than 0.16.1 ("option sftp.args is not known"), and
+  `maintain` failed on restic older than 0.12 with the default `RESTIC_CHECK_SUBSET=5%`.
+- A repository of format 2 opened by restic older than 0.14 is reported as such (exit 69, with
+  the version to install) instead of a bare restic error.
+- A run whose stderr reader went away (`arkhive ... 2>&1 | grep -q`, a pipe closed early) exited 1
+  at its next log line although the work succeeded; the lost lines are now ignored.
+
+### Changed
+
+- Exit codes follow `sysexits.h` (see "Exit codes" in the README): usage errors are 64 (were 2),
+  configuration errors 78 (were 2), refused outputs such as a non-empty restore target or not
+  enough space 73 (were 4), a lock held by another run 75, an unreachable repository or a missing
+  tool 69, a wrong password 77, a failed `drill` or repository check 65 (were 1). 0, 1, 3, 10, 130
+  and 143 keep their meaning. systemd shows the names (`status=75/TEMPFAIL`).
+- A database dump that fails no longer aborts the backup: the other dumps and the files are
+  backed up, the failed dumps are named in the log, the notification and `--json`
+  (`dump_failures`), and the run exits 3. The new optional key `DUMP_REQUIRED=true` makes such
+  a run fail with the dump's exit code instead, still after saving the rest.
+- A failed database dump or import exits with its cause: server down 69, credentials refused 77,
+  unknown database 66, disk full 74, timeout 75 (all were 1).
+
 ## [2.0.0-rc.1] - 2026-10-14
 
 ArkHive 2.0 replaces the 1.x archive pipeline (`tar | gzip/xz | openssl` streamed over SSH) with
@@ -92,6 +179,7 @@ encryption, deduplication and retention. The configuration is not compatible wit
 
 - Restrict the remote `chmod` to the backup directory of the day.
 
-[Unreleased]: https://github.com/mauriziofonte/arkhive/compare/v2.0.0-rc.1...HEAD
+[Unreleased]: https://github.com/mauriziofonte/arkhive/compare/v2.1.0-rc.1...HEAD
+[2.1.0-rc.1]: https://github.com/mauriziofonte/arkhive/compare/v2.0.0-rc.1...v2.1.0-rc.1
 [2.0.0-rc.1]: https://github.com/mauriziofonte/arkhive/compare/v1.7.1...v2.0.0-rc.1
 [1.7.1]: https://github.com/mauriziofonte/arkhive/releases/tag/v1.7.1

@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Tests\Integration;
 
-use Mfonte\Arkhive\Services\Config\ConfigParser;
-use Mfonte\Arkhive\Services\Exclusion\ExclusionConverter;
-use Mfonte\Arkhive\Services\Exclusion\ResticPatternMatcher;
+use Mfonte\Arkhive\Application\Configuration\ConfigParser;
+use Mfonte\Arkhive\Domain\Exclusion\ExclusionConverter;
+use Mfonte\Arkhive\Domain\Exclusion\ResticPatternMatcher;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Tests\Support\LegacyExclusionMatcher;

@@ -1,7 +1,7 @@
 {
     "$schema": "vendor/infection/infection/resources/schema.json",
     "source": {
-        "directories": ["app/Services"]
+        "directories": ["app/Domain", "app/Application", "app/Infrastructure"]
     },
     "logs": {
         "text": "build/infection/infection.log",

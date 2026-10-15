@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use Illuminate\Support\Facades\Artisan;
+use Mfonte\Arkhive\Application\Port\ProcessRunner;
+use Mfonte\Arkhive\Application\System\Dependencies;
 use Mfonte\Arkhive\Commands\MountCommand;
 use Mfonte\Arkhive\ExitCode;
-use Mfonte\Arkhive\Services\Process\ProcessRunner;
-use Mfonte\Arkhive\Services\System\Dependencies;
 use Tests\Support\FakeBinaries;
 use Tests\Support\FakeProcessRunner;
 use Tests\Support\FakeRestic;
@@ -81,7 +81,7 @@ final class BrowseCommandsTest extends TestCase
         self::assertSame(ExitCode::USAGE, Artisan::call('ls', ['snapshot' => '6118', 'path' => 'srv/www', ...$this->repo]));
         self::assertStringContainsString("The path must be absolute, as it was backed up: 'srv/www'", $this->logOutput());
 
-        self::assertSame(ExitCode::FAILURE, Artisan::call('ls', ['snapshot' => '6118', 'path' => '/srv/nothing', ...$this->repo]));
+        self::assertSame(ExitCode::NO_INPUT, Artisan::call('ls', ['snapshot' => '6118', 'path' => '/srv/nothing', ...$this->repo]));
         self::assertStringContainsString('error /srv/nothing is not in snapshot 6118b3c5', $this->logOutput());
         self::assertStringContainsString("notice Find it with: arkhive find 'nothing'", $this->logOutput());
     }
@@ -126,7 +126,7 @@ final class BrowseCommandsTest extends TestCase
         MountCommand::$fuseDevice = "{$this->dir}/no-fuse";
         mkdir("{$this->dir}/mnt");
 
-        self::assertSame(ExitCode::FAILURE, Artisan::call('mount', ['directory' => "{$this->dir}/mnt", ...$this->repo]));
+        self::assertSame(ExitCode::UNAVAILABLE, Artisan::call('mount', ['directory' => "{$this->dir}/mnt", ...$this->repo]));
         self::assertStringContainsString("error FUSE is not available on this host ({$this->dir}/no-fuse does not exist), so the repository cannot be mounted", $this->logOutput());
         self::assertStringContainsString('notice Browse without FUSE: arkhive ls latest /path, arkhive find <name>, then arkhive restore --include /path --target <new directory>', $this->logOutput());
         self::assertSame([], $this->restic->calls, 'restic is not even started');
@@ -138,7 +138,7 @@ final class BrowseCommandsTest extends TestCase
         MountCommand::$fuseDevice = "{$this->dir}/fuse";
         mkdir("{$this->dir}/mnt");
 
-        self::assertSame(ExitCode::FAILURE, Artisan::call('mount', ['directory' => "{$this->dir}/mnt", ...$this->repo]));
+        self::assertSame(ExitCode::UNAVAILABLE, Artisan::call('mount', ['directory' => "{$this->dir}/mnt", ...$this->repo]));
         self::assertStringContainsString('(fusermount is not installed)', $this->logOutput());
         self::assertStringContainsString('To enable mounting: Run: apt install fuse3', $this->logOutput());
     }

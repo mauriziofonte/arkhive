@@ -7,9 +7,11 @@ namespace Tests\Feature;
 use DateTimeImmutable;
 use DateTimeZone;
 use Illuminate\Support\Facades\Artisan;
+use Mfonte\Arkhive\Application\Port\ProcessRunner;
+use Mfonte\Arkhive\Application\System\Dependencies;
+use Mfonte\Arkhive\Domain\Run\JobState;
+use Mfonte\Arkhive\Domain\Run\RunRecord;
 use Mfonte\Arkhive\ExitCode;
-use Mfonte\Arkhive\Services\Process\ProcessRunner;
-use Mfonte\Arkhive\Services\System\Dependencies;
 use Tests\Support\FakeBinaries;
 use Tests\Support\FakeProcessRunner;
 use Tests\Support\FakeRestic;
@@ -60,6 +62,11 @@ final class StatusCommandTest extends TestCase
             'hosts' => ['web1.example.com', 'web2.example.com'],
             'raw_size' => 52683,
             'uncompressed_size' => 54295,
+            'runs' => [
+                'backup' => ['last' => null, 'last_success' => null],
+                'maintain' => ['last' => null, 'last_success' => null],
+                'drill' => ['last' => null, 'last_success' => null],
+            ],
         ], $status);
         self::assertSame(['stats', '--json', '--no-lock', '--mode', 'raw-data'], $this->restic->callsOf('stats')[0]);
     }
@@ -76,6 +83,28 @@ final class StatusCommandTest extends TestCase
             . "Repository size: 51.45 KiB\n",
             Artisan::output(),
         );
+    }
+
+    public function testTheLastRunsOfThisHost(): void
+    {
+        $at = new DateTimeImmutable('2026-10-12 14:17:00', new DateTimeZone('UTC'));
+        $good = new RunRecord('backup', $at->modify('-1 day'), $at->modify('-1 day +62 seconds'), 0, 'aaaa1111bbbb2222');
+        $this->runs->states['backup'] = (new JobState())->with($good)->with(new RunRecord('backup', $at, $at->modify('+3 seconds'), 75, error: 'The restic repository is locked'));
+        $this->runs->states['maintain'] = (new JobState())->with(new RunRecord('maintain', $at, $at->modify('+40 seconds'), 0));
+
+        self::assertSame(ExitCode::SUCCESS, Artisan::call('status', ['--config' => $this->writeConfig()]));
+        $output = Artisan::output();
+        self::assertStringContainsString("Last backup:      2026-10-12 14:17 UTC, FAILED with exit 75: The restic repository is locked\n", $output);
+        self::assertStringContainsString("Last good backup: 2026-10-11 14:17 UTC, OK, snapshot aaaa1111\n", $output);
+        self::assertStringContainsString("Last maintain:    2026-10-12 14:17 UTC, OK\n", $output);
+        self::assertStringNotContainsString('Last drill', $output);
+
+        self::assertSame(ExitCode::SUCCESS, Artisan::call('status', ['--config' => $this->writeConfig(), '--json' => true]));
+        $runs = json_decode(Artisan::output(), true)['runs'];
+        self::assertSame(['job' => 'backup', 'started' => '2026-10-12T14:17:00+00:00', 'ended' => '2026-10-12T14:17:03+00:00', 'duration_seconds' => 3.0, 'exit_code' => 75, 'status' => 'failed', 'snapshot_id' => null, 'warnings' => [], 'error' => 'The restic repository is locked', 'invocation' => null, 'notified' => false], $runs['backup']['last']);
+        self::assertSame('aaaa1111bbbb2222', $runs['backup']['last_success']['snapshot_id']);
+        self::assertSame(62.0, $runs['backup']['last_success']['duration_seconds']);
+        self::assertNull($runs['drill']['last']);
     }
 
     public function testBareMetalWithoutAConfigCoversEveryHost(): void
@@ -124,7 +153,31 @@ final class StatusCommandTest extends TestCase
     {
         $this->restic->catConfig = [10, '', FakeRestic::fixture('no-repository-0.19.stderr')];
 
-        self::assertSame(ExitCode::FAILURE, Artisan::call('status', ['--config' => $this->writeConfig()]));
+        self::assertSame(ExitCode::UNAVAILABLE, Artisan::call('status', ['--config' => $this->writeConfig()]));
         self::assertStringContainsString('error There is no restic repository at /srv/restic-repo', $this->logOutput());
+        self::assertSame([], $this->pause->waits, 'a missing repository is not tried again');
+    }
+
+    public function testANetworkFailureWhileOpeningTheRepositoryIsTriedAgain(): void
+    {
+        $tries = 0;
+        $this->restic->on['cat'] = static function () use (&$tries): array {
+            return ++$tries < 3 ? [1, '', FakeRestic::fixture('sftp-unreachable-0.19.stderr')] : [0, "{\"version\": 2}\n", ''];
+        };
+
+        self::assertSame(ExitCode::SUCCESS, Artisan::call('status', ['--config' => $this->writeConfig()]));
+        self::assertSame(3, $tries);
+        self::assertCount(2, $this->pause->waits);
+        self::assertStringContainsString('warning Opening the repository: Opening the restic repository failed (restic exit 1): subprocess ssh: ssh: connect to host backup.example.com port 2299: Connection refused', $this->logOutput());
+        self::assertStringContainsString('(attempt 3 of 3)', $this->logOutput());
+    }
+
+    public function testARepositoryThatStaysUnreachableIsExit69AfterThreeTries(): void
+    {
+        $this->restic->catConfig = [1, '', FakeRestic::fixture('sftp-unreachable-0.19.stderr')];
+
+        self::assertSame(ExitCode::UNAVAILABLE, Artisan::call('status', ['--config' => $this->writeConfig()]));
+        self::assertCount(3, $this->restic->callsOf('cat'));
+        self::assertCount(2, $this->pause->waits);
     }
 }

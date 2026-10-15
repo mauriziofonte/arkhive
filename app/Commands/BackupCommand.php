@@ -4,16 +4,17 @@ declare(strict_types=1);
 
 namespace Mfonte\Arkhive\Commands;
 
+use Mfonte\Arkhive\Application\Backup\BackupRunner;
+use Mfonte\Arkhive\Application\Database\DatabaseDumps;
+use Mfonte\Arkhive\Application\Port\SnapshotStoreFactory;
+use Mfonte\Arkhive\Application\Resilience\Retrier;
+use Mfonte\Arkhive\Domain\Backup\BackupReport;
+use Mfonte\Arkhive\Domain\Configuration\Config;
+use Mfonte\Arkhive\Domain\Notification\Notification;
+use Mfonte\Arkhive\Domain\Shared\Bytes;
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
 use Mfonte\Arkhive\Exceptions\InterruptedException;
 use Mfonte\Arkhive\ExitCode;
-use Mfonte\Arkhive\Services\Backup\BackupReport;
-use Mfonte\Arkhive\Services\Backup\BackupRunner;
-use Mfonte\Arkhive\Services\Config\Config;
-use Mfonte\Arkhive\Services\Dump\DatabaseDumps;
-use Mfonte\Arkhive\Services\Notify\Notification;
-use Mfonte\Arkhive\Services\Restic\ResticFactory;
-use Mfonte\Arkhive\Support\Bytes;
 
 final class BackupCommand extends ConfiguredCommand
 {
@@ -23,6 +24,12 @@ final class BackupCommand extends ConfiguredCommand
         {--with-disk-space-check : (1.x, no longer needed) free space for the dumps is always checked}';
 
     protected $description = 'Dump the databases and back up the configured paths to the restic repository';
+
+    #[\Override]
+    protected function recordedJob(): string
+    {
+        return 'backup';
+    }
 
     protected function perform(): int
     {
@@ -34,12 +41,13 @@ final class BackupCommand extends ConfiguredCommand
         $config = $this->loadConfig();
 
         $runner = new BackupRunner(
-            $this->laravel->make(ResticFactory::class),
+            $this->laravel->make(SnapshotStoreFactory::class),
             $this->laravel->make(DatabaseDumps::class),
             $this->cleanup,
             $this->clock,
             $this->terminal->environment(),
             posix_geteuid(),
+            $this->laravel->make(Retrier::class),
         );
         try {
             $report = $runner->run($config, $this->log);
@@ -51,17 +59,20 @@ final class BackupCommand extends ConfiguredCommand
             throw $e;
         }
 
+        $this->runSnapshot = $report->summary->snapshotId;
+        $this->runWarnings = $report->warnings;
         $this->log->success(ucfirst($report->summary->describe()), $report->summary->toArray());
         if ((bool) $this->option('json')) {
             $this->result(json_encode([
                 ...$report->summary->toArray(),
                 'dumps' => array_map(static fn ($dump): array => ['engine' => $dump->engine, 'database' => $dump->database, 'bytes' => $dump->bytes], $report->dumps),
+                'dump_failures' => array_map(static fn ($failure): array => $failure->toArray(), $report->dumpFailures),
                 'warnings' => $report->warnings,
             ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
         }
 
-        $exit = $report->hasWarnings() ? ExitCode::WARNING : ExitCode::SUCCESS;
-        if (!$this->sendNotification($config, $this->success($config, $report))) {
+        $exit = $report->exitCode();
+        if (!$this->sendNotification($config, $this->success($config, $report)) && $exit === ExitCode::SUCCESS) {
             $exit = ExitCode::WARNING;
         }
 
@@ -72,12 +83,17 @@ final class BackupCommand extends ConfiguredCommand
     {
         $summary = $report->summary;
         $dumps = array_map(static fn ($dump): string => "{$dump->engine}/{$dump->database} (" . Bytes::format($dump->bytes) . ')', $report->dumps);
-        $state = $report->hasWarnings() ? 'completed with warnings' : 'OK';
+        $failures = array_map(static fn ($failure): string => "{$failure->engine}/" . ($failure->database ?? '*'), $report->dumpFailures);
+        [$state, $headline] = match (true) {
+            $report->failed() => ['FAILED', "The backup saved the files in snapshot {$summary->shortId()}, but database dumps required by DUMP_REQUIRED failed: " . implode('; ', $report->warnings) . '.'],
+            $report->hasWarnings() => ['completed with warnings', 'The backup completed with warnings: ' . implode('; ', $report->warnings) . '.'],
+            default => ['OK', 'The backup completed successfully.'],
+        };
 
         return new Notification(
             !$report->hasWarnings(),
             "[ArkHive] backup {$state} on {$config->restic->host}",
-            $report->hasWarnings() ? 'The backup completed with warnings: ' . implode('; ', $report->warnings) . '.' : 'The backup completed successfully.',
+            $headline,
             [
                 ...$this->commonFacts($config),
                 'Snapshot' => $summary->snapshotId,
@@ -85,6 +101,7 @@ final class BackupCommand extends ConfiguredCommand
                 'Processed' => sprintf('%s in %d files', Bytes::format($summary->totalBytesProcessed), $summary->totalFilesProcessed),
                 'Files' => sprintf('%d new, %d changed, %d unmodified', $summary->filesNew, $summary->filesChanged, $summary->filesUnmodified),
                 'Dumps' => $dumps === [] ? 'none' : implode(', ', $dumps),
+                ...($failures === [] ? [] : ['Failed dumps' => implode(', ', $failures)]),
                 'Duration' => sprintf('%.1fs', $report->duration),
                 'restic' => $report->resticVersion,
             ],

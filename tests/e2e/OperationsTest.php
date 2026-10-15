@@ -6,6 +6,7 @@ namespace Tests\e2e;
 
 use DateTimeImmutable;
 use DateTimeZone;
+use Mfonte\Arkhive\ExitCode;
 
 /**
  * spec §13.2 steps 2 and 7, §13.5 drill and §13.6 corrupted pack: init, maintain with the 7/4/6
@@ -39,7 +40,7 @@ final class OperationsTest extends E2eTestCase
      */
     private function runEnv(): array
     {
-        return ['ARKHIVE_LOCK_DIR' => "{$this->dir}/locks", 'TMPDIR' => "{$this->dir}/tmp"];
+        return ['ARKHIVE_LOCK_DIR' => "{$this->dir}/locks", 'TMPDIR' => "{$this->dir}/tmp", 'STATE_DIRECTORY' => "{$this->dir}/state"];
     }
 
     /**
@@ -102,7 +103,7 @@ final class OperationsTest extends E2eTestCase
         file_put_contents($other, "another-password-placeholder\n");
         chmod($other, 0600);
         $wrong = self::arkhive(['init', '--config', $this->writeConfig("{$this->dir}/config", ['BACKUP_PATHS' => $this->tree, 'RESTIC_REPOSITORY' => $repository, 'RESTIC_PASSWORD_FILE' => $other])], $this->runEnv());
-        self::assertSame(1, $wrong->exitCode, $wrong->output());
+        self::assertSame(ExitCode::NO_PERMISSION, $wrong->exitCode, $wrong->output());
         self::assertStringContainsString("error Wrong password for the restic repository {$repository}", $wrong->stderr);
     }
 
@@ -209,10 +210,15 @@ final class OperationsTest extends E2eTestCase
         self::assertIsArray($status['latest']);
         self::assertLessThan(0.1, $status['latest']['age_hours']);
         self::assertGreaterThan(2 * 1024 * 1024, $status['raw_size']);
+        self::assertSame(0, $status['runs']['backup']['last']['exit_code'], 'the last backup is recorded in STATE_DIRECTORY');
+        self::assertSame($status['latest']['id'], $status['runs']['backup']['last']['snapshot_id']);
+        self::assertNull($status['runs']['drill']['last']);
+        self::assertSame(0600, fileperms("{$this->dir}/state/backup.json") & 0777);
 
         $human = self::arkhive(['status', '--config', $config], $this->runEnv());
         self::assertSame(0, $human->exitCode);
         self::assertMatchesRegularExpression('/^Latest snapshot: [0-9a-f]{8} at .+ \(\d+ min ago\)$/m', $human->stdout);
+        self::assertMatchesRegularExpression('/^Last backup:     .+, OK, snapshot [0-9a-f]{8}$/m', $human->stdout);
         self::assertStringStartsWith("Repository:      {$repository}\n", $human->stdout, 'stdout carries only the result, the log goes to stderr');
     }
 
@@ -263,16 +269,16 @@ final class OperationsTest extends E2eTestCase
 
         $pack = self::corruptLargestPack($repository);
 
-        $drill = $this->json(['drill'], 1, $config);
+        $drill = $this->json(['drill'], ExitCode::DATA_ERROR, $config);
         self::assertFalse($drill['passed']);
         self::assertNotSame([], $drill['failures']);
         self::assertSame([], glob("{$this->dir}/tmp/*") ?: []);
 
-        $maintain = $this->json(['maintain'], 1, $config);
+        $maintain = $this->json(['maintain'], ExitCode::DATA_ERROR, $config);
         self::assertFalse($maintain['healthy']);
         self::assertContains($pack, $maintain['broken_packs']);
         $log = self::arkhive(['maintain', '--config', $config], $this->runEnv());
-        self::assertSame(1, $log->exitCode);
+        self::assertSame(ExitCode::DATA_ERROR, $log->exitCode);
         self::assertStringContainsString("error The repository check found errors: pack {$pack}", $log->stderr);
         self::assertStringContainsString("restic repair packs {$pack}", $log->stderr);
         foreach (glob("{$this->dir}/locks/*") ?: [] as $lock) {

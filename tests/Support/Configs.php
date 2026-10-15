@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Tests\Support;
 
-use Mfonte\Arkhive\Services\Config\Config;
-use Mfonte\Arkhive\Services\Config\MysqlConfig;
-use Mfonte\Arkhive\Services\Config\PgsqlConfig;
-use Mfonte\Arkhive\Services\Config\ResticSettings;
+use Mfonte\Arkhive\Domain\Configuration\Config;
+use Mfonte\Arkhive\Domain\Configuration\MysqlConfig;
+use Mfonte\Arkhive\Domain\Configuration\PgsqlConfig;
+use Mfonte\Arkhive\Domain\Configuration\ResticSettings;
 
 /**
  * Ready-made configurations for unit tests (placeholders only).

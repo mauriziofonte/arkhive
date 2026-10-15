@@ -5,13 +5,13 @@ declare(strict_types=1);
 namespace Mfonte\Arkhive\Commands;
 
 use FilesystemIterator;
-use Mfonte\Arkhive\Exceptions\ArkhiveException;
+use Mfonte\Arkhive\Application\System\Dependencies;
+use Mfonte\Arkhive\Domain\System\Dependency;
+use Mfonte\Arkhive\Domain\System\InstallHints;
 use Mfonte\Arkhive\Exceptions\InterruptedException;
+use Mfonte\Arkhive\Exceptions\UnavailableException;
 use Mfonte\Arkhive\Exceptions\UsageException;
 use Mfonte\Arkhive\ExitCode;
-use Mfonte\Arkhive\Services\System\Dependencies;
-use Mfonte\Arkhive\Services\System\Dependency;
-use Mfonte\Arkhive\Services\System\InstallHints;
 
 /**
  * spec §10.3: a read-only FUSE mount of the repository (`restic mount`), only where FUSE works;
@@ -35,7 +35,7 @@ final class MountCommand extends RepositoryCommand
         $fusermount = $dependencies->find(Dependency::Fuse);
         if (!file_exists(self::$fuseDevice) || $fusermount === null) {
             $missing = !file_exists(self::$fuseDevice) ? self::$fuseDevice . ' does not exist' : 'fusermount is not installed';
-            throw new ArkhiveException(
+            throw new UnavailableException(
                 "FUSE is not available on this host ({$missing}), so the repository cannot be mounted",
                 hint: 'Browse without FUSE: arkhive ls latest /path, arkhive find <name>, then arkhive restore --include /path --target <new directory>'
                     . (file_exists(self::$fuseDevice) ? '. To enable mounting: ' . InstallHints::forDependency(Dependency::Fuse, $dependencies->distro()) : ' (in a container FUSE needs --device /dev/fuse)'),
@@ -50,14 +50,9 @@ final class MountCommand extends RepositoryCommand
 
         [$settings] = $this->repositorySettings();
         $restic = $this->openRepository($settings, 'to mount the repository');
-        $args = ['mount'];
-        if ($this->hostOption() !== null) {
-            array_push($args, '--host', $this->hostOption());
-        }
-        array_push($args, '--', $directory);
         $this->log->info("Mounting the repository read-only on {$directory}: snapshots are under {$directory}/snapshots, ids/, hosts/ and tags/. Stop with Ctrl-C");
         try {
-            $restic->run($args, 'restic mount');
+            $restic->mount($directory, $this->hostOption());
         } catch (InterruptedException) {
             $this->log->success("Unmounted {$directory}");
 

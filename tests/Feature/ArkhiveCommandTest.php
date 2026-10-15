@@ -43,7 +43,7 @@ final class ArkhiveCommandTest extends TestCase
     {
         ProbeCommand::$body = static fn (): int => throw new RefusedException('target is not empty', 'use --force');
 
-        self::assertSame(ExitCode::REFUSED, Artisan::call('test:probe'));
+        self::assertSame(ExitCode::CANNOT_CREATE, Artisan::call('test:probe'));
         self::assertSame(
             "2026-10-12T10:20:30+02:00 error target is not empty\n2026-10-12T10:20:30+02:00 notice use --force\n",
             $this->logOutput(),
@@ -70,7 +70,7 @@ final class ArkhiveCommandTest extends TestCase
     {
         ProbeCommand::$body = static fn (): int => throw new RuntimeException('kaboom');
 
-        self::assertSame(ExitCode::FAILURE, Artisan::call('test:probe'));
+        self::assertSame(ExitCode::SOFTWARE, Artisan::call('test:probe'));
         self::assertMatchesRegularExpression('/error Unexpected error: kaboom \(.+ArkhiveCommandTest\.php:\d+\)/', $this->logOutput());
     }
 
@@ -93,7 +93,7 @@ final class ArkhiveCommandTest extends TestCase
         ProbeCommand::$body = static fn (): int => 0;
         $path = $this->tempDir() . '/nope/a.log';
 
-        self::assertSame(ExitCode::USAGE, Artisan::call('test:probe', ['--log-file' => $path]));
+        self::assertSame(ExitCode::CANNOT_CREATE, Artisan::call('test:probe', ['--log-file' => $path]));
         self::assertStringContainsString("Cannot write the log file {$path}", $this->logOutput());
     }
 
@@ -211,7 +211,7 @@ final class ArkhiveCommandTest extends TestCase
 
         Artisan::call('test:probe');
 
-        self::assertSame(\Mfonte\Arkhive\Services\Process\Signals::supported(), $installed);
-        self::assertFalse($this->app->make(\Mfonte\Arkhive\Services\Process\Signals::class)->installed());
+        self::assertSame(\Mfonte\Arkhive\Infrastructure\Process\Signals::supported(), $installed);
+        self::assertFalse($this->app->make(\Mfonte\Arkhive\Infrastructure\Process\Signals::class)->installed());
     }
 }

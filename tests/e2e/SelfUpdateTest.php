@@ -106,7 +106,7 @@ final class SelfUpdateTest extends E2eTestCase
 
         $result = $this->selfUpdate([]);
 
-        self::assertSame(ExitCode::FAILURE, $result->exitCode, $result->output());
+        self::assertSame(ExitCode::DATA_ERROR, $result->exitCode, $result->output());
         self::assertStringContainsString("error The downloaded v{$next} PHAR does not match its published sha256", $result->stderr);
         self::assertSame($before, hash_file('sha256', $this->installed));
         self::assertSame(['arkhive'], array_values(array_diff(scandir("{$this->dir}/bin") ?: [], ['.', '..'])), 'no download, no backup');
@@ -122,7 +122,7 @@ final class SelfUpdateTest extends E2eTestCase
         self::assertStringContainsString('a new major version', $check->stderr);
 
         $refused = $this->selfUpdate([]);
-        self::assertSame(ExitCode::REFUSED, $refused->exitCode, $refused->output());
+        self::assertSame(ExitCode::USAGE, $refused->exitCode, $refused->output());
         self::assertStringContainsString("is a different major version than the running {$this->current}", $refused->stderr);
         self::assertSame($this->current, self::version($this->installed));
 

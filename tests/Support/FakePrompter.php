@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Support;
 
-use Mfonte\Arkhive\Services\Restore\Prompter;
+use Mfonte\Arkhive\Application\Port\Prompter;
 use RuntimeException;
 
 /**

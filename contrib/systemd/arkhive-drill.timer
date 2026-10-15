@@ -4,6 +4,8 @@ Description=Weekly ArkHive restore drill
 
 [Timer]
 OnCalendar=Wed *-*-* 05:30:00
+RandomizedDelaySec=10min
+AccuracySec=1min
 Persistent=true
 
 [Install]

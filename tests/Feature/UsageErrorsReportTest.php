@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use Mfonte\Arkhive\Commands\Support\UsageErrors;
 use Mfonte\Arkhive\ExitCode;
-use Mfonte\Arkhive\Services\Output\UsageErrors;
 use Tests\TestCase;
 
 final class UsageErrorsReportTest extends TestCase

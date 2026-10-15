@@ -4,8 +4,9 @@ declare(strict_types=1);
 
 namespace Tests\e2e;
 
-use Mfonte\Arkhive\Services\Exclusion\ExclusionConverter;
-use Mfonte\Arkhive\Services\Exclusion\ResticPatternMatcher;
+use Mfonte\Arkhive\Domain\Exclusion\ExclusionConverter;
+use Mfonte\Arkhive\Domain\Exclusion\ResticPatternMatcher;
+use Mfonte\Arkhive\ExitCode;
 
 /**
  * spec §13.2 steps 1-4 and 8-11: the PHAR backs up a generated tree and the seeded databases to the
@@ -260,7 +261,24 @@ final class BackupTest extends E2eTestCase
         return false;
     }
 
-    public function testAParallelBackupFailsOnTheLock(): void
+    public function testAParallelBackupWithLockWaitZeroFailsOnTheLock(): void
+    {
+        $this->buildTree();
+        $config = $this->config(['RESTIC_BINARY' => $this->slowRestic(2), 'LOCK_WAIT' => '0']);
+
+        $first = self::startArkhive(['backup', '--config', $config], $this->runEnv());
+        self::assertTrue(self::waitFor($this->lockHeld(...)), 'the first run takes the lock');
+        $second = self::arkhive(['backup', '--config', $config], $this->runEnv());
+        $firstResult = self::finish($first);
+
+        self::assertSame(ExitCode::TEMPORARY, $second->exitCode, $second->output());
+        self::assertStringContainsString('error Another ArkHive run holds the lock for this repository (PID ', $second->stderr);
+        self::assertStringNotContainsString('trying again', $second->stderr);
+        self::assertSame(0, $firstResult->exitCode, $firstResult->output());
+        self::assertCount(1, $this->snapshots());
+    }
+
+    public function testAParallelBackupWaitsForTheFirstOne(): void
     {
         $this->buildTree();
         $config = $this->config(['RESTIC_BINARY' => $this->slowRestic(2)]);
@@ -270,10 +288,10 @@ final class BackupTest extends E2eTestCase
         $second = self::arkhive(['backup', '--config', $config], $this->runEnv());
         $firstResult = self::finish($first);
 
-        self::assertSame(1, $second->exitCode, $second->output());
-        self::assertStringContainsString('error Another ArkHive run holds the lock for this repository (PID ', $second->stderr);
         self::assertSame(0, $firstResult->exitCode, $firstResult->output());
-        self::assertCount(1, $this->snapshots());
+        self::assertSame(0, $second->exitCode, $second->output());
+        self::assertMatchesRegularExpression('/warning Waiting for the repository: Another ArkHive run holds the lock for this repository \(PID \d+.*; trying again in \d+s \(waiting up to 300s in all, \d+s so far\)/', $second->stderr);
+        self::assertCount(2, $this->snapshots());
     }
 
     public function testSigtermStopsTheBackupCleanly(): void
@@ -287,7 +305,7 @@ final class BackupTest extends E2eTestCase
         proc_terminate($started[0], 15);
         $result = self::finish($started);
 
-        self::assertSame(143, $result->exitCode, $result->output());
+        self::assertSame(ExitCode::SIGTERM, $result->exitCode, $result->output());
         self::assertStringContainsString('error Interrupted by SIGTERM: cleaned up and released the lock', $result->stderr);
         self::assertFalse($this->lockHeld(), 'lock released');
         self::assertSame([], glob("{$this->dir}/dumps/*/*") ?: [], 'no dump left');
@@ -304,7 +322,7 @@ final class BackupTest extends E2eTestCase
 
         $result = self::arkhive(['backup', '--config', $this->config(['RESTIC_PASSWORD_FILE' => $password])], $this->runEnv());
 
-        self::assertSame(2, $result->exitCode, $result->output());
+        self::assertSame(ExitCode::CONFIG, $result->exitCode, $result->output());
         self::assertStringContainsString("RESTIC_PASSWORD_FILE {$password} is readable by group or others (mode 0644) (Run: chmod 600 {$password})", $result->stderr);
         self::assertSame([], $this->snapshots());
     }
@@ -317,7 +335,7 @@ final class BackupTest extends E2eTestCase
 
         $result = self::arkhive(['backup', '--config', $legacy], $this->runEnv());
 
-        self::assertSame(2, $result->exitCode, $result->output());
+        self::assertSame(ExitCode::CONFIG, $result->exitCode, $result->output());
         foreach (['BACKUP_DIRECTORY', 'BACKUP_RETENTION_DAYS', 'COMPRESSION_TYPE', 'SSH_HOST', 'SSH_PORT', 'SSH_USER', 'SSH_BACKUP_HOME', 'WITH_CRYPT', 'CRYPT_PASSWORD', 'SMTP_AUTH', 'SMTP_SSL'] as $key) {
             self::assertStringContainsString("{$key}: ", $result->stderr, $key);
         }

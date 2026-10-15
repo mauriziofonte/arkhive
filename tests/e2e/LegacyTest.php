@@ -69,7 +69,7 @@ final class LegacyTest extends E2eTestCase
         $command = implode(' ', array_map('escapeshellarg', [PHP_BINARY, self::env('E2E_PHAR'), 'decrypt-legacy', $archive, '--to', "{$this->dir}/out"]));
         $tty = self::exec(['script', '-qec', $command . '; echo "exit=$?"', '/dev/null'], ['TERM' => 'xterm']);
         self::assertStringContainsString('pass --password-file <file> or set ARKHIVE_CRYPT_PASSWORD', $tty->stdout);
-        self::assertStringContainsString('exit=2', $tty->stdout);
+        self::assertStringContainsString('exit=64', $tty->stdout);
         self::assertDirectoryDoesNotExist("{$this->dir}/out");
     }
 
@@ -79,7 +79,7 @@ final class LegacyTest extends E2eTestCase
 
         $result = self::arkhive(['decrypt-legacy', $archive, '--to', "{$this->dir}/out"], ['ARKHIVE_CRYPT_PASSWORD' => 'not it']);
 
-        self::assertSame(ExitCode::FAILURE, $result->exitCode);
+        self::assertSame(ExitCode::NO_PERMISSION, $result->exitCode);
         self::assertStringContainsString('the password is wrong', $result->stderr);
         self::assertDirectoryDoesNotExist("{$this->dir}/out");
         self::assertSame([], glob("{$this->dir}/.arkhive-legacy-*") ?: []);

@@ -1,0 +1,84 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Mfonte\Arkhive\Domain\System;
+
+/**
+ * External programs ArkHive runs, with the package that provides them on each distribution.
+ */
+enum Dependency: string
+{
+    case Restic = 'restic';
+    case MysqlDump = 'mysql-dump';
+    case MysqlClient = 'mysql-client';
+    case PgDump = 'pg_dump';
+    case PgClient = 'psql';
+    case Ssh = 'ssh';
+    case Openssl = 'openssl';
+    case Xz = 'xz';
+    case Tar = 'tar';
+    case Gh = 'gh';
+    case Fuse = 'fuse';
+    case Systemctl = 'systemctl';
+    case Journalctl = 'journalctl';
+
+    /**
+     * Binary names, preferred first.
+     *
+     * @return list<string>
+     */
+    public function binaries(): array
+    {
+        return match ($this) {
+            self::Restic => ['restic'],
+            self::MysqlDump => ['mariadb-dump', 'mysqldump'],
+            self::MysqlClient => ['mariadb', 'mysql'],
+            self::PgDump => ['pg_dump'],
+            self::PgClient => ['psql'],
+            self::Ssh => ['ssh'],
+            self::Openssl => ['openssl'],
+            self::Xz => ['xz'],
+            self::Tar => ['tar'],
+            self::Gh => ['gh'],
+            self::Fuse => ['fusermount3', 'fusermount'],
+            self::Systemctl => ['systemctl'],
+            self::Journalctl => ['journalctl'],
+        };
+    }
+
+    public function label(): string
+    {
+        return implode(' or ', $this->binaries());
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function packages(PackageManager $manager): array
+    {
+        return match ($this) {
+            self::Restic => ['restic'],
+            self::MysqlDump, self::MysqlClient => [match ($manager) {
+                PackageManager::Dnf => 'mariadb',
+                PackageManager::Pacman => 'mariadb-clients',
+                default => 'mariadb-client',
+            }],
+            self::PgDump, self::PgClient => [match ($manager) {
+                PackageManager::Apt, PackageManager::Apk => 'postgresql-client',
+                default => 'postgresql',
+            }],
+            self::Ssh => [match ($manager) {
+                PackageManager::Apt, PackageManager::Apk => 'openssh-client',
+                PackageManager::Pacman => 'openssh',
+                default => 'openssh-clients',
+            }],
+            self::Openssl => ['openssl'],
+            self::Xz => [$manager === PackageManager::Apt ? 'xz-utils' : 'xz'],
+            self::Tar => ['tar'],
+            self::Gh => [in_array($manager, [PackageManager::Apk, PackageManager::Pacman], true) ? 'github-cli' : 'gh'],
+            self::Fuse => ['fuse3'],
+            self::Systemctl, self::Journalctl => ['systemd'],
+        };
+    }
+}

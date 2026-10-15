@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Tests\Support;
 
-use Mfonte\Arkhive\Services\Process\Command;
-use Mfonte\Arkhive\Services\Process\ProcessResult;
-use Mfonte\Arkhive\Services\Process\ProcessRunner;
+use Mfonte\Arkhive\Application\Port\ProcessRunner;
+use Mfonte\Arkhive\Application\Process\Command;
+use Mfonte\Arkhive\Application\Process\ProcessResult;
 use RuntimeException;
 
 /**
@@ -73,5 +73,13 @@ final class FakeProcessRunner implements ProcessRunner
     public function everythingOnTheCommandLine(): string
     {
         return implode("\n", array_map(static fn (Command $command): string => implode(' ', $command->argv), $this->commands));
+    }
+
+    /**
+     * @return list<Command> the commands run of one binary (by its basename)
+     */
+    public function commandsOf(string $binary): array
+    {
+        return array_values(array_filter($this->commands, static fn (Command $command): bool => basename($command->argv[0]) === $binary));
     }
 }

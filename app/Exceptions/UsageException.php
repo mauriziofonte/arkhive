@@ -7,13 +7,13 @@ namespace Mfonte\Arkhive\Exceptions;
 use Mfonte\Arkhive\ExitCode;
 
 /**
- * Configuration or usage error (exit 2).
+ * Bad option or argument, or a required answer missing in unattended mode (exit 64, EX_USAGE).
  */
 class UsageException extends ArkhiveException
 {
-    public function __construct(string $message, ?string $hint = null)
+    public function __construct(string $message, ?string $hint = null, ?\Throwable $previous = null)
     {
-        parent::__construct($message, ExitCode::USAGE, $hint);
+        parent::__construct($message, ExitCode::USAGE, $hint, $previous);
     }
 
     /**

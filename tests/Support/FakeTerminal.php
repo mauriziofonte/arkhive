@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Support;
 
-use Mfonte\Arkhive\Services\Context\Terminal;
+use Mfonte\Arkhive\Application\Port\Terminal;
 
 final class FakeTerminal implements Terminal
 {
@@ -15,7 +15,13 @@ final class FakeTerminal implements Terminal
         public bool $stdinTty = false,
         public bool $stdoutTty = false,
         public array $env = [],
+        public ?string $stderr = null,
     ) {
+    }
+
+    public function stderrIdentity(): ?string
+    {
+        return $this->stderr;
     }
 
     public function stdinIsTty(): bool

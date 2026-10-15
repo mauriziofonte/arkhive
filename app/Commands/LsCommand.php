@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace Mfonte\Arkhive\Commands;
 
-use Mfonte\Arkhive\Exceptions\ArkhiveException;
+use Mfonte\Arkhive\Application\Output\TextTable;
+use Mfonte\Arkhive\Domain\Repository\Node;
+use Mfonte\Arkhive\Domain\Repository\Snapshots;
+use Mfonte\Arkhive\Domain\Shared\Bytes;
+use Mfonte\Arkhive\Exceptions\NoInputException;
 use Mfonte\Arkhive\Exceptions\UsageException;
 use Mfonte\Arkhive\ExitCode;
-use Mfonte\Arkhive\Services\Restic\Node;
-use Mfonte\Arkhive\Services\Restore\Snapshots;
-use Mfonte\Arkhive\Support\Bytes;
-use Mfonte\Arkhive\Support\TextTable;
 
 /**
  * spec §10.3: the listing of a directory in a snapshot (mode, size, mtime).
@@ -42,7 +42,7 @@ final class LsCommand extends RepositoryCommand
             $nodes[] = $node;
         });
         if ($nodes === []) {
-            throw new ArkhiveException("{$path} is not in snapshot {$snapshot->shortId()}", hint: 'Find it with: arkhive find ' . escapeshellarg(basename((string) $path)));
+            throw new NoInputException("{$path} is not in snapshot {$snapshot->shortId()}", hint: 'Find it with: arkhive find ' . escapeshellarg(basename((string) $path)));
         }
 
         if ((bool) $this->option('json')) {

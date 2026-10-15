@@ -5,10 +5,11 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use Illuminate\Support\Facades\Artisan;
+use Mfonte\Arkhive\Application\Port\Notifier;
+use Mfonte\Arkhive\Application\Port\ProcessRunner;
+use Mfonte\Arkhive\Application\System\Dependencies;
 use Mfonte\Arkhive\ExitCode;
-use Mfonte\Arkhive\Services\Notify\Notifier;
-use Mfonte\Arkhive\Services\Process\ProcessRunner;
-use Mfonte\Arkhive\Services\System\Dependencies;
+use Mfonte\Arkhive\Infrastructure\Mail\SmtpNotifier;
 use Random\Engine\Mt19937;
 use Random\Randomizer;
 use Tests\Support\CapturingTransport;
@@ -40,7 +41,7 @@ final class DrillCommandTest extends TestCase
         $this->mail = new CapturingTransport();
         $this->app->instance(ProcessRunner::class, $runner);
         $this->app->instance(Dependencies::class, FakeBinaries::dependencies("{$this->dir}/bin", ['restic']));
-        $this->app->instance(Notifier::class, new Notifier($this->mail->factory()));
+        $this->app->instance(Notifier::class, new SmtpNotifier($this->mail->factory()));
         $this->app->instance(Randomizer::class, new Randomizer(new Mt19937(3)));
     }
 
@@ -64,26 +65,32 @@ final class DrillCommandTest extends TestCase
         self::assertSame('[ArkHive] restore drill PASSED on web1.example.com', $mail->getSubject());
         self::assertStringContainsString('Files tested:  3 of 5', (string) $mail->getTextBody());
         self::assertStringContainsString('Database:      not tested (no --db)', (string) $mail->getTextBody());
+
+        $run = $this->runs->load('drill')->last;
+        self::assertNotNull($run);
+        self::assertSame([0, 'e82340a77eda41788f329309f282cd62f1d4cad85933d8b22b6e4e72a0ab05b2', null], [$run->exitCode, $run->snapshotId, $run->error]);
     }
 
     public function testAFailingDrillIsExit1AndNotified(): void
     {
         $this->restic->on['restore'] = static fn (): array => [1, '', "Fatal: failed to restore: ciphertext verification failed\n"];
 
-        self::assertSame(ExitCode::FAILURE, Artisan::call('drill', ['--config' => $this->writeConfig(self::notify('failure'))]));
+        self::assertSame(ExitCode::DATA_ERROR, Artisan::call('drill', ['--config' => $this->writeConfig(self::notify('failure'))]));
 
         self::assertStringContainsString('error Drill: the restore failed: restic restore (drill) failed (restic exit 1): Fatal: failed to restore: ciphertext verification failed', $this->logOutput());
         self::assertStringContainsString('error Restore drill FAILED on snapshot e82340a7: 1 problem(s)', $this->logOutput());
         $mail = $this->mail->sent[0];
         self::assertSame('[ArkHive] restore drill FAILED on web1.example.com', $mail->getSubject());
         self::assertStringStartsWith("The restore drill failed:\n  the restore failed: restic restore (drill) failed", (string) $mail->getTextBody());
+        self::assertSame(ExitCode::DATA_ERROR, $this->runs->load('drill')->last?->exitCode);
+        self::assertNull($this->runs->load('drill')->lastSuccess);
     }
 
     public function testADrillThatCannotRunIsNotified(): void
     {
         $this->restic->catConfig = [12, '', FakeRestic::fixture('wrong-password-0.19.stderr')];
 
-        self::assertSame(ExitCode::FAILURE, Artisan::call('drill', ['--config' => $this->writeConfig(self::notify('failure'))]));
+        self::assertSame(ExitCode::NO_PERMISSION, Artisan::call('drill', ['--config' => $this->writeConfig(self::notify('failure'))]));
 
         self::assertSame('[ArkHive] restore drill FAILED on web1.example.com', $this->mail->sent[0]->getSubject());
         self::assertStringStartsWith('The restore drill could not run: Wrong password', (string) $this->mail->sent[0]->getTextBody());
@@ -105,11 +112,12 @@ final class DrillCommandTest extends TestCase
             self::assertStringContainsString("error --sample must be a whole number from 1 to 100000, not '{$value}'", $this->logOutput());
         }
         self::assertSame([], $this->restic->calls);
+        self::assertSame([], $this->runs->states, 'a usage error is not a run of the drill');
     }
 
     public function testDbWithoutADatabaseInTheConfigurationIsAUsageError(): void
     {
-        self::assertSame(ExitCode::USAGE, Artisan::call('drill', ['--config' => $this->writeConfig(self::notify()), '--db' => true]));
+        self::assertSame(ExitCode::CONFIG, Artisan::call('drill', ['--config' => $this->writeConfig(self::notify()), '--db' => true]));
         self::assertStringContainsString('error --db needs a configuration with WITH_MYSQL or WITH_PGSQL', $this->logOutput());
         self::assertSame([], $this->mail->sent, 'a usage error is not a drill result');
     }

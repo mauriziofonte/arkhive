@@ -4,15 +4,15 @@ declare(strict_types=1);
 
 namespace Mfonte\Arkhive\Commands;
 
+use Mfonte\Arkhive\Application\Configuration\PasswordFile;
+use Mfonte\Arkhive\Application\Legacy\LegacyArchive;
+use Mfonte\Arkhive\Application\Legacy\LegacyExtractor;
+use Mfonte\Arkhive\Application\Port\ProcessRunner;
+use Mfonte\Arkhive\Application\Restore\TargetDirectory;
+use Mfonte\Arkhive\Application\System\Dependencies;
+use Mfonte\Arkhive\Domain\Shared\Bytes;
 use Mfonte\Arkhive\Exceptions\UsageException;
 use Mfonte\Arkhive\ExitCode;
-use Mfonte\Arkhive\Services\Config\PasswordFile;
-use Mfonte\Arkhive\Services\Legacy\LegacyArchive;
-use Mfonte\Arkhive\Services\Legacy\LegacyExtractor;
-use Mfonte\Arkhive\Services\Process\ProcessRunner;
-use Mfonte\Arkhive\Services\Restore\TargetDirectory;
-use Mfonte\Arkhive\Services\System\Dependencies;
-use Mfonte\Arkhive\Support\Bytes;
 
 /**
  * spec §6 decrypt-legacy: opens a 1.x archive (`.enc.arbk`, `.arbk`, `.arbk.xz`, `.tar`). The

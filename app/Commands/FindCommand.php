@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace Mfonte\Arkhive\Commands;
 
+use Mfonte\Arkhive\Application\Output\TextTable;
+use Mfonte\Arkhive\Domain\Repository\Node;
+use Mfonte\Arkhive\Domain\Repository\Snapshot;
+use Mfonte\Arkhive\Domain\Shared\Bytes;
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
 use Mfonte\Arkhive\Exceptions\UsageException;
 use Mfonte\Arkhive\ExitCode;
-use Mfonte\Arkhive\Services\Restic\Node;
-use Mfonte\Arkhive\Services\Restic\Snapshot;
-use Mfonte\Arkhive\Support\Bytes;
-use Mfonte\Arkhive\Support\TextTable;
 
 /**
  * spec §10.3: which snapshots contain a path, and its versions, to answer "when did this file last

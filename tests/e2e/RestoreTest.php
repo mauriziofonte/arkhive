@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\e2e;
 
 use FilesystemIterator;
+use Mfonte\Arkhive\ExitCode;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
 use SplFileInfo;
@@ -266,7 +267,7 @@ final class RestoreTest extends E2eTestCase
             self::assertSame($this->pgFingerprint('crm', 'contacts'), $this->pgFingerprint("crm_e2e_{$suffix}", 'contacts'));
 
             $existing = $this->ark(['restore', '--snapshot', 'latest', '--db', 'shop', '--import-as', 'blog', '--yes'], $databases);
-            self::assertSame(4, $existing->exitCode, $existing->output());
+            self::assertSame(ExitCode::CANNOT_CREATE, $existing->exitCode, $existing->output());
             self::assertStringContainsString('The database blog already exists: --import-as creates a new database and never imports over an existing one', $existing->stderr);
 
             self::assertSame($before, [$this->checksum('shop.products'), $this->checksum('shop.orders'), $this->pgFingerprint('crm', 'contacts')], 'the original databases are untouched');
@@ -287,7 +288,7 @@ final class RestoreTest extends E2eTestCase
         $broken = self::state($this->tree);
 
         $refused = $this->ark(['restore', '--snapshot', 'latest', '--in-place', '--yes']);
-        self::assertSame(4, $refused->exitCode, $refused->output());
+        self::assertSame(ExitCode::USAGE, $refused->exitCode, $refused->output());
         self::assertSame($broken, self::state($this->tree), 'nothing changed without --force');
 
         $result = $this->ark(['restore', '--snapshot', 'latest', '--in-place', '--force', '--yes', '--json']);
@@ -318,7 +319,7 @@ final class RestoreTest extends E2eTestCase
 
         $result = $this->ark(['restore', '--snapshot', 'latest', '--target', $target, '--yes']);
 
-        self::assertSame(4, $result->exitCode, $result->output());
+        self::assertSame(ExitCode::CANNOT_CREATE, $result->exitCode, $result->output());
         self::assertStringContainsString("error The restore target {$target} is not empty", $result->stderr);
         self::assertSame($before, self::state($target));
     }
@@ -337,7 +338,7 @@ final class RestoreTest extends E2eTestCase
         try {
             $result = $this->ark(['restore', '--snapshot', 'latest', '--target', "{$small}/restore", '--yes']);
 
-            self::assertSame(4, $result->exitCode, $result->output());
+            self::assertSame(ExitCode::CANNOT_CREATE, $result->exitCode, $result->output());
             self::assertMatchesRegularExpression('/error Not enough free space in ' . preg_quote($small, '/') . ' for the restore: \d+\.\d\d KiB needed, \d+(\.\d\d)? (B|KiB) available/', $result->stderr);
             self::assertSame([], array_values(array_diff(scandir($small) ?: [], ['.', '..'])), 'nothing written');
         } finally {
@@ -405,13 +406,14 @@ final class RestoreTest extends E2eTestCase
         file_put_contents($wrong, "not-the-password\n");
         chmod($wrong, 0600);
         $result = $this->ark(['restore', '--snapshot', 'latest', '--target', $target, '--yes'], ['RESTIC_PASSWORD_FILE' => $wrong]);
-        self::assertSame(1, $result->exitCode, $result->output());
+        self::assertSame(ExitCode::NO_PERMISSION, $result->exitCode, $result->output());
         self::assertStringContainsString("error Wrong password for the restic repository {$this->repository}", $result->stderr);
 
         $unreachable = str_replace('-p ' . self::env('E2E_SFTP_PORT'), '-p 1', $this->sftpCommand);
         $result = $this->ark(['restore', '--snapshot', 'latest', '--target', $target, '--yes'], ['RESTIC_SFTP_COMMAND' => $unreachable]);
-        self::assertSame(1, $result->exitCode, $result->output());
+        self::assertSame(ExitCode::UNAVAILABLE, $result->exitCode, $result->output());
         self::assertStringContainsString('error Opening the restic repository failed (restic exit ', $result->stderr);
+        self::assertStringContainsString('(attempt 3 of 3)', $result->stderr, 'a connection failure is tried three times');
         self::assertStringContainsString('notice Check that the repository server is up and that this command works by hand: ' . $unreachable, $result->stderr);
 
         // a stale exclusive lock, as a run killed while holding it leaves it behind. Deterministic on
@@ -422,8 +424,9 @@ final class RestoreTest extends E2eTestCase
         $this->backup(['RESTIC_REPOSITORY' => $local]);
         $lock = $this->captureExclusiveLock($local);
         try {
-            $result = $this->ark(['restore', '--snapshot', 'latest', '--target', $target, '--yes'], ['RESTIC_REPOSITORY' => $local]);
-            self::assertSame(1, $result->exitCode, $result->output());
+            $result = $this->ark(['restore', '--snapshot', 'latest', '--target', $target, '--yes'], ['RESTIC_REPOSITORY' => $local, 'LOCK_WAIT' => '8']);
+            self::assertSame(ExitCode::TEMPORARY, $result->exitCode, $result->output());
+            self::assertMatchesRegularExpression('/warning .*: The restic repository is locked.*; trying again in \d+s \(waiting up to 8s in all, \d+s so far\)/', $result->stderr);
             self::assertStringContainsString('error The restic repository is locked', $result->stderr);
             self::assertStringContainsString("restic -r '{$local}' unlock (ArkHive never does this automatically)", $result->stderr);
             self::assertFileExists($lock, 'ArkHive did not remove the lock');
@@ -448,7 +451,7 @@ final class RestoreTest extends E2eTestCase
         proc_terminate($started[0], 15);
         $result = self::finish($started);
 
-        self::assertSame(143, $result->exitCode, $result->output());
+        self::assertSame(ExitCode::SIGTERM, $result->exitCode, $result->output());
         self::assertStringContainsString('error Interrupted by SIGTERM: cleaned up and released the lock', $result->stderr);
         self::assertFileDoesNotExist($target, 'the partly restored target is removed');
         self::assertSame([], glob("{$this->dir}/tmp/*") ?: [], 'no temp file left');
@@ -518,7 +521,7 @@ final class RestoreTest extends E2eTestCase
 
         foreach ([[[], '--snapshot'], [['--snapshot', 'latest'], '--target'], [['--snapshot', 'latest', '--target', "{$this->dir}/t"], '--yes']] as [$args, $flag]) {
             $result = $this->ark(['restore', ...$args]);
-            self::assertSame(2, $result->exitCode, $result->output());
+            self::assertSame(ExitCode::USAGE, $result->exitCode, $result->output());
             self::assertStringContainsString("is required in unattended mode: pass {$flag}", $result->stderr);
             self::assertStringNotContainsString('[Y/n]', $result->output());
         }

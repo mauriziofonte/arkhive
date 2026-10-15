@@ -25,7 +25,7 @@ final class StartupRequirementsTest extends TestCase
 
         $result = Cli::run(['--version'], phpOptions: ['-n']);
 
-        self::assertSame(1, $result->exitCode);
+        self::assertSame(69, $result->exitCode);
         self::assertSame('', $result->stdout);
         self::assertSame($expected . "\n", $result->stderr);
         self::assertStringStartsWith('ArkHive needs the PHP extension', $result->stderr);

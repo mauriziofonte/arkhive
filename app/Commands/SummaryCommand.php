@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Mfonte\Arkhive\Commands;
 
-use Mfonte\Arkhive\Services\Output\UsageErrors;
+use Mfonte\Arkhive\Commands\Support\UsageErrors;
 use NunoMaduro\LaravelConsoleSummary\SummaryCommand as BaseSummaryCommand;
 use Symfony\Component\Console\Exception\CommandNotFoundException;
 use Symfony\Component\Console\Exception\ExceptionInterface;
@@ -13,7 +13,7 @@ use Symfony\Component\Console\Output\OutputInterface;
 
 /**
  * The command list, shown by `arkhive` alone. Laravel Zero also hands it every unknown command:
- * that is a usage error (exit 2) naming the closest commands, not the list with exit 0.
+ * that is a usage error (exit 64) naming the closest commands, not the list with exit 0.
  */
 final class SummaryCommand extends BaseSummaryCommand
 {

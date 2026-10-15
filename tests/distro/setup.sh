@@ -6,12 +6,22 @@ set -eu
 
 . /etc/os-release
 case "$ID:${VERSION_ID:-}" in
-    debian:12*)
+    debian:11* | debian:12*)
+        if [ "$VERSION_ID" = 11 ]; then
+            # Debian 11 left LTS on 2026-08-31: its security suite on deb.debian.org lists packages
+            # that are no longer there. This throw-away container uses the main suite only, from
+            # archive.debian.org once deb.debian.org drops it too.
+            sed -i '/bullseye-security/d; /bullseye-updates/d' /etc/apt/sources.list
+            if ! apt-get update -q; then
+                echo 'deb http://archive.debian.org/debian bullseye main' > /etc/apt/sources.list
+                echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99archive
+            fi
+        fi
         apt-get update -q
         DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends ca-certificates curl
         curl -fsSLo /tmp/sury-keyring.deb https://packages.sury.org/debsuryorg-archive-keyring.deb
         dpkg -i /tmp/sury-keyring.deb
-        echo "deb [signed-by=/usr/share/keyrings/debsuryorg-archive-keyring.gpg] https://packages.sury.org/php/ bookworm main" > /etc/apt/sources.list.d/php.list
+        echo "deb [signed-by=/usr/share/keyrings/debsuryorg-archive-keyring.gpg] https://packages.sury.org/php/ ${VERSION_CODENAME} main" > /etc/apt/sources.list.d/php.list
         apt-get update -q
         DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends php8.4-cli php8.4-mbstring php8.4-curl
         ;;

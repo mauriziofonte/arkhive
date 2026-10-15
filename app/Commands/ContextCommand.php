@@ -31,6 +31,8 @@ final class ContextCommand extends ArkhiveCommand
             'colour' => $this->context->colour,
             'log_format' => $this->context->logFormat->value,
             'reason' => $this->context->reason,
+            'log_target' => $this->context->logTarget->value,
+            'log_target_reason' => $this->context->logTargetReason,
         ], JSON_THROW_ON_ERROR));
 
         return ExitCode::SUCCESS;

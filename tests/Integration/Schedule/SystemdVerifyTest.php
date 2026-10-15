@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Tests\Integration\Schedule;
 
-use Mfonte\Arkhive\Services\Schedule\Schedule;
-use Mfonte\Arkhive\Services\Schedule\SystemdUnits;
+use Mfonte\Arkhive\Domain\Schedule\Schedule;
+use Mfonte\Arkhive\Domain\Schedule\SystemdUnits;
 use PHPUnit\Framework\TestCase;
 use Tests\Support\TempDir;
 
@@ -24,7 +24,7 @@ final class SystemdVerifyTest extends TestCase
         }
         $dir = $this->tempDir();
         // a config path that needs quoting and escaping; the executable must exist for verify
-        $schedule = new Schedule([PHP_BINARY, dirname(__DIR__, 3) . '/arkhive'], '/etc/my "conf"/100% $x', 'root', 4, 45, '/var/log/arkhive.log');
+        $schedule = new Schedule([PHP_BINARY, dirname(__DIR__, 3) . '/arkhive'], '/etc/my "conf"/100% $x', 'root', 4, 45, '/var/log/arkhive.log', ['/srv/dumps', '/srv/my repo/100%']);
         $files = [];
         foreach (SystemdUnits::render($schedule) as $path => $unit) {
             $files[] = $file = $dir . '/' . basename($path);

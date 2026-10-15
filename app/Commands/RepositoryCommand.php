@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace Mfonte\Arkhive\Commands;
 
+use Mfonte\Arkhive\Application\Configuration\PasswordFile;
+use Mfonte\Arkhive\Application\Port\SnapshotStore;
+use Mfonte\Arkhive\Application\Port\SnapshotStoreFactory;
+use Mfonte\Arkhive\Application\Resilience\Retrier;
+use Mfonte\Arkhive\Domain\Configuration\Config;
+use Mfonte\Arkhive\Domain\Configuration\ResticSettings;
+use Mfonte\Arkhive\Domain\Shared\RetryPolicy;
 use Mfonte\Arkhive\Exceptions\UsageException;
-use Mfonte\Arkhive\Services\Config\Config;
-use Mfonte\Arkhive\Services\Config\PasswordFile;
-use Mfonte\Arkhive\Services\Config\ResticSettings;
-use Mfonte\Arkhive\Services\Restic\Restic;
-use Mfonte\Arkhive\Services\Restic\ResticFactory;
 use Symfony\Component\Console\Input\InputOption;
 
 /**
@@ -58,15 +60,16 @@ abstract class RepositoryCommand extends ConfiguredCommand
     }
 
     /**
-     * restic found and recent enough, repository reachable and password valid.
+     * restic found and recent enough, repository reachable and password valid. Network errors are
+     * tried again; a repository locked by another run is waited for, up to LOCK_WAIT.
      */
-    protected function openRepository(ResticSettings $settings, string $purpose): Restic
+    protected function openRepository(ResticSettings $settings, string $purpose): SnapshotStore
     {
-        $restic = $this->laravel->make(ResticFactory::class)->create($settings, $purpose);
+        $restic = $this->laravel->make(SnapshotStoreFactory::class)->create($settings, $purpose);
         $version = $restic->requireSupportedVersion();
-        $this->log->debug("Using {$restic->binary} (restic {$version})");
+        $this->log->debug("Using {$restic->binary()} (restic {$version})");
         $this->log->info("Opening the repository {$settings->repository}");
-        $restic->checkReachable();
+        $this->laravel->make(Retrier::class)->transient($restic->checkReachable(...), RetryPolicy::lock($settings->lockWait), 'Opening the repository', $this->log);
 
         return $restic;
     }

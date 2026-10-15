@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace Tests\Integration\Process;
 
+use Mfonte\Arkhive\Application\Process\Command;
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
 use Mfonte\Arkhive\Exceptions\InterruptedException;
-use Mfonte\Arkhive\Services\Process\Command;
-use Mfonte\Arkhive\Services\Process\Signals;
-use Mfonte\Arkhive\Services\Process\SystemProcessRunner;
+use Mfonte\Arkhive\Infrastructure\Process\Signals;
+use Mfonte\Arkhive\Infrastructure\Process\SystemProcessRunner;
 use PHPUnit\Framework\TestCase;
 use Tests\Support\TempDir;
 
@@ -120,6 +120,32 @@ final class SystemProcessRunnerTest extends TestCase
         self::assertFalse($result->timedOut, 'the producer was stopped, not left running until the timeout');
         self::assertNotSame(0, $result->exitCode);
         self::assertStringContainsString('the output stream was closed before ' . basename(PHP_BINARY) . ' finished', $result->stderr);
+    }
+
+    public function testTheHeartbeatRunsWhileTheChildRuns(): void
+    {
+        $beats = 0;
+        $runner = new SystemProcessRunner($this->signals, heartbeat: static function () use (&$beats): void {
+            $beats++;
+        });
+
+        self::assertSame(0, $runner->run(self::php('usleep(700000);'))->exitCode);
+        self::assertGreaterThanOrEqual(3, $beats, 'at least every 200 ms');
+    }
+
+    public function testAFullOutputFilesystemIsNamedAsSuch(): void
+    {
+        if (!is_writable('/dev/full')) {
+            self::markTestSkipped('needs /dev/full');
+        }
+        $sink = fopen('/dev/full', 'wb');
+        self::assertIsResource($sink);
+
+        $result = $this->runner->run(self::php('while (true) { echo str_repeat("x", 65536); }')->withOutput($sink)->withTimeout(20));
+        fclose($sink);
+
+        self::assertFalse($result->timedOut);
+        self::assertStringContainsString('the output stream was closed before ' . basename(PHP_BINARY) . ' finished (No space left on device)', $result->stderr);
     }
 
     public function testLargeInputAndOutputDoNotDeadlock(): void

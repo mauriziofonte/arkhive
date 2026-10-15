@@ -4,15 +4,15 @@ declare(strict_types=1);
 
 namespace Mfonte\Arkhive\Commands;
 
+use Mfonte\Arkhive\Application\Port\HttpClient;
+use Mfonte\Arkhive\Application\Port\ProcessRunner;
+use Mfonte\Arkhive\Application\System\Dependencies;
+use Mfonte\Arkhive\Application\Update\PharSwap;
+use Mfonte\Arkhive\Application\Update\ReleaseSource;
+use Mfonte\Arkhive\Application\Update\SelfUpdater;
+use Mfonte\Arkhive\Domain\Update\Version;
 use Mfonte\Arkhive\Exceptions\UsageException;
 use Mfonte\Arkhive\ExitCode;
-use Mfonte\Arkhive\Services\Process\ProcessRunner;
-use Mfonte\Arkhive\Services\System\Dependencies;
-use Mfonte\Arkhive\Services\Update\HttpClient;
-use Mfonte\Arkhive\Services\Update\PharSwap;
-use Mfonte\Arkhive\Services\Update\ReleaseSource;
-use Mfonte\Arkhive\Services\Update\SelfUpdater;
-use Mfonte\Arkhive\Services\Update\Version;
 use Phar;
 
 /**

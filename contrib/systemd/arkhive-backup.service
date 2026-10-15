@@ -4,13 +4,25 @@ Description=ArkHive backup
 Documentation=https://github.com/mauriziofonte/arkhive
 Wants=network-online.target
 After=network-online.target
+OnFailure=arkhive-failure@%n.service
 
 [Service]
 Type=oneshot
+NotifyAccess=main
 User=root
 ExecStart=/usr/local/bin/arkhive backup --config /etc/arkhive/config
 Nice=10
 IOSchedulingClass=idle
+CPUSchedulingPolicy=batch
 TimeoutStartSec=6h
+StateDirectory=arkhive
+CacheDirectory=arkhive
+ProtectSystem=full
+ProtectHome=read-only
 PrivateTmp=true
 NoNewPrivileges=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true

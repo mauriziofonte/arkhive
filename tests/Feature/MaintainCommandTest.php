@@ -5,11 +5,12 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use Illuminate\Support\Facades\Artisan;
+use Mfonte\Arkhive\Application\Port\Notifier;
+use Mfonte\Arkhive\Application\Port\ProcessRunner;
+use Mfonte\Arkhive\Application\System\Dependencies;
+use Mfonte\Arkhive\Application\System\Lock;
 use Mfonte\Arkhive\ExitCode;
-use Mfonte\Arkhive\Services\Notify\Notifier;
-use Mfonte\Arkhive\Services\Process\ProcessRunner;
-use Mfonte\Arkhive\Services\System\Dependencies;
-use Mfonte\Arkhive\Services\System\Lock;
+use Mfonte\Arkhive\Infrastructure\Mail\SmtpNotifier;
 use Tests\Support\CapturingTransport;
 use Tests\Support\FakeBinaries;
 use Tests\Support\FakeProcessRunner;
@@ -45,7 +46,7 @@ final class MaintainCommandTest extends TestCase
         $this->mail = new CapturingTransport();
         $this->app->instance(ProcessRunner::class, $this->runner);
         $this->app->instance(Dependencies::class, FakeBinaries::dependencies("{$this->dir}/bin", ['restic']));
-        $this->app->instance(Notifier::class, new Notifier($this->mail->factory()));
+        $this->app->instance(Notifier::class, new SmtpNotifier($this->mail->factory()));
     }
 
     private function damaged(): void
@@ -92,6 +93,18 @@ final class MaintainCommandTest extends TestCase
         }
     }
 
+    public function testTheOutcomeIsRecorded(): void
+    {
+        self::assertSame(ExitCode::SUCCESS, Artisan::call('maintain', ['--config' => $this->writeConfig()]));
+        self::assertSame(ExitCode::SUCCESS, $this->runs->load('maintain')->last?->exitCode);
+
+        $this->restic->answers['forget'] = [1, '', "Fatal: unable to load index\n"];
+        self::assertSame(ExitCode::FAILURE, Artisan::call('maintain', ['--config' => $this->writeConfig()]));
+        self::assertSame(ExitCode::FAILURE, $this->runs->load('maintain')->last?->exitCode);
+        self::assertSame(ExitCode::SUCCESS, $this->runs->load('maintain')->lastSuccess?->exitCode);
+        self::assertSame([], array_diff(array_keys($this->runs->states), ['maintain']));
+    }
+
     public function testTheCheckSubsetComesFromTheConfiguration(): void
     {
         self::assertSame(ExitCode::SUCCESS, Artisan::call('maintain', ['--config' => $this->writeConfig(['RESTIC_CHECK_SUBSET' => '1/10'])]));
@@ -103,7 +116,7 @@ final class MaintainCommandTest extends TestCase
         $this->damaged();
         $config = $this->writeConfig(self::notify('failure'));
 
-        self::assertSame(ExitCode::FAILURE, Artisan::call('maintain', ['--config' => $config, '--json' => true]));
+        self::assertSame(ExitCode::DATA_ERROR, Artisan::call('maintain', ['--config' => $config, '--json' => true]));
 
         $log = $this->logOutput();
         self::assertStringContainsString('error The repository check found errors: pack ' . self::PACK . ' contains 2 errors', $log);
@@ -123,7 +136,7 @@ final class MaintainCommandTest extends TestCase
     {
         $this->restic->answers['check'] = [1, '', "Fatal: repository contains errors\nerror for tree 4b2a: tree 4b2a not found in repository\n"];
 
-        self::assertSame(ExitCode::FAILURE, Artisan::call('maintain', ['--config' => $this->writeConfig(), '--json' => true]));
+        self::assertSame(ExitCode::DATA_ERROR, Artisan::call('maintain', ['--config' => $this->writeConfig(), '--json' => true]));
 
         self::assertCount(1, $this->restic->callsOf('check'));
         self::assertStringContainsString('error The repository check found errors: error for tree 4b2a: tree 4b2a not found in repository', $this->logOutput());
@@ -137,9 +150,10 @@ final class MaintainCommandTest extends TestCase
     {
         $this->restic->answers['forget'] = [11, '', FakeRestic::fixture('locked-0.19.stderr')];
 
-        self::assertSame(ExitCode::FAILURE, Artisan::call('maintain', ['--config' => $this->writeConfig(self::notify())]));
+        self::assertSame(ExitCode::TEMPORARY, Artisan::call('maintain', ['--config' => $this->writeConfig(self::notify())]));
 
         self::assertStringContainsString('error The restic repository is locked', $this->logOutput());
+        self::assertEqualsWithDelta(300.0, $this->pause->total(), 1e-6, 'tried again until LOCK_WAIT');
         self::assertSame([], $this->restic->callsOf('check'));
         self::assertSame('[ArkHive] maintenance FAILED on web1.example.com', $this->mail->sent[0]->getSubject());
         self::assertStringStartsWith('The maintenance failed: The restic repository is locked', (string) $this->mail->sent[0]->getTextBody());
@@ -151,12 +165,13 @@ final class MaintainCommandTest extends TestCase
         $backup = Lock::forRepository('/srv/restic-repo', ['ARKHIVE_LOCK_DIR' => "{$this->dir}/locks"], new FixedClock(), 0);
         $backup->acquire('backup');
         try {
-            self::assertSame(ExitCode::FAILURE, Artisan::call('maintain', ['--config' => $config]));
+            self::assertSame(ExitCode::TEMPORARY, Artisan::call('maintain', ['--config' => $config]));
         } finally {
             $backup->release();
         }
 
         self::assertStringContainsString('error Another ArkHive run holds the lock for this repository', $this->logOutput());
+        self::assertStringContainsString('warning Waiting for the repository: Another ArkHive run holds the lock', $this->logOutput());
         self::assertSame([], $this->restic->callsOf('forget'));
     }
 
@@ -181,6 +196,6 @@ final class MaintainCommandTest extends TestCase
         $this->damaged();
         $this->mail->failWith = 'Connection refused';
 
-        self::assertSame(ExitCode::FAILURE, Artisan::call('maintain', ['--config' => $this->writeConfig(self::notify())]));
+        self::assertSame(ExitCode::DATA_ERROR, Artisan::call('maintain', ['--config' => $this->writeConfig(self::notify())]));
     }
 }

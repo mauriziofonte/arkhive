@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use Illuminate\Support\Facades\Artisan;
+use Mfonte\Arkhive\Application\Port\HttpClient;
+use Mfonte\Arkhive\Application\System\Dependencies;
 use Mfonte\Arkhive\Commands\SelfUpdateCommand;
 use Mfonte\Arkhive\ExitCode;
-use Mfonte\Arkhive\Services\System\Dependencies;
-use Mfonte\Arkhive\Services\Update\HttpClient;
 use Tests\Support\FakeBinaries;
 use Tests\Support\FakeHttpClient;
 use Tests\Support\FakeReleases;
@@ -105,7 +105,7 @@ final class SelfUpdateCommandTest extends TestCase
     {
         FakeReleases::publish($this->http, 'v1.7.1');
 
-        self::assertSame(ExitCode::REFUSED, Artisan::call('self-update', ['release' => 'v1.7.1']));
+        self::assertSame(ExitCode::USAGE, Artisan::call('self-update', ['release' => 'v1.7.1']));
         self::assertStringContainsString('error v1.7.1 is a different major version than the running 2.0.0', $this->logOutput());
 
         self::assertSame(ExitCode::SUCCESS, Artisan::call('self-update', ['release' => 'v1.7.1', '--allow-major' => true]), $this->logOutput());
@@ -134,7 +134,7 @@ final class SelfUpdateCommandTest extends TestCase
     {
         $this->http->json(FakeReleases::API . '/releases/latest', ['message' => 'rate limited'], 403);
 
-        self::assertSame(ExitCode::FAILURE, Artisan::call('self-update', ['--check' => true]));
+        self::assertSame(ExitCode::TEMPORARY, Artisan::call('self-update', ['--check' => true]));
         self::assertStringContainsString('notice Wait an hour, or set GITHUB_TOKEN', $this->logOutput());
     }
 
