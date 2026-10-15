@@ -40,7 +40,8 @@ final class ScheduleTest extends E2eTestCase
         $printed = self::exec([$this->installed, 'schedule', '--cron', '--config', $this->config], ['XDG_STATE_HOME' => "{$this->dir}/state"]);
         self::assertSame(0, $printed->exitCode, $printed->output());
         $root = posix_geteuid() === 0;
-        $line = (string) preg_grep('/ backup --config /', explode("\n", $printed->stdout))[3];
+        $lines = explode("\n", $printed->stdout);
+        $line = (string) (array_values(preg_grep('/ backup --config /', $lines))[0] ?? '');
         // an executable PHAR with php in the standard directories runs by itself
         self::assertMatchesRegularExpression('#^30 2 \* \* \* ' . ($root ? 'root ' : '') . 'nice -n 10 ' . preg_quote($this->installed, '#') . ' backup --config ' . preg_quote($this->config, '#') . ' --log-file \S+ >/dev/null 2>&1$#', $line);
 
@@ -49,8 +50,16 @@ final class ScheduleTest extends E2eTestCase
         // as root the line logs to /var/log/arkhive.log: kept inside the test directory here
         $command = str_replace('/var/log/arkhive.log', $log, $command);
         mkdir(dirname($log), 0700, true);
-        // cron's own environment: PATH=/usr/bin:/bin, then the PATH line of the table
-        $result = self::exec(['/bin/sh', '-c', $command], ['PATH' => '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin', 'HOME' => (string) getenv('HOME')]);
+        // cron's own environment (PATH=/usr/bin:/bin), then the variables the table sets: PATH, and
+        // as root the private lock directory
+        $env = ['PATH' => '/usr/bin:/bin', 'HOME' => (string) getenv('HOME')];
+        foreach (preg_grep('/^[A-Z_]+=/', $lines) ?: [] as $assignment) {
+            [$name, $value] = explode('=', $assignment, 2);
+            $env[$name] = $value;
+        }
+        self::assertSame('/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin', $env['PATH']);
+        self::assertSame($root ? '/run/arkhive' : null, $env['ARKHIVE_LOCK_DIR'] ?? null);
+        $result = self::exec(['/bin/sh', '-c', $command], $env);
 
         self::assertSame(0, $result->exitCode, $result->output() . (string) @file_get_contents($log));
         self::assertSame('', $result->output(), 'all output goes to the log file');
