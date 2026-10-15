@@ -51,10 +51,11 @@ final class DoctorCommandTest extends TestCase
         self::assertSame('ok    distribution       debian 12, packages via apt install <package>', $lines[1]);
         self::assertSame("ok    restic             restic 0.19.1 at {$this->dir}/bin/restic", $lines[2]);
         self::assertSame("ok    configuration      {$this->dir}/config", $lines[3]);
-        self::assertSame('ok    latest snapshot    e82340a7 of web1.example.com at 2026-10-12 14:17 UTC (6 h ago)', $lines[8]);
-        self::assertSame('info  last runs          none recorded yet in /var/lib/arkhive', $lines[9]);
-        self::assertSame('info  execution context  unattended (no terminal), log format plain', $lines[12]);
-        self::assertSame('info  log target         stderr (default)', $lines[13]);
+        self::assertSame(sprintf('ok    config file        %s/config is private (mode 0600, owner uid %d)', $this->dir, posix_geteuid()), $lines[4]);
+        self::assertSame('ok    latest snapshot    e82340a7 of web1.example.com at 2026-10-12 14:17 UTC (6 h ago)', $lines[9]);
+        self::assertSame('info  last runs          none recorded yet in /var/lib/arkhive', $lines[10]);
+        self::assertSame('info  execution context  unattended (no terminal), log format plain', $lines[13]);
+        self::assertSame('info  log target         stderr (default)', $lines[14]);
         self::assertStringContainsString('success Doctor: everything looks fine', $this->logOutput());
     }
 
@@ -69,7 +70,7 @@ final class DoctorCommandTest extends TestCase
             . '                         hint: Check that the backup timer or cron job runs',
             Artisan::output(),
         );
-        self::assertStringContainsString('warning Doctor: 0 failed, 1 warning(s), 15 checks', $this->logOutput());
+        self::assertStringContainsString('warning Doctor: 0 failed, 1 warning(s), 16 checks', $this->logOutput());
     }
 
     public function testAFailureIsExit1(): void
@@ -82,7 +83,7 @@ final class DoctorCommandTest extends TestCase
         $output = Artisan::output();
         self::assertStringContainsString("FAIL  password file      RESTIC_PASSWORD_FILE {$this->dir}/password is readable by group or others (mode 0644)\n                         hint: Run: chmod 600 {$this->dir}/password\n", $output);
         self::assertStringContainsString('skip  repository         needs restic and a valid password file', $output);
-        self::assertStringContainsString('error Doctor: 1 failed, 0 warning(s), 15 checks', $this->logOutput());
+        self::assertStringContainsString('error Doctor: 1 failed, 0 warning(s), 16 checks', $this->logOutput());
     }
 
     public function testMultiLineMessagesAreIndented(): void
@@ -99,8 +100,8 @@ final class DoctorCommandTest extends TestCase
         $json = json_decode(Artisan::output(), true);
         self::assertIsArray($json);
         self::assertSame('ok', $json['status']);
-        self::assertCount(15, $json['checks']);
-        self::assertSame(['check' => 'repository', 'status' => 'ok', 'message' => '/srv/restic-repo is reachable, the password opens it, no lock', 'hint' => null], $json['checks'][7]);
+        self::assertCount(16, $json['checks']);
+        self::assertSame(['check' => 'repository', 'status' => 'ok', 'message' => '/srv/restic-repo is reachable, the password opens it, no lock', 'hint' => null], $json['checks'][8]);
     }
 
     public function testAFailedLastRunIsAWarningWithWhereToLook(): void
@@ -153,6 +154,7 @@ final class DoctorCommandTest extends TestCase
         $json = json_decode(Artisan::output(), true);
         self::assertIsArray($json);
         self::assertSame('info', $json['checks'][3]['status']);
-        self::assertSame("{$this->dir}/pw is private (mode 0600)", $json['checks'][5]['message']);
+        self::assertSame(['check' => 'config file', 'status' => 'skipped', 'message' => 'no configuration', 'hint' => null], $json['checks'][4]);
+        self::assertSame("{$this->dir}/pw is private (mode 0600)", $json['checks'][6]['message']);
     }
 }

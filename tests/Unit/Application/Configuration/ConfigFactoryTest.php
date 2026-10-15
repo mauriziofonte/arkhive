@@ -13,6 +13,7 @@ use Mfonte\Arkhive\Domain\Configuration\RemovedKeys;
 use Mfonte\Arkhive\Domain\Execution\LogTarget;
 use Mfonte\Arkhive\Domain\Execution\SyslogFacility;
 use Mfonte\Arkhive\Exceptions\ConfigException;
+use Mfonte\Arkhive\Exceptions\PermissionException;
 use Mfonte\Arkhive\ExitCode;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -449,5 +450,73 @@ final class ConfigFactoryTest extends TestCase
         self::assertSame("{$cwd}/.arkhive-config", $config->source);
         self::assertSame('web02', $config->restic->host);
         self::assertSame("{$cwd}/.arkhive-config", $loader->locator()->locate());
+    }
+
+    public function testTheLoaderWarnsAboutPasswordsOthersCanReadAndKeepsRunning(): void
+    {
+        $dir = $this->tempDir();
+        $path = "{$dir}/config";
+        file_put_contents($path, "BACKUP_PATHS=/srv\nRESTIC_REPOSITORY=/var/restic\nRESTIC_PASSWORD_FILE={$this->passwordFile}\nMYSQL_PASSWORD=db-password-placeholder\n");
+        $loader = new ConfigLoader(new ConfigLocator($dir, ''), 'web02');
+
+        chmod($path, 0600);
+        self::assertSame([], $loader->load($path)->warnings);
+
+        chmod($path, 0644);
+        self::assertSame(
+            ["The configuration {$path} holds MYSQL_PASSWORD and is readable by group or others (mode 0644): Run: chmod 600 {$path} (a later ArkHive version will refuse it)"],
+            $loader->load($path)->warnings,
+        );
+
+        file_put_contents($path, "BACKUP_PATHS=/srv\nRESTIC_REPOSITORY=/var/restic\nRESTIC_PASSWORD_FILE={$this->passwordFile}\n");
+        self::assertSame([], $loader->load($path)->warnings, 'no passwords in it');
+    }
+
+    /**
+     * @return iterable<string, array{int}>
+     */
+    public static function changeableModes(): iterable
+    {
+        yield 'group-writable' => [0660];
+        yield 'world-writable' => [0666];
+        yield 'writable by others only' => [0602];
+    }
+
+    #[DataProvider('changeableModes')]
+    public function testTheLoaderRefusesAConfigurationOthersCanChange(int $mode): void
+    {
+        $dir = $this->tempDir();
+        $path = "{$dir}/config";
+        file_put_contents($path, "BACKUP_PATHS=/srv\nRESTIC_REPOSITORY=/var/restic\nRESTIC_PASSWORD_FILE={$this->passwordFile}\n");
+        chmod($path, $mode);
+
+        try {
+            (new ConfigLoader(new ConfigLocator($dir, ''), 'web02'))->load($path);
+            self::fail('a configuration others can write was loaded');
+        } catch (PermissionException $e) {
+            self::assertSame(ExitCode::NO_PERMISSION, $e->exitCode());
+            self::assertSame(sprintf('The configuration %s is writable by group or others (mode %04o): whoever can change it chooses the commands ArkHive runs', $path, $mode), $e->getMessage());
+            self::assertSame("Run: chmod 600 {$path}", $e->hint());
+        }
+    }
+
+    public function testRootRefusesAConfigurationAnotherUserOwns(): void
+    {
+        if (posix_geteuid() !== 0) {
+            self::markTestSkipped('needs root to give the file to another user');
+        }
+        $dir = $this->tempDir();
+        $path = "{$dir}/config";
+        file_put_contents($path, "BACKUP_PATHS=/srv\nRESTIC_REPOSITORY=/var/restic\nRESTIC_PASSWORD_FILE={$this->passwordFile}\n");
+        chmod($path, 0600);
+        chown($path, 65534);
+
+        try {
+            (new ConfigLoader(new ConfigLocator($dir, ''), 'web02'))->load($path);
+            self::fail('a configuration another user owns was loaded');
+        } catch (PermissionException $e) {
+            self::assertSame("The configuration {$path} belongs to uid 65534, not to the running user (uid 0) or root: that user can change it and so choose the commands ArkHive runs", $e->getMessage());
+            self::assertSame("Run: chown 0 {$path} && chmod 600 {$path}", $e->hint());
+        }
     }
 }

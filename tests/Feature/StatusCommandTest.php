@@ -180,4 +180,25 @@ final class StatusCommandTest extends TestCase
         self::assertCount(3, $this->restic->callsOf('cat'));
         self::assertCount(2, $this->pause->waits);
     }
+
+    public function testPasswordsOthersCanReadAreAWarningThatDoesNotStopTheRun(): void
+    {
+        $config = $this->writeConfig(['SMTP_PASSWORD' => 'smtp-password-placeholder']);
+        chmod($config, 0644);
+
+        self::assertSame(ExitCode::SUCCESS, Artisan::call('status', ['--config' => $config]));
+        self::assertStringContainsString("warning The configuration {$config} holds SMTP_PASSWORD and is readable by group or others (mode 0644): Run: chmod 600 {$config} (a later ArkHive version will refuse it)", $this->logOutput());
+        self::assertStringNotContainsString('smtp-password-placeholder', $this->logOutput());
+    }
+
+    public function testAConfigurationOthersCanWriteIsExit77BeforeAnythingRuns(): void
+    {
+        $config = $this->writeConfig();
+        chmod($config, 0666);
+
+        self::assertSame(ExitCode::NO_PERMISSION, Artisan::call('status', ['--config' => $config]));
+        self::assertStringContainsString("The configuration {$config} is writable by group or others (mode 0666): whoever can change it chooses the commands ArkHive runs", $this->logOutput());
+        self::assertStringContainsString("Run: chmod 600 {$config}", $this->logOutput());
+        self::assertSame([], $this->restic->callsOf('cat'), 'restic never ran');
+    }
 }

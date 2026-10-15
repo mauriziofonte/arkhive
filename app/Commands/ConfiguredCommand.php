@@ -53,6 +53,9 @@ abstract class ConfiguredCommand extends ArkhiveCommand
         $config = $loader->load(self::stringOption($this->option('config')), $checkSecrets);
         $this->configureLogging($config->logTarget, $config->syslogFacility);
         $this->log->debug("Configuration: {$config->source}");
+        foreach ($config->warnings as $warning) {
+            $this->log->warning($warning);
+        }
         if ($config->unknownKeys !== []) {
             $this->log->warning("Unknown keys in {$config->source}, ignored: " . implode(', ', $config->unknownKeys));
         }

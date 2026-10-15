@@ -139,7 +139,7 @@ arkhive self-update --allow-major    # needed to cross a major version (read the
 
    Connect once by hand (`sftp -P 23 -i /root/.ssh/arkhive u123456@backup.example.com`) and accept the server's host key after checking its fingerprint: restic runs `ssh` without a terminal, so it cannot ask.
 
-2. Write the configuration to `/etc/arkhive/config` and `chmod 600` it (it may hold database and SMTP passwords). Every 2.0 key, with the defaults the code applies when a key is absent or empty:
+2. Write the configuration to `/etc/arkhive/config` and `chmod 600` it (it may hold database and SMTP passwords). ArkHive refuses a configuration that group or others can write, or that belongs to another user than the one running it or root (exit 77), and warns when one holding passwords is readable by others (a later version will refuse it). Every 2.0 key, with the defaults the code applies when a key is absent or empty:
 
    ```sh
    # What to back up: absolute paths, space-separated ("double quotes" keep a path with spaces together)
@@ -440,7 +440,7 @@ arkhive doctor [--json]
 arkhive doctor --repo <repository> --password-file <file> [--sftp-command <cmd>]
 ```
 
-Checks, in order, and says how to fix each problem: PHP version and extensions, distribution and package manager, restic binary and version, the configuration used (or why none was found), removed 1.x keys, password file permissions, SSH command and key, repository reachability and locks, the latest snapshot's age (warning beyond 26 hours), the last recorded backup, maintain and drill (warning when the last one failed), free space for the dumps, clock skew against the repository, the execution context detected, SELinux. It never changes anything. Exit 0 when all is fine, 3 with warnings only, 1 when a check failed.
+Checks, in order, and says how to fix each problem: PHP version and extensions, distribution and package manager, restic binary and version, the configuration used (or why none was found), who else can read or change the configuration file, removed 1.x keys, password file permissions, SSH command and key, repository reachability and locks, the latest snapshot's age (warning beyond 26 hours), the last recorded backup, maintain and drill (warning when the last one failed), free space for the dumps, clock skew against the repository, the execution context detected, SELinux. It never changes anything. Exit 0 when all is fine, 3 with warnings only, 1 when a check failed.
 
 ### schedule
 

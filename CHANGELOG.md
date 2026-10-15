@@ -28,6 +28,14 @@ lock, run records, exit codes and messages.
   `ARKHIVE_LOCK_DIR=/run/arkhive` (units: `RuntimeDirectory=arkhive`, mode 0700, preserved between
   runs), and a lock file of another user or a symbolic link in a shared directory is exit 77 naming
   its owner. Reinstall the units with `arkhive schedule --install`.
+- The configuration file's permissions are checked before every run. A configuration that someone
+  besides the running user and root can change (writable by group or others, or owned by another
+  user) is refused with exit 77, since whoever changes it chooses the commands ArkHive runs. A
+  configuration that holds `MYSQL_PASSWORD`, `PGSQL_PASSWORD` or `SMTP_PASSWORD` and is readable by
+  group or others is a warning in 2.1 ("Run: chmod 600 <path>"), so existing installs keep running;
+  a later minor version will refuse it with exit 77 (`ConfigFileAccess::ENFORCE_PRIVATE`). `doctor`
+  has a new `config file` check: failed for both cases, a warning for a configuration without
+  passwords that others can read.
 
 ## [2.1.0-rc.1] - 2026-10-14
 

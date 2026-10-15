@@ -71,3 +71,22 @@ do the root cron lines. Reinstall the units (`arkhive schedule --install`) to ge
 In a shared directory, a lock file that is a symbolic link or belongs to another user is refused
 with exit 77 and names the owner; the file opened must be the one found at the path. Set
 `ARKHIVE_LOCK_DIR` to a directory only the backup user can write when other users share the host.
+
+## The configuration file
+
+Whoever can change the configuration chooses the commands ArkHive runs (`RESTIC_BINARY`,
+`RESTIC_SFTP_COMMAND`, the dump tools) as the user that runs it, usually root; whoever can read it
+reads `MYSQL_PASSWORD`, `PGSQL_PASSWORD` and `SMTP_PASSWORD`. Every command that loads it checks
+its mode and owner first, with the rule of sshd's `StrictModes`:
+
+| The file | Result |
+|---|---|
+| writable by group or others | refused, exit 77 |
+| owned by another user than the running one or root | refused, exit 77 |
+| holds a password and readable by group or others | warning in 2.1, exit 77 in a later version |
+| readable by others, no password in it | `doctor` warns; runs are not affected |
+
+The fix is in the message: `chmod 600 <path>` (and `chown` when the owner is wrong). `arkhive
+doctor` reports the same in its `config file` check, where readable passwords already fail. The
+repository password is never in the configuration: `RESTIC_PASSWORD_FILE` names a file that must
+be private as well.

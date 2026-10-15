@@ -51,15 +51,16 @@ final class ConfigFactory
     /**
      * @param array<string, string> $values      raw values from ConfigParser
      * @param bool                  $checkSecrets check the password file permissions (off only for doctor's own reporting)
+     * @param list<string>          $warnings     carried by the Config (ConfigLoader: file permissions)
      */
-    public static function create(array $values, string $source, string $defaultHost, bool $checkSecrets = true): Config
+    public static function create(array $values, string $source, string $defaultHost, bool $checkSecrets = true, array $warnings = []): Config
     {
         $removed = RemovedKeys::found($values);
         if ($removed !== []) {
             throw new ConfigException(RemovedKeys::message($removed, $source));
         }
 
-        return (new self($values, $source))->build($defaultHost, $checkSecrets);
+        return (new self($values, $source))->build($defaultHost, $checkSecrets, $warnings);
     }
 
     public static function parseBoolean(string $value): ?bool
@@ -109,7 +110,10 @@ final class ConfigFactory
         return $words;
     }
 
-    private function build(string $defaultHost, bool $checkSecrets): Config
+    /**
+     * @param list<string> $warnings
+     */
+    private function build(string $defaultHost, bool $checkSecrets, array $warnings): Config
     {
         $backupPaths = $this->backupPaths();
         $repository = $this->required('RESTIC_REPOSITORY');
@@ -171,6 +175,7 @@ final class ConfigFactory
             $this->boolean('DUMP_REQUIRED'),
             $logTarget,
             $facility,
+            $warnings,
         );
 
         if ($this->errors !== []) {
