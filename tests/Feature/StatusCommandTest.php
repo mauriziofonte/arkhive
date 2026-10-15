@@ -9,6 +9,7 @@ use DateTimeZone;
 use Illuminate\Support\Facades\Artisan;
 use Mfonte\Arkhive\Application\Port\ProcessRunner;
 use Mfonte\Arkhive\Application\System\Dependencies;
+use Mfonte\Arkhive\Domain\Repository\RepositoryKey;
 use Mfonte\Arkhive\Domain\Run\JobState;
 use Mfonte\Arkhive\Domain\Run\RunRecord;
 use Mfonte\Arkhive\ExitCode;
@@ -67,6 +68,7 @@ final class StatusCommandTest extends TestCase
                 'maintain' => ['last' => null, 'last_success' => null],
                 'drill' => ['last' => null, 'last_success' => null],
             ],
+            'continuity' => ['status' => 'not_recorded', 'recorded_snapshot' => null, 'recorded_at' => null, 'newest_snapshot' => null, 'newest_time' => null, 'newest_older' => false],
         ], $status);
         self::assertSame(['stats', '--json', '--no-lock', '--mode', 'raw-data'], $this->restic->callsOf('stats')[0]);
     }
@@ -101,7 +103,7 @@ final class StatusCommandTest extends TestCase
 
         self::assertSame(ExitCode::SUCCESS, Artisan::call('status', ['--config' => $this->writeConfig(), '--json' => true]));
         $runs = json_decode(Artisan::output(), true)['runs'];
-        self::assertSame(['job' => 'backup', 'started' => '2026-10-12T14:17:00+00:00', 'ended' => '2026-10-12T14:17:03+00:00', 'duration_seconds' => 3.0, 'exit_code' => 75, 'status' => 'failed', 'snapshot_id' => null, 'warnings' => [], 'error' => 'The restic repository is locked', 'invocation' => null, 'notified' => false], $runs['backup']['last']);
+        self::assertSame(['job' => 'backup', 'started' => '2026-10-12T14:17:00+00:00', 'ended' => '2026-10-12T14:17:03+00:00', 'duration_seconds' => 3.0, 'exit_code' => 75, 'status' => 'failed', 'snapshot_id' => null, 'warnings' => [], 'error' => 'The restic repository is locked', 'invocation' => null, 'notified' => false, 'repository' => null, 'host' => null], $runs['backup']['last']);
         self::assertSame('aaaa1111bbbb2222', $runs['backup']['last_success']['snapshot_id']);
         self::assertSame(62.0, $runs['backup']['last_success']['duration_seconds']);
         self::assertNull($runs['drill']['last']);
@@ -200,5 +202,74 @@ final class StatusCommandTest extends TestCase
         self::assertStringContainsString("The configuration {$config} is writable by group or others (mode 0666): whoever can change it chooses the commands ArkHive runs", $this->logOutput());
         self::assertStringContainsString("Run: chmod 600 {$config}", $this->logOutput());
         self::assertSame([], $this->restic->callsOf('cat'), 'restic never ran');
+    }
+
+    private const GONE = '9a3f1c0e5b7d4e2f8a6c1b3d5e7f9a0b2c4d6e8f0a1b3c5d7e9f1a2b3c4d5e6f';
+
+    private function recordBackup(string $snapshot, string $started): void
+    {
+        $key = RepositoryKey::of('/srv/restic-repo');
+        $at = new DateTimeImmutable($started, new DateTimeZone('UTC'));
+        $this->runs->repositories[$key]['backup'] = (new JobState())->with(new RunRecord('backup', $at, $at->modify('+65 seconds'), 0, $snapshot, repository: $key, host: 'web1.example.com'));
+    }
+
+    public function testTheRecordedLastBackupIsInTheRepository(): void
+    {
+        $this->recordBackup('e82340a77eda41788f329309f282cd62f1d4cad85933d8b22b6e4e72a0ab05b2', '2026-10-12 14:17:50');
+
+        self::assertSame(ExitCode::SUCCESS, Artisan::call('status', ['--config' => $this->writeConfig(), '--json' => true]));
+
+        $continuity = json_decode(Artisan::output(), true)['continuity'];
+        self::assertSame('ok', $continuity['status']);
+        self::assertSame('e82340a77eda41788f329309f282cd62f1d4cad85933d8b22b6e4e72a0ab05b2', $continuity['recorded_snapshot']);
+        self::assertFalse($continuity['newest_older']);
+    }
+
+    public function testADeletedOrRolledBackLastBackupIsExit65(): void
+    {
+        $this->recordBackup(self::GONE, '2026-10-12 19:00:00');
+
+        self::assertSame(ExitCode::DATA_ERROR, Artisan::call('status', ['--config' => $this->writeConfig(), '--json' => true]));
+
+        $status = json_decode(Artisan::output(), true);
+        self::assertSame([
+            'status' => 'missing',
+            'recorded_snapshot' => self::GONE,
+            'recorded_at' => '2026-10-12T19:01:05+00:00',
+            'newest_snapshot' => 'e82340a77eda41788f329309f282cd62f1d4cad85933d8b22b6e4e72a0ab05b2',
+            'newest_time' => '2026-10-12T14:17:53+00:00',
+            'newest_older' => true,
+        ], $status['continuity']);
+        self::assertStringContainsString(
+            'error Snapshot ' . self::GONE . ' recorded as the last successful backup at 2026-10-12 19:01 UTC is missing from the repository (deleted or rolled back);'
+            . ' the newest snapshot of web1.example.com in it, e82340a7 of 2026-10-12 14:17 UTC, is older',
+            $this->logOutput(),
+        );
+        self::assertStringContainsString('notice Hint: Find out who can delete snapshots on the repository server', $this->logOutput());
+
+        self::assertSame(ExitCode::DATA_ERROR, Artisan::call('status', ['--config' => $this->writeConfig(), '--max-age' => '26']), 'before the age check');
+        self::assertSame(ExitCode::DATA_ERROR, Artisan::call('status', ['--config' => $this->writeConfig()]));
+        self::assertStringContainsString("Last good snapshot: 9a3f1c0e MISSING from the repository (deleted or rolled back)\n", Artisan::output() . "\n");
+    }
+
+    public function testAMissingSnapshotWithANewerBackupIsNotAnError(): void
+    {
+        $this->recordBackup(self::GONE, '2026-10-12 14:00:00');
+
+        self::assertSame(ExitCode::SUCCESS, Artisan::call('status', ['--config' => $this->writeConfig(), '--json' => true]));
+        self::assertSame('superseded', json_decode(Artisan::output(), true)['continuity']['status']);
+    }
+
+    public function testTheLastBackupOfAnotherRepositoryIsNotChecked(): void
+    {
+        $other = RepositoryKey::of('/srv/other-repo');
+        $at = new DateTimeImmutable('2026-10-12 19:00:00', new DateTimeZone('UTC'));
+        $this->runs->repositories[$other]['backup'] = (new JobState())->with(new RunRecord('backup', $at, $at->modify('+1 minute'), 0, self::GONE, repository: $other, host: 'web1.example.com'));
+        $this->runs->states['backup'] = $this->runs->repositories[$other]['backup'];
+
+        self::assertSame(ExitCode::SUCCESS, Artisan::call('status', ['--config' => $this->writeConfig(), '--json' => true]));
+        $status = json_decode(Artisan::output(), true);
+        self::assertSame('not_recorded', $status['continuity']['status']);
+        self::assertNull($status['runs']['backup']['last'], 'the runs shown are those of this repository');
     }
 }

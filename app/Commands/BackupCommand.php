@@ -12,6 +12,7 @@ use Mfonte\Arkhive\Application\Run\RunJournal;
 use Mfonte\Arkhive\Domain\Backup\BackupReport;
 use Mfonte\Arkhive\Domain\Configuration\Config;
 use Mfonte\Arkhive\Domain\Notification\Notification;
+use Mfonte\Arkhive\Domain\Repository\RepositoryKey;
 use Mfonte\Arkhive\Domain\Run\RepositoryHealth;
 use Mfonte\Arkhive\Domain\Shared\Bytes;
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
@@ -61,7 +62,7 @@ final class BackupCommand extends ConfiguredCommand
             throw $e;
         }
 
-        $damage = RepositoryHealth::unresolvedDataError($this->laravel->make(RunJournal::class)->states());
+        $damage = RepositoryHealth::unresolvedDataError($this->laravel->make(RunJournal::class)->states(RepositoryKey::of($config->restic->repository)));
         if ($damage !== null) {
             $warning = RepositoryHealth::warning($damage, $this->clock->now()->getTimezone());
             $this->log->warning(ucfirst($warning));

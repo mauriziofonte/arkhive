@@ -30,6 +30,7 @@ use Mfonte\Arkhive\Domain\Diagnostics\CheckStatus;
 use Mfonte\Arkhive\Domain\Execution\ExecutionContext;
 use Mfonte\Arkhive\Domain\Execution\LogTarget;
 use Mfonte\Arkhive\Domain\Execution\SyslogFacility;
+use Mfonte\Arkhive\Domain\Repository\RepositoryKey;
 use Mfonte\Arkhive\Domain\Repository\ResticCapabilities;
 use Mfonte\Arkhive\Domain\Repository\Snapshot;
 use Mfonte\Arkhive\Domain\Repository\Snapshots;
@@ -495,7 +496,7 @@ final class Doctor
         $zone = $this->clock->now()->getTimezone();
         $described = [];
         $failed = null;
-        foreach ($this->runs->states() as $job => $state) {
+        foreach ($this->runs->states($this->settings === null ? null : RepositoryKey::of($this->settings->repository)) as $job => $state) {
             if ($state->last === null) {
                 continue;
             }

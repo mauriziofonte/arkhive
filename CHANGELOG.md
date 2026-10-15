@@ -48,6 +48,17 @@ lock, run records, exit codes and messages.
   the dump tool writes into it and is 0600 after the rename, the engine subdirectories are made 0700
   on every run, and a `DUMP_DIRECTORY` that belongs to another user or that group or others can
   write is refused with exit 77.
+- Snapshots deleted on the server, or a storage rolled back to an older copy, went unnoticed:
+  restic sees a healthy repository with fewer snapshots. Each run now records the repository
+  and the host with its full snapshot id, the run state is kept per repository
+  (`<state>/<key>/<job>.json`, the key of the lock file; the host-wide `<job>.json` stays), and
+  `status` and `drill` exit 65 when the snapshot of the last successful backup recorded for the
+  repository is gone with no newer backup of the host in its place ("snapshot <id> recorded as the
+  last successful backup at <time> is missing from the repository (deleted or rolled back)"). A drill
+  then restores nothing, since an older snapshot would pass. `status --json` has a new
+  `continuity` object, and run records have `repository` and `host`. The records of 2.1.0-rc.1 are
+  taken over by the first repository that reads them, and are not checked (they may be of another
+  repository).
 
 ## [2.1.0-rc.1] - 2026-10-14
 

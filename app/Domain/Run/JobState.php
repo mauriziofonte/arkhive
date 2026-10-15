@@ -21,6 +21,22 @@ final readonly class JobState
     }
 
     /**
+     * What of this state may belong to a repository: its own records, and those of 2.1.0-rc.1 that
+     * name no repository (taken over by the first repository that reads them).
+     */
+    public function forRepository(string $key): self
+    {
+        $belongs = static fn (?RunRecord $run): ?RunRecord => $run !== null && ($run->repository === null || $run->repository === $key) ? $run : null;
+
+        return new self($belongs($this->last), $belongs($this->lastSuccess));
+    }
+
+    public function isEmpty(): bool
+    {
+        return $this->last === null && $this->lastSuccess === null;
+    }
+
+    /**
      * @return array{last: array<string, mixed>|null, last_success: array<string, mixed>|null}
      */
     public function toArray(): array

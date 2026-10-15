@@ -13,8 +13,11 @@ use Mfonte\Arkhive\Exceptions\IoException;
  */
 final class InMemoryRunStateStore implements RunStateStore
 {
-    /** @var array<string, JobState> */
+    /** @var array<string, JobState> the last run on this host, by job */
     public array $states = [];
+
+    /** @var array<string, array<string, JobState>> by RepositoryKey, then job */
+    public array $repositories = [];
 
     public bool $failing = false;
 
@@ -27,16 +30,24 @@ final class InMemoryRunStateStore implements RunStateStore
         return $this->location;
     }
 
-    public function load(string $job): JobState
+    public function load(string $job, ?string $repository = null): JobState
     {
-        return $this->states[$job] ?? new JobState();
+        if ($repository === null) {
+            return $this->states[$job] ?? new JobState();
+        }
+
+        return $this->repositories[$repository][$job] ?? ($this->states[$job] ?? new JobState())->forRepository($repository);
     }
 
-    public function save(string $job, JobState $state): void
+    public function save(string $job, JobState $state, ?string $repository = null): void
     {
         if ($this->failing) {
-            throw new IoException("Cannot write {$this->location}/{$job}.json");
+            throw new IoException("Cannot write {$this->location}/" . ($repository === null ? '' : "{$repository}/") . "{$job}.json");
         }
-        $this->states[$job] = $state;
+        if ($repository === null) {
+            $this->states[$job] = $state;
+        } else {
+            $this->repositories[$repository][$job] = $state;
+        }
     }
 }

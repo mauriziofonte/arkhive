@@ -46,6 +46,33 @@ Recommended:
   `NOTIFY_ON=failure` (exit 3 counts as a warning and is reported), or the `OnFailure=` unit the
   schedule installs, or an external monitor reading `arkhive status --json`.
 
+## Deleted snapshots and rollbacks
+
+Whoever can write to the repository server can delete snapshots (`restic forget`, or removing files
+under `snapshots/`), and a storage restored from an older copy (a ZFS or VM snapshot rolled back)
+loses the newest backups. In both cases restic finds a healthy repository with fewer snapshots:
+`check` passes, and a new backup succeeds.
+
+Every successful `backup` records its full snapshot id for its repository in the state directory.
+`arkhive status` and `arkhive drill` look for it in the repository:
+
+| The recorded snapshot | Result |
+|---|---|
+| is there | fine (`continuity.status` `ok`) |
+| is gone, a newer backup of the host is there | fine (`superseded`): retention may remove the recorded one once a newer exists |
+| is gone, nothing newer of the host | exit 65 (`missing`): deleted or rolled back |
+
+The message names the snapshot, when it was recorded, and the newest backup of the host left
+(`continuity.newest_older` in `status --json`). A drill then restores nothing: an older snapshot
+would pass. Find out who can delete snapshots on the server and whether the storage was restored;
+then run `arkhive maintain` (restic's local cache can still list data the server lost, and a backup
+would deduplicate against it) and `arkhive backup`, which records a new last snapshot. After a drill
+that found the snapshot missing, backups end with a warning until a `maintain` passes (see above).
+
+Records are kept per repository (`<state>/<key>/<job>.json`, the key as in the lock file name), so
+two configurations of one host with different repositories never compare each other's snapshots.
+Records written by 2.1.0-rc.1 name no repository and are not checked.
+
 ## The run lock
 
 ArkHive takes one lock file per repository (`arkhive-<hash>.lock`, the hash of the repository URL)

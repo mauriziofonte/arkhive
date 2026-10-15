@@ -18,14 +18,19 @@ interface RunStateStore
     public function location(): ?string;
 
     /**
-     * The state of a job; empty when nothing was recorded yet or the record is unreadable.
+     * The state of a job on this host (any repository), or in one repository; empty when nothing
+     * was recorded yet or the record is unreadable.
+     *
+     * @param string|null $repository a RepositoryKey; null: the last run on this host
      */
-    public function load(string $job): JobState;
+    public function load(string $job, ?string $repository = null): JobState;
 
     /**
      * Replaces the state of a job, atomically: a reader sees the old state or the new one.
      *
+     * @param string|null $repository a RepositoryKey; null: the last run on this host
+     *
      * @throws ArkhiveException when it cannot be written
      */
-    public function save(string $job, JobState $state): void;
+    public function save(string $job, JobState $state, ?string $repository = null): void;
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Mfonte\Arkhive\Application\System;
 
+use Mfonte\Arkhive\Domain\Repository\RepositoryKey;
 use Mfonte\Arkhive\Domain\Shared\Clock;
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
 use Mfonte\Arkhive\Exceptions\LockedException;
@@ -51,7 +52,7 @@ final class Lock
     {
         $directory = self::directory($env, $uid, $runLock, $private);
 
-        return new self($directory . '/arkhive-' . substr(hash('sha256', $repository), 0, 16) . '.lock', $clock, $directory === $private ? $private : null);
+        return new self($directory . '/arkhive-' . RepositoryKey::of($repository) . '.lock', $clock, $directory === $private ? $private : null);
     }
 
     /**

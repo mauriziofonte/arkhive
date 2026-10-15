@@ -10,6 +10,7 @@ use Mfonte\Arkhive\Application\Port\ProcessRunner;
 use Mfonte\Arkhive\Application\Process\Command;
 use Mfonte\Arkhive\Application\System\Dependencies;
 use Mfonte\Arkhive\Application\System\Lock;
+use Mfonte\Arkhive\Domain\Repository\RepositoryKey;
 use Mfonte\Arkhive\Domain\Run\JobState;
 use Mfonte\Arkhive\Domain\Run\RunRecord;
 use Mfonte\Arkhive\ExitCode;
@@ -95,6 +96,8 @@ final class BackupCommandTest extends TestCase
         self::assertNotNull($run);
         self::assertSame(['backup', 0, 'e8ecb7f41958b511ccbdba5c2db6c0ab81cdf6b2cb2afd345240800c7bf7c036', [], null], [$run->job, $run->exitCode, $run->snapshotId, $run->warnings, $run->error]);
         self::assertSame($run, $this->runs->load('backup')->lastSuccess);
+        self::assertSame([RepositoryKey::of('/srv/restic-repo'), 'web1.example.com'], [$run->repository, $run->host], 'the full snapshot id of the repository, for status and drill');
+        self::assertSame($run, $this->runs->repositories[RepositoryKey::of('/srv/restic-repo')]['backup']->lastSuccess);
     }
 
     public function testAUnitRunRecordsItsInvocationAndWhetherItNotified(): void
