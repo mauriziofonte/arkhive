@@ -28,11 +28,19 @@ final class ResticErrors
     /** data that is there but fails verification: a damaged pack file */
     private const DAMAGED_DATA = ['/ciphertext verification failed/', '/\bLoadRaw\(/'];
 
+    /** the text restic prints when it catches a signal and cancels (0.17 exits 1, later 130) */
+    private const CAUGHT_SIGNALS = ['hangup' => 1, 'interrupt' => 2, 'terminated' => 15];
+
     public static function exception(ProcessResult $result, string $what, ResticSettings $settings): ArkhiveException
     {
-        $stderr = $result->stderr;
+        // JSON records (--json, restic 0.18+) are read as their messages, one line each
+        $stderr = implode("\n", self::lines($result->stderr));
         if ($result->timedOut) {
             return new TemporaryException($result->failure($what), hint: self::reachHint($settings));
+        }
+        $signal = $result->signal ?? self::caughtSignal($stderr);
+        if ($signal !== null) {
+            return self::stopped($what, $signal, $result->signal !== null);
         }
         if ($result->exitCode === self::WRONG_PASSWORD || str_contains($stderr, 'wrong password or no key found')) {
             return new PermissionException(
@@ -68,7 +76,7 @@ final class ResticErrors
         $missing = self::firstMatch($stderr, ResticOutput::MISSING_DATA);
         $damaged = $missing === null ? self::firstMatch($stderr, self::DAMAGED_DATA) : null;
         if ($missing !== null || $damaged !== null) {
-            return self::dataError($what, $settings, $stderr, $missing, $damaged);
+            return self::dataError($what, $settings, $result->stderr, $missing, $damaged);
         }
         if (self::looksLikeSsh($stderr)) {
             // a refused key or an unknown host key stays refused: only connection failures are retried
@@ -78,6 +86,49 @@ final class ResticErrors
         }
 
         return new ArkhiveException($result->failure($what));
+    }
+
+    /**
+     * restic stopped by a signal ArkHive did not send (its own SIGINT/SIGTERM end the run as
+     * interrupted before the result gets here): exit 75, not tried again in this run.
+     */
+    private static function stopped(string $what, int $signal, bool $killed): TemporaryException
+    {
+        $name = ProcessResult::signalName($signal);
+        $message = $killed
+            ? sprintf('%s failed: restic was killed by signal %d (%s%s)', $what, $signal, $name, $signal === 9 ? ': out of memory?' : '')
+            : sprintf('%s failed: restic was stopped by signal %d (%s) and cancelled the operation', $what, $signal, $name);
+        $who = $signal === 9
+            ? "the kernel's out-of-memory killer (look for \"Out of memory\" in journalctl -k or dmesg; restic needs memory in proportion to the repository index), an administrator or a service manager"
+            : 'an administrator, a service manager or a shutdown';
+
+        return TemporaryException::notRetried($message, "ArkHive did not send it: {$who} did. Run it again once the cause is gone");
+    }
+
+    private static function caughtSignal(string $stderr): ?int
+    {
+        return preg_match('/^signal (hangup|interrupt|terminated) received, cleaning up/m', $stderr, $match) === 1 ? self::CAUGHT_SIGNALS[$match[1]] : null;
+    }
+
+    /**
+     * stderr as lines of text: a JSON record is replaced by its message (which can span lines),
+     * terminal escape sequences are removed, empty lines are dropped.
+     *
+     * @return list<string>
+     */
+    private static function lines(string $stderr): array
+    {
+        $lines = [];
+        foreach (preg_split('/\R/', $stderr) ?: [] as $line) {
+            $line = (string) preg_replace('/\e\[[0-9;?]*[A-Za-z]/', '', $line);
+            foreach (preg_split('/\R/', ResticJson::message($line) ?? $line) ?: [] as $part) {
+                if (trim($part) !== '') {
+                    $lines[] = trim($part);
+                }
+            }
+        }
+
+        return $lines;
     }
 
     /**
@@ -111,17 +162,16 @@ final class ResticErrors
     }
 
     /**
-     * The first stderr line (a JSON record's message) matching one of $patterns.
+     * The first line of the decoded stderr matching one of $patterns.
      *
      * @param list<string> $patterns
      */
     private static function firstMatch(string $stderr, array $patterns): ?string
     {
         foreach (preg_split('/\R/', $stderr) ?: [] as $line) {
-            $text = ResticJson::message($line) ?? trim($line);
             foreach ($patterns as $pattern) {
-                if ($text !== '' && preg_match($pattern, $text) === 1) {
-                    return $text;
+                if ($line !== '' && preg_match($pattern, $line) === 1) {
+                    return $line;
                 }
             }
         }

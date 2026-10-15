@@ -59,6 +59,15 @@ lock, run records, exit codes and messages.
   `continuity` object, and run records have `repository` and `host`. The records of 2.1.0-rc.1 are
   taken over by the first repository that reads them, and are not checked (they may be of another
   repository).
+- restic killed by a signal ArkHive did not send (the kernel's out-of-memory killer, an
+  administrator) ended with exit 1 and no message; it is now exit 75, "restic was killed by signal 9
+  (SIGKILL: out of memory?)", and is not tried again within the run. restic stopped by a SIGTERM or
+  SIGINT it caught ("signal terminated received", exit 1 before 0.18, 130 after) is the same. Error
+  messages read restic's JSON records (`--json`, restic 0.18 and later) as their text, without
+  terminal escape sequences and with repeated lines once: "repository is locked" now names the
+  holder and the lock time again with restic 0.18 and later, where the regular expressions met the
+  raw JSON. Missing or damaged data (`tree ... not found`, `blob ... not found`, `LoadRaw`,
+  `ciphertext verification failed`, packs missing from the index) is exit 65 everywhere.
 
 ## [2.1.0-rc.1] - 2026-10-14
 

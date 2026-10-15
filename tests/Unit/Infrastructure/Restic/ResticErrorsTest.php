@@ -7,7 +7,11 @@ namespace Tests\Unit\Infrastructure\Restic;
 use Mfonte\Arkhive\Application\Process\Command;
 use Mfonte\Arkhive\Application\Process\ProcessResult;
 use Mfonte\Arkhive\Domain\Configuration\ResticSettings;
+use Mfonte\Arkhive\Exceptions\ArkhiveException;
 use Mfonte\Arkhive\Exceptions\DataException;
+use Mfonte\Arkhive\Exceptions\LockedException;
+use Mfonte\Arkhive\Exceptions\PermissionException;
+use Mfonte\Arkhive\Exceptions\TemporaryException;
 use Mfonte\Arkhive\ExitCode;
 use Mfonte\Arkhive\Infrastructure\Restic\ResticErrors;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -16,7 +20,8 @@ use Tests\Support\FakeRestic;
 
 /**
  * How failed restic runs are classified, table-driven over stderr captured from real restic
- * (tests/Fixtures/restic): a repository whose pack files were deleted on the server.
+ * (tests/Fixtures/restic): a repository whose pack files were deleted on the server, a lock held
+ * by another process, restic stopped by a signal from outside ArkHive.
  */
 final class ResticErrorsTest extends TestCase
 {
@@ -94,6 +99,60 @@ final class ResticErrorsTest extends TestCase
         $e = self::classify(1, "ReadFull(<data/381d4654a9>): ssh command exited: connection lost\n");
 
         self::assertSame(ExitCode::UNAVAILABLE, $e->exitCode());
+        self::assertTrue($e->transient());
+    }
+
+    /**
+     * @return iterable<string, array{int, int|null, string, class-string, int, string, bool}>
+     */
+    public static function failures(): iterable
+    {
+        $locked = 'The restic repository is locked by PID 25983 on host.example.com by root (UID 0, GID 0), created at 2026-10-12 13:58:02';
+        // exit, signal, stderr => exception, exit code, message, retried in the run
+        yield 'killed by the OOM killer' => [137, 9, '', TemporaryException::class, ExitCode::TEMPORARY, 'restic backup failed: restic was killed by signal 9 (SIGKILL: out of memory?)', false];
+        yield 'killed by SIGTERM before it could catch it' => [143, 15, '', TemporaryException::class, ExitCode::TEMPORARY, 'restic backup failed: restic was killed by signal 15 (SIGTERM)', false];
+        yield 'stopped by SIGTERM, 0.17 (exit 1)' => [1, null, FakeRestic::fixture('terminated-0.17.stderr'), TemporaryException::class, ExitCode::TEMPORARY, 'restic backup failed: restic was stopped by signal 15 (SIGTERM) and cancelled the operation', false];
+        yield 'stopped by SIGTERM, 0.19 (exit 130, JSON)' => [130, null, FakeRestic::fixture('terminated-0.19.stderr'), TemporaryException::class, ExitCode::TEMPORARY, 'restic backup failed: restic was stopped by signal 15 (SIGTERM) and cancelled the operation', false];
+        yield 'stopped by SIGINT' => [130, null, "signal interrupt received, cleaning up\n", TemporaryException::class, ExitCode::TEMPORARY, 'restic was stopped by signal 2 (SIGINT)', false];
+        yield 'locked, text' => [11, null, FakeRestic::fixture('locked-0.19.stderr'), LockedException::class, ExitCode::TEMPORARY, $locked, true];
+        yield 'locked, JSON 0.18' => [11, null, FakeRestic::fixture('locked-json-0.18.stderr'), LockedException::class, ExitCode::TEMPORARY, $locked, true];
+        yield 'locked, JSON 0.19' => [11, null, FakeRestic::fixture('locked-json-0.19.stderr'), LockedException::class, ExitCode::TEMPORARY, $locked, true];
+        yield 'locked, before exit codes (0.16)' => [1, null, FakeRestic::fixture('locked-0.19.stderr'), LockedException::class, ExitCode::TEMPORARY, $locked, true];
+        yield 'wrong password, JSON' => [12, null, '{"message_type":"exit_error","code":12,"message":"Fatal: wrong password or no key found"}' . "\n", PermissionException::class, ExitCode::NO_PERMISSION, 'Wrong password for the restic repository', false];
+        yield 'missing packs, JSON 0.19' => [1, null, FakeRestic::fixture('forget-missing-0.19.stderr'), DataException::class, ExitCode::DATA_ERROR, 'restic backup failed: 3 pack file(s) listed in the index are missing', false];
+        yield 'tree not found, JSON' => [1, null, '{"message_type":"exit_error","code":1,"message":"Fatal: tree 4b2a17c9 not found in repository"}' . "\n", DataException::class, ExitCode::DATA_ERROR, 'should hold is missing (pack files deleted or lost on the server): Fatal: tree 4b2a17c9 not found in repository', false];
+        yield 'unknown failure, JSON repeated' => [1, null, str_repeat('{"message_type":"error","error":{"message":"read /srv/www/a: input/output error"},"during":"archival","item":"/srv/www/a"}' . "\n", 3) . '{"message_type":"exit_error","code":1,"message":"Fatal: unable to save snapshot: boom"}' . "\n", ArkhiveException::class, ExitCode::FAILURE, 'restic backup failed (restic exit 1): read /srv/www/a: input/output error | Fatal: unable to save snapshot: boom', false];
+    }
+
+    /**
+     * @param class-string $class
+     */
+    #[DataProvider('failures')]
+    public function testFailuresAreClassifiedFromWhatResticPrints(int $exit, ?int $signal, string $stderr, string $class, int $code, string $message, bool $transient): void
+    {
+        $e = ResticErrors::exception(new ProcessResult(new Command(['/usr/bin/restic', 'backup']), $exit, '', $stderr, 1.0, false, $signal), 'restic backup', self::settings());
+
+        self::assertSame($class, $e::class);
+        self::assertSame($code, $e->exitCode());
+        self::assertStringContainsString($message, $e->getMessage());
+        self::assertSame($transient, $e->transient());
+        self::assertStringNotContainsString('"message_type"', $e->getMessage(), 'never raw JSON');
+    }
+
+    public function testASignalTellsWhoToSuspect(): void
+    {
+        $killed = ResticErrors::exception(new ProcessResult(new Command(['/usr/bin/restic', 'backup']), 137, '', '', 1.0, false, 9), 'restic backup', self::settings());
+        self::assertStringStartsWith("ArkHive did not send it: the kernel's out-of-memory killer (look for \"Out of memory\" in journalctl -k or dmesg", (string) $killed->hint());
+
+        $stopped = ResticErrors::exception(new ProcessResult(new Command(['/usr/bin/restic', 'backup']), 130, '', FakeRestic::fixture('terminated-0.19.stderr')), 'restic backup', self::settings());
+        self::assertSame('ArkHive did not send it: an administrator, a service manager or a shutdown did. Run it again once the cause is gone', $stopped->hint());
+    }
+
+    public function testATimeoutIsNotASignalFromOutside(): void
+    {
+        $e = ResticErrors::exception(new ProcessResult(new Command(['/usr/bin/restic', 'backup'], timeout: 30.0), 143, '', '', 30.0, true), 'restic backup', self::settings());
+
+        self::assertSame('restic backup timed out after 30s (restic)', $e->getMessage());
         self::assertTrue($e->transient());
     }
 }

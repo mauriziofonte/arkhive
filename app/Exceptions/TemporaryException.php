@@ -16,4 +16,16 @@ final class TemporaryException extends ArkhiveException
         parent::__construct($message, ExitCode::TEMPORARY, $hint, $previous);
         $this->transient = true;
     }
+
+    /**
+     * Exit 75 as well, but never tried again within the run: a process stopped by a signal from
+     * outside ArkHive (whoever sent it meant it; an out-of-memory kill would only happen again).
+     */
+    public static function notRetried(string $message, ?string $hint = null): self
+    {
+        $exception = new self($message, $hint);
+        $exception->transient = false;
+
+        return $exception;
+    }
 }

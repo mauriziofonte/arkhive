@@ -70,7 +70,7 @@ final class SystemProcessRunner implements ProcessRunner
         });
 
         try {
-            [$stdout, $stderr, $exitCode, $timedOut] = $this->communicate($command, $process, $pipes, $started, $onStdoutLine, $onStderrLine);
+            [$stdout, $stderr, $exitCode, $timedOut, $signal] = $this->communicate($command, $process, $pipes, $started, $onStdoutLine, $onStderrLine);
         } finally {
             $this->signals->forget($listener);
             foreach ($pipes as $pipe) {
@@ -83,7 +83,7 @@ final class SystemProcessRunner implements ProcessRunner
 
         $this->signals->check();
 
-        return new ProcessResult($command, $exitCode, $stdout, $stderr, (hrtime(true) - $started) / 1e9, $timedOut);
+        return new ProcessResult($command, $exitCode, $stdout, $stderr, (hrtime(true) - $started) / 1e9, $timedOut, $signal);
     }
 
     /**
@@ -92,7 +92,8 @@ final class SystemProcessRunner implements ProcessRunner
      * @param (callable(string): void)|null $onStdoutLine
      * @param (callable(string): void)|null $onStderrLine
      *
-     * @return array{string, string, int, bool}
+     * @return array{string, string, int, bool, int|null} stdout, stderr, exit code, timed out, the signal
+     *                                                that killed it when ArkHive did not send it
      */
     private function communicate(Command $command, $process, array $pipes, int $started, ?callable $onStdoutLine, ?callable $onStderrLine): array
     {
@@ -116,15 +117,18 @@ final class SystemProcessRunner implements ProcessRunner
         $outputClosed = null;
         $killAt = null;
         $exitCode = null;
+        $signal = null;
 
         while ($readers !== [] || $writers !== [] || $exitCode === null) {
             if ($this->heartbeat !== null) {
                 ($this->heartbeat)();
             }
             if ($readers === [] && $writers === []) {
-                $exitCode = $this->exitCodeIfDone($process);
-                if ($exitCode === null) {
+                $done = self::statusIfDone($process);
+                if ($done === null) {
                     usleep(10000);
+                } else {
+                    [$exitCode, $signal] = $done;
                 }
             } else {
                 $read = $readers;
@@ -207,7 +211,7 @@ final class SystemProcessRunner implements ProcessRunner
             $stderr .= ($stderr === '' || str_ends_with($stderr, "\n") ? '' : "\n") . "ArkHive: the output stream was closed before {$command->name()} finished{$why}\n";
         }
 
-        return [$stdout, $stderr, $exitCode, $timedOut];
+        return [$stdout, $stderr, $exitCode, $timedOut, $timedOut || $outputClosed !== null ? null : $signal];
     }
 
     /**
@@ -235,18 +239,20 @@ final class SystemProcessRunner implements ProcessRunner
 
     /**
      * @param resource $process
+     *
+     * @return array{int, int|null}|null the exit code (128 + N when killed by signal N) and the signal; null while it runs
      */
-    private function exitCodeIfDone($process): ?int
+    private static function statusIfDone($process): ?array
     {
         $status = proc_get_status($process);
         if ($status['running']) {
             return null;
         }
         if ($status['signaled']) {
-            return 128 + $status['termsig'];
+            return [128 + $status['termsig'], $status['termsig']];
         }
 
-        return $status['exitcode'];
+        return [$status['exitcode'], null];
     }
 
     /**
