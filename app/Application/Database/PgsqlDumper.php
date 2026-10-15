@@ -95,8 +95,8 @@ final class PgsqlDumper
     {
         $binary = $this->dependencies->require(Dependency::PgDump, 'to dump PostgreSQL databases (WITH_PGSQL=true)');
         $path = $staging->pathFor('pgsql', $database);
-        $partial = DumpStaging::partial($path);
         $staging->record($path);
+        $partial = $staging->createPartial($path);
 
         $command = new Command([
             $binary,
@@ -115,10 +115,10 @@ final class PgsqlDumper
 
             throw DatabaseErrors::exception($result, "PostgreSQL dump of database {$database}", $hint);
         }
-        if (!is_file($partial) || !@rename($partial, $path)) {
+        if (!$staging->publish($partial, $path)) {
             @unlink($partial);
 
-            throw new SoftwareException("PostgreSQL dump of database {$database} reported success but wrote no file at {$partial}");
+            throw new SoftwareException("PostgreSQL dump of database {$database} reported success but wrote nothing to {$partial}");
         }
 
         return new DumpResult('pgsql', $database, $path, (int) filesize($path), $result->duration);

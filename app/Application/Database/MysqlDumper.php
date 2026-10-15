@@ -105,8 +105,8 @@ final class MysqlDumper
     {
         $binary = $this->dependencies->require(Dependency::MysqlDump, 'to dump MySQL/MariaDB databases (WITH_MYSQL=true)');
         $path = $staging->pathFor('mysql', $database);
-        $partial = DumpStaging::partial($path);
         $staging->record($path);
+        $partial = $staging->createPartial($path);
 
         $command = new Command([
             $binary,
@@ -122,10 +122,10 @@ final class MysqlDumper
 
             throw DatabaseErrors::exception($result, "MySQL dump of database {$database}");
         }
-        if (!is_file($partial) || !@rename($partial, $path)) {
+        if (!$staging->publish($partial, $path)) {
             @unlink($partial);
 
-            throw new SoftwareException("MySQL dump of database {$database} reported success but wrote no file at {$partial}");
+            throw new SoftwareException("MySQL dump of database {$database} reported success but wrote nothing to {$partial}");
         }
 
         return new DumpResult('mysql', $database, $path, (int) filesize($path), $result->duration);

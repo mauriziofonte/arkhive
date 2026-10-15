@@ -62,6 +62,7 @@ final class DumpRoundTripTest extends E2eTestCase
         $tables = ['shop' => ['products', 'orders'], 'blog' => ['posts']];
         foreach ($tables as $database => $names) {
             $result = $dumper->dump($database, $staging);
+            self::assertSame(0600, fileperms($result->path) & 0777, 'a dump is never readable by others (the umask is 022)');
             $copy = 'e2e_restore_' . $database . '_' . bin2hex(random_bytes(3));
             $this->mysql("CREATE DATABASE {$copy}");
             try {

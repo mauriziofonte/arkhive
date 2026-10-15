@@ -148,7 +148,7 @@ final class MysqlDumperTest extends TestCase
     {
         $this->runner->on('mariadb-dump', static fn (): int => 0);
 
-        $this->expectExceptionObject(new ArkhiveException('MySQL dump of database shop reported success but wrote no file at ' . $this->staging->directory . '/mysql/shop.sql.partial'));
+        $this->expectExceptionObject(new ArkhiveException('MySQL dump of database shop reported success but wrote nothing to ' . $this->staging->directory . '/mysql/shop.sql.partial'));
         $this->dumper()->dump('shop', $this->staging);
     }
 
@@ -254,5 +254,63 @@ final class MysqlDumperTest extends TestCase
         self::assertFileExists($credentials);
         self::assertSame([], $this->cleanup->runAll());
         self::assertFileDoesNotExist($credentials);
+    }
+
+    public function testTheDumpIsPrivateWhateverTheUmask(): void
+    {
+        $modes = [];
+        $this->runner->on('mariadb-dump', static function (Command $command) use (&$modes): int {
+            $resultFile = substr($command->argv[8], strlen('--result-file='));
+            clearstatcache();
+            $modes[] = fileperms($resultFile) & 0777;
+            file_put_contents($resultFile, "-- dump\n");
+
+            return 0;
+        });
+
+        $umask = umask(0);
+        try {
+            $result = $this->dumper()->dump('shop', $this->staging);
+        } finally {
+            umask($umask);
+        }
+
+        self::assertSame([0600], $modes, 'created private before mariadb-dump writes a byte');
+        clearstatcache();
+        self::assertSame(0600, fileperms($result->path) & 0777);
+    }
+
+    public function testADumpToolThatRecreatesTheFileStillLeavesItPrivate(): void
+    {
+        $this->runner->on('mariadb-dump', static function (Command $command): int {
+            $resultFile = substr($command->argv[8], strlen('--result-file='));
+            unlink($resultFile);
+            file_put_contents($resultFile, "-- dump\n");
+            chmod($resultFile, 0644);
+
+            return 0;
+        });
+
+        $result = $this->dumper()->dump('shop', $this->staging);
+
+        clearstatcache();
+        self::assertSame(0600, fileperms($result->path) & 0777);
+    }
+
+    public function testAStalePartialFileIsReplaced(): void
+    {
+        file_put_contents($this->staging->directory . '/mysql/shop.sql.partial', 'from a killed run');
+        chmod($this->staging->directory . '/mysql/shop.sql.partial', 0644);
+        $this->runner->on('mariadb-dump', static function (Command $command): int {
+            $resultFile = substr($command->argv[8], strlen('--result-file='));
+            self::assertSame('', file_get_contents($resultFile));
+            file_put_contents($resultFile, "-- dump\n");
+
+            return 0;
+        });
+
+        $result = $this->dumper()->dump('shop', $this->staging);
+
+        self::assertSame("-- dump\n", file_get_contents($result->path));
     }
 }

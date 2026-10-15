@@ -157,7 +157,7 @@ final class PgsqlDumperTest extends TestCase
     {
         $this->runner->on('pg_dump', static fn (): int => 0);
 
-        $this->expectExceptionObject(new ArkhiveException('PostgreSQL dump of database crm reported success but wrote no file at ' . $this->staging->directory . '/pgsql/crm.sql.partial'));
+        $this->expectExceptionObject(new ArkhiveException('PostgreSQL dump of database crm reported success but wrote nothing to ' . $this->staging->directory . '/pgsql/crm.sql.partial'));
         $this->dumper()->dump('crm', $this->staging);
     }
 
@@ -231,5 +231,32 @@ final class PgsqlDumperTest extends TestCase
         self::assertSame(987654, $this->dumper()->estimate(['inventory', "o'neil"]));
         self::assertSame("--command=SELECT COALESCE(SUM(pg_database_size(datname)), 0) FROM pg_database WHERE datname IN ('inventory','o''neil')", $this->runner->commands[0]->argv[9]);
         self::assertSame(0, $this->dumper()->estimate([]));
+    }
+
+    public function testTheDumpIsPrivateWhateverTheUmask(): void
+    {
+        $modes = [];
+        $this->runner->on('pg_dump', static function (Command $command) use (&$modes): int {
+            foreach ($command->argv as $arg) {
+                if (str_starts_with($arg, '--file=')) {
+                    clearstatcache();
+                    $modes[] = fileperms(substr($arg, strlen('--file='))) & 0777;
+                }
+            }
+            self::writeDump($command);
+
+            return 0;
+        });
+
+        $umask = umask(0);
+        try {
+            $result = $this->dumper()->dump('crm', $this->staging);
+        } finally {
+            umask($umask);
+        }
+
+        self::assertSame([0600], $modes, 'created private before pg_dump writes a byte');
+        clearstatcache();
+        self::assertSame(0600, fileperms($result->path) & 0777);
     }
 }

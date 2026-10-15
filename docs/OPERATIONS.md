@@ -96,3 +96,13 @@ no permission for group or others (`chmod 600`), in a directory that group or ot
 (a sticky directory such as `/tmp` is accepted: only the owner can replace a file there). Whoever
 can replace the file between the check and restic reading it chooses the password that
 `arkhive init` gives a new repository.
+
+## Database dumps
+
+The dumps hold every row of every table, so they are as private as the password file. ArkHive
+creates each one as an empty 0600 file before `mariadb-dump`, `mysqldump` or `pg_dump` writes into
+it (the tools keep the mode of an existing file, whatever the umask of the process), sets 0600
+again after renaming `<db>.sql.partial` to `<db>.sql`, and makes the `mysql` and `pgsql`
+subdirectories of `DUMP_DIRECTORY` 0700 on every run. `DUMP_DIRECTORY` itself may be readable by
+others (it can be a directory of the operator's), but it must belong to the running user and must
+not be writable by group or others, sticky or not: such a directory is refused with exit 77.

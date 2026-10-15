@@ -42,6 +42,12 @@ lock, run records, exit codes and messages.
   directory that group or others can write without the sticky bit, where someone could replace it
   with a password they know before restic reads it. `init` checks the directory before it generates
   a password there.
+- SQL dumps could be readable by every local user: `mariadb-dump`, `mysqldump` and `pg_dump` create
+  their file with the process umask (0644 under the usual 022), and `mysql`/`pgsql` directories
+  created by hand or by an older version kept their mode. Each dump file is now created 0600 before
+  the dump tool writes into it and is 0600 after the rename, the engine subdirectories are made 0700
+  on every run, and a `DUMP_DIRECTORY` that belongs to another user or that group or others can
+  write is refused with exit 77.
 
 ## [2.1.0-rc.1] - 2026-10-14
 
