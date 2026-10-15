@@ -259,7 +259,8 @@ encryption, deduplication and retention. The configuration is not compatible wit
 
 - Restrict the remote `chmod` to the backup directory of the day.
 
-[Unreleased]: https://github.com/mauriziofonte/arkhive/compare/v2.1.0-rc.1...HEAD
+[Unreleased]: https://github.com/mauriziofonte/arkhive/compare/v2.1.0-rc.2...HEAD
+[2.1.0-rc.2]: https://github.com/mauriziofonte/arkhive/compare/v2.1.0-rc.1...v2.1.0-rc.2
 [2.1.0-rc.1]: https://github.com/mauriziofonte/arkhive/compare/v2.0.0-rc.1...v2.1.0-rc.1
 [2.0.0-rc.1]: https://github.com/mauriziofonte/arkhive/compare/v1.7.1...v2.0.0-rc.1
 [1.7.1]: https://github.com/mauriziofonte/arkhive/releases/tag/v1.7.1
