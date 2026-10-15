@@ -99,6 +99,45 @@ In a shared directory, a lock file that is a symbolic link or belongs to another
 with exit 77 and names the owner; the file opened must be the one found at the path. Set
 `ARKHIVE_LOCK_DIR` to a directory only the backup user can write when other users share the host.
 
+## Stale restic locks
+
+restic keeps its own lock files in the repository (`locks/`), refreshed every few minutes while it
+runs and removed when it ends. A restic killed with `kill -9`, by the out-of-memory killer (prune
+and check need memory in proportion to the index) or by a crash leaves its lock behind, and restic
+never skips it: a backup's lock stops every `forget`, `prune` and `check`, a prune's lock stops
+everything, until someone runs `restic unlock`.
+
+When restic refuses to run on a lock, ArkHive looks at it. It calls the lock stale only when all of
+these hold:
+
+- the lock was made on this host (restic records the machine's hostname, not `RESTIC_HOST`);
+- its PID no longer exists, or is a zombie (state `Z` in `/proc/<pid>/stat`: exited, not yet
+  collected by its parent);
+- no other ArkHive run holds the run lock of the repository (its restic could have made the lock).
+
+Then the run fails at once with exit 75 instead of waiting `LOCK_WAIT`: "The restic repository is
+locked by PID 25983 on host.example.com by root ...: a stale lock from a dead process on this host
+(PID 25983 no longer exists)", with the command to remove it. Any other lock is waited for, up to
+`LOCK_WAIT`, as before.
+
+ArkHive does not remove the lock unless `UNLOCK_STALE=true`. With it, wherever ArkHive would wait
+for a lock (when a command opens the repository, and during `backup`, `maintain` and `restore`) it
+runs `restic unlock` (never `--remove-all`, which would also remove the locks of runs on other
+hosts) and tries the operation again at once, once, with a warning in the log; `doctor` only
+reports. `restic unlock` removes the locks restic itself finds stale: older than 30 minutes, or
+made on this host by a PID that cannot be signalled. ArkHive runs it only when:
+
+- the PID no longer exists. restic sees a zombie as alive and keeps its lock: stop or restart the
+  zombie's parent (named in the message) so that it collects it, then run `restic unlock`;
+- no other lock made on this host in the last 30 minutes belongs to a running process. restic tests
+  those PIDs with SIGHUP: restic ignores it, but another program that took over the PID of a dead
+  restic would not. The message names the PID; check it, then unlock by hand;
+- the locks could be listed.
+
+Hostnames must be unique among the hosts that share a repository (containers cloned from one image
+can share one): a lock made on another machine with the same hostname would look like one of this
+host's.
+
 ## The configuration file
 
 Whoever can change the configuration chooses the commands ArkHive runs (`RESTIC_BINARY`,

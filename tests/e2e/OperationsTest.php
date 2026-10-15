@@ -357,6 +357,44 @@ final class OperationsTest extends E2eTestCase
         self::assertSame('ok', $this->json(['status'], 0, $config)['continuity']['status'], 'a new backup starts a new series');
     }
 
+    public function testALockOfAResticKilledOnThisHostIsNamedAndRemovedOnlyWithUnlockStale(): void
+    {
+        $repository = "{$this->dir}/repo";
+        $this->arkhiveInit($this->dir, $repository, null);
+        $this->backup($this->config($repository, null));
+
+        // a backup that holds its lock while it waits for stdin, then dies by SIGKILL
+        $process = proc_open([self::env('E2E_RESTIC'), 'backup', '--stdin', '--stdin-filename', 'pending.sql', '--host', self::HOST], [0 => ['pipe', 'r'], 1 => ['file', '/dev/null', 'w'], 2 => ['file', '/dev/null', 'w']], $pipes, null, [
+            'RESTIC_REPOSITORY' => $repository,
+            'RESTIC_PASSWORD_FILE' => self::env('E2E_PASSWORD_FILE'),
+            'PATH' => self::path(),
+            'HOME' => $this->dir,
+        ]);
+        self::assertIsResource($process);
+        $pid = proc_get_status($process)['pid'];
+        for ($i = 0; $i < 300 && (glob("{$repository}/locks/*") ?: []) === []; $i++) {
+            usleep(100000);
+        }
+        self::assertCount(1, glob("{$repository}/locks/*") ?: [], 'restic took its lock');
+        posix_kill($pid, SIGKILL);
+        fclose($pipes[0]);
+        proc_close($process);
+        self::assertCount(1, glob("{$repository}/locks/*") ?: [], 'a killed restic leaves its lock behind');
+
+        $started = microtime(true);
+        $maintain = self::arkhive(['maintain', '--config', $this->config($repository, null, ['LOCK_WAIT' => '60'])], $this->runEnv());
+        self::assertSame(ExitCode::TEMPORARY, $maintain->exitCode, $maintain->output());
+        self::assertStringContainsString("a stale lock from a dead process on this host (PID {$pid} no longer exists)", $maintain->stderr);
+        self::assertStringContainsString('or set UNLOCK_STALE=yes to let ArkHive do so', $maintain->stderr);
+        self::assertLessThan(45, microtime(true) - $started, 'not waited for until LOCK_WAIT');
+        self::assertCount(1, glob("{$repository}/locks/*") ?: [], 'never removed by default');
+
+        $maintain = self::arkhive(['maintain', '--config', $this->config($repository, null, ['UNLOCK_STALE' => 'yes'])], $this->runEnv());
+        self::assertSame(0, $maintain->exitCode, $maintain->output());
+        self::assertStringContainsString("(PID {$pid} no longer exists); removing it with restic unlock (UNLOCK_STALE)", $maintain->stderr);
+        self::assertSame([], glob("{$repository}/locks/*") ?: []);
+    }
+
     public function testDoctorIsGreenOnAHealthyHostAndNamesWhatIsMissing(): void
     {
         [$repository, $sftpCommand] = self::sftpRepository();

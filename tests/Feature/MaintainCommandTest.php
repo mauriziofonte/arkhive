@@ -7,6 +7,7 @@ namespace Tests\Feature;
 use Illuminate\Support\Facades\Artisan;
 use Mfonte\Arkhive\Application\Port\Notifier;
 use Mfonte\Arkhive\Application\Port\ProcessRunner;
+use Mfonte\Arkhive\Application\Resilience\StaleLocks;
 use Mfonte\Arkhive\Application\System\Dependencies;
 use Mfonte\Arkhive\Application\System\Lock;
 use Mfonte\Arkhive\ExitCode;
@@ -14,6 +15,7 @@ use Mfonte\Arkhive\Infrastructure\Mail\SmtpNotifier;
 use Tests\Support\CapturingTransport;
 use Tests\Support\FakeBinaries;
 use Tests\Support\FakeProcessRunner;
+use Tests\Support\FakeProcessTable;
 use Tests\Support\FakeRestic;
 use Tests\Support\FixedClock;
 use Tests\Support\TempDir;
@@ -158,6 +160,60 @@ final class MaintainCommandTest extends TestCase
         self::assertSame([], $this->restic->callsOf('check'));
         self::assertSame('[ArkHive] maintenance FAILED on web1.example.com', $this->mail->sent[0]->getSubject());
         self::assertStringStartsWith('The maintenance failed: The restic repository is locked', (string) $this->mail->sent[0]->getTextBody());
+    }
+
+    /**
+     * forget refused on the lock of a restic killed on this host (PID 25983 of host.example.com, now
+     * gone) until `restic unlock` runs; the ArkHive lock is the real one, held by this maintain.
+     */
+    private function lockedByADeadProcess(): void
+    {
+        $this->app->instance(StaleLocks::class, new StaleLocks(
+            new FakeProcessTable(),
+            new FixedClock(),
+            'host.example.com',
+            fn (string $repository): bool => Lock::forRepository($repository, $this->terminal->env, new FixedClock(), posix_geteuid())->heldElsewhere(),
+        ));
+        $unlocked = false;
+        $this->restic->on['forget'] = static function () use (&$unlocked): array {
+            return $unlocked ? [0, FakeRestic::fixture('forget-0.19.json'), ''] : [11, '', FakeRestic::fixture('locked-0.19.stderr')];
+        };
+        $this->restic->on['unlock'] = static function () use (&$unlocked): array {
+            $unlocked = true;
+
+            return [0, "successfully removed 1 locks\n", ''];
+        };
+        $this->restic->on['cat'] = static fn (array $args): array => $args[1] === 'lock' ? [0, FakeRestic::fixture('lock-0.19.json'), ''] : [0, "{\"version\": 2}\n", ''];
+        $this->restic->answers['list'] = [0, str_repeat('6d287ce8', 8) . "\n", ''];
+    }
+
+    public function testALockLeftByADeadProcessOnThisHostFailsAtOnceAndIsNeverRemovedByDefault(): void
+    {
+        $this->lockedByADeadProcess();
+
+        self::assertSame(ExitCode::TEMPORARY, Artisan::call('maintain', ['--config' => $this->writeConfig()]));
+
+        $log = $this->logOutput();
+        self::assertStringContainsString('error The restic repository is locked by PID 25983 on host.example.com by root (UID 0, GID 0), created at 2026-10-12 13:58:02 (1.554904747s ago): a stale lock from a dead process on this host (PID 25983 no longer exists)', $log);
+        self::assertStringContainsString("notice Nothing will release it. Remove it with: RESTIC_PASSWORD_FILE='{$this->dir}/password' restic -r '/srv/restic-repo' unlock (restic removes only the locks it finds stale), or set UNLOCK_STALE=yes", $log);
+        self::assertSame(0.0, $this->pause->total(), 'LOCK_WAIT is not spent on a lock nothing will release');
+        self::assertSame([], $this->restic->callsOf('unlock'));
+        self::assertSame([], $this->restic->callsOf('list'));
+    }
+
+    public function testUnlockStaleRemovesTheLockOfADeadProcessAndCarriesOn(): void
+    {
+        $this->lockedByADeadProcess();
+
+        self::assertSame(ExitCode::SUCCESS, Artisan::call('maintain', ['--config' => $this->writeConfig(['UNLOCK_STALE' => 'yes'])]));
+
+        self::assertSame([['unlock']], $this->restic->callsOf('unlock'), 'restic unlock, never --remove-all');
+        self::assertCount(2, $this->restic->callsOf('forget'));
+        self::assertSame(0.0, $this->pause->total());
+        $log = $this->logOutput();
+        self::assertStringContainsString('warning restic forget: The restic repository is locked by PID 25983 on host.example.com by root (UID 0, GID 0), created at 2026-10-12 13:58:02 (1.554904747s ago): a stale lock from a dead process on this host (PID 25983 no longer exists); removing it with restic unlock (UNLOCK_STALE)', $log);
+        self::assertStringContainsString('info Stale lock removed; trying again', $log);
+        self::assertStringContainsString('success Repository structure: no errors were found', $log);
     }
 
     public function testPackFilesDeletedOnTheServerAreExit65WithTheRepairOrder(): void

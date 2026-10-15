@@ -14,7 +14,8 @@ final readonly class ResticSettings
     public const DEFAULT_LOCK_WAIT = 300;
 
     /**
-     * @param int $lockWait seconds to wait for a lock held by another run; 0 fails at once
+     * @param int  $lockWait    seconds to wait for a lock held by another run; 0 fails at once
+     * @param bool $unlockStale run `restic unlock` on a lock left by a dead process on this host (UNLOCK_STALE)
      */
     public function __construct(
         public string $repository,
@@ -24,6 +25,7 @@ final readonly class ResticSettings
         public string $host = '',
         public string $compression = 'auto',
         public int $lockWait = self::DEFAULT_LOCK_WAIT,
+        public bool $unlockStale = false,
     ) {
     }
 

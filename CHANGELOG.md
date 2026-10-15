@@ -12,6 +12,16 @@ Fixes for weak points found by an isolated test against a simulated Hetzner Stor
 (chrooted SFTP on port 23, quota, synthetic data): repository damage, file permissions, the run
 lock, run records, exit codes and messages.
 
+### Added
+
+- `UNLOCK_STALE` (optional, default `false`): with `true`, wherever ArkHive would wait for a lock
+  (opening the repository, `backup`, `maintain`, `restore`) it removes a restic lock left by a
+  process that died on this host with `restic unlock` (never `--remove-all`) and tries the
+  operation again at once, once, logged as a warning. Only when the
+  lock's PID no longer exists (restic keeps a zombie's lock) and no other lock made on this host in
+  the last 30 minutes belongs to a running process, since `restic unlock` tests those PIDs with
+  SIGHUP. By default ArkHive still never removes a lock. See docs/OPERATIONS.md.
+
 ### Fixed
 
 - A repository whose pack files were deleted on the server is reported as damaged (exit 65) by
@@ -68,6 +78,13 @@ lock, run records, exit codes and messages.
   holder and the lock time again with restic 0.18 and later, where the regular expressions met the
   raw JSON. Missing or damaged data (`tree ... not found`, `blob ... not found`, `LoadRaw`,
   `ciphertext verification failed`, packs missing from the index) is exit 65 everywhere.
+- A restic lock left by a process that died on this host (`kill -9`, the out-of-memory killer, a
+  crash) is never released, since restic does not skip stale locks; ArkHive waited `LOCK_WAIT` on it
+  at every run and then reported an ordinary lock. When the lock was made on this host, its PID no
+  longer exists or is a zombie (`/proc/<pid>/stat`), and no other ArkHive run holds the repository,
+  the run now fails at once with exit 75, "a stale lock from a dead process on this host (PID N no
+  longer exists)", and the `restic unlock` command. `doctor` and the guided restore no longer call
+  a lock stale when its process runs as another user (`kill(pid, 0)` failing with EPERM).
 
 ## [2.1.0-rc.1] - 2026-10-14
 

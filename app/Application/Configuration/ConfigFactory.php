@@ -24,12 +24,12 @@ use Mfonte\Arkhive\Exceptions\ConfigException;
 final class ConfigFactory
 {
     /** only these keys are converted from true/false/yes/no/1/0; every other value stays a string */
-    public const BOOLEAN_KEYS = ['WITH_MYSQL', 'WITH_PGSQL', 'DUMP_REQUIRED', 'NOTIFY'];
+    public const BOOLEAN_KEYS = ['WITH_MYSQL', 'WITH_PGSQL', 'DUMP_REQUIRED', 'NOTIFY', 'UNLOCK_STALE'];
 
     public const KNOWN_KEYS = [
         'BACKUP_PATHS', 'RESTIC_REPOSITORY', 'RESTIC_PASSWORD_FILE', 'RESTIC_SFTP_COMMAND', 'RESTIC_BINARY',
         'RESTIC_HOST', 'RESTIC_KEEP_DAILY', 'RESTIC_KEEP_WEEKLY', 'RESTIC_KEEP_MONTHLY', 'RESTIC_CHECK_SUBSET',
-        'RESTIC_COMPRESSION', 'LOCK_WAIT', 'DUMP_DIRECTORY', 'DUMP_REQUIRED', 'EXCLUSION_PATTERNS',
+        'RESTIC_COMPRESSION', 'LOCK_WAIT', 'UNLOCK_STALE', 'DUMP_DIRECTORY', 'DUMP_REQUIRED', 'EXCLUSION_PATTERNS',
         'WITH_MYSQL', 'MYSQL_HOST', 'MYSQL_PORT', 'MYSQL_USER', 'MYSQL_PASSWORD', 'MYSQL_DATABASES',
         'WITH_PGSQL', 'PGSQL_HOST', 'PGSQL_PORT', 'PGSQL_USER', 'PGSQL_PASSWORD', 'PGSQL_DATABASES', 'PGSQL_DUMP_OPTIONS',
         'NOTIFY', 'NOTIFY_ON', 'SMTP_HOST', 'SMTP_PORT', 'SMTP_ENCRYPTION', 'SMTP_USER', 'SMTP_PASSWORD', 'SMTP_FROM', 'SMTP_TO',
@@ -141,6 +141,7 @@ final class ConfigFactory
             $this->optional('RESTIC_HOST') ?? $defaultHost,
             $compression,
             $this->integer('LOCK_WAIT', ResticSettings::DEFAULT_LOCK_WAIT),
+            $this->boolean('UNLOCK_STALE'),
         );
 
         $checkSubset = $this->optional('RESTIC_CHECK_SUBSET') ?? '5%';

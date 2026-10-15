@@ -77,6 +77,43 @@ final class LockTest extends TestCase
         }
     }
 
+    public function testHeldElsewhereSeesOnlyOtherProcesses(): void
+    {
+        $path = $this->tempDir() . '/test.lock';
+        $lock = new Lock($path, new FixedClock());
+        self::assertFalse($lock->heldElsewhere(), 'no lock file: nobody holds it');
+
+        file_put_contents($path, "pid=999999\nstarted=2026-10-11T03:00:00+02:00\noperation=backup\n");
+        self::assertFalse($lock->heldElsewhere(), 'content left by a dead holder: the flock is free');
+
+        $mine = new Lock($path, new FixedClock());
+        $mine->acquire('backup');
+        self::assertFalse($mine->heldElsewhere());
+        self::assertFalse($lock->heldElsewhere(), 'this process holds it through another handle');
+        $mine->release();
+
+        $code = sprintf('$h = fopen(%s, "c+"); flock($h, LOCK_EX); ftruncate($h, 0); fwrite($h, "pid=4242\nstarted=x\noperation=maintain\n"); fflush($h); echo "locked\n"; fgets(STDIN);', var_export($path, true));
+        $process = proc_open([PHP_BINARY, '-r', $code], [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+        self::assertIsResource($process);
+        self::assertSame("locked\n", fgets($pipes[1]));
+        try {
+            self::assertTrue($lock->heldElsewhere());
+        } finally {
+            fwrite($pipes[0], "\n");
+            fclose($pipes[0]);
+            proc_close($process);
+        }
+        self::assertFalse($lock->heldElsewhere(), 'released when that process ended');
+    }
+
+    public function testALockPathThatIsNotAFileCountsAsHeld(): void
+    {
+        $path = $this->tempDir() . '/test.lock';
+        self::assertTrue(posix_mkfifo($path, 0600));
+
+        self::assertTrue((new Lock($path, new FixedClock()))->heldElsewhere(), 'never opened: a FIFO would block the run');
+    }
+
     public function testAStaleHolderIsReportedAndTheLockTaken(): void
     {
         $path = $this->tempDir() . '/test.lock';

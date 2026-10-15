@@ -215,6 +215,37 @@ final class Lock
     }
 
     /**
+     * Whether another process holds the lock now: a restic lock whose process is dead may still
+     * belong to a run that goes on. The flock is tried and dropped at once; this process's own lock
+     * does not count, a lock file that is not a regular file counts as held.
+     */
+    public function heldElsewhere(): bool
+    {
+        if ($this->handle !== null) {
+            return false;
+        }
+        clearstatcache(true, $this->path);
+        $stat = @lstat($this->path);
+        if ($stat === false) {
+            return false;
+        }
+        $handle = ($stat['mode'] & 0170000) === 0100000 ? @fopen($this->path, 'r') : false;
+        if ($handle === false) {
+            return true;
+        }
+        if (flock($handle, LOCK_SH | LOCK_NB)) {
+            flock($handle, LOCK_UN);
+            fclose($handle);
+
+            return false;
+        }
+        $holder = self::read($handle);
+        fclose($handle);
+
+        return ($holder['pid'] ?? '') !== (string) getmypid();
+    }
+
+    /**
      * Holder recorded in a lock file, without taking the lock (for doctor and status).
      *
      * @return array<string, string>

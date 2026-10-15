@@ -73,6 +73,7 @@ final class ConfigFactoryTest extends TestCase
         self::assertSame('web01', $config->restic->host);
         self::assertSame('auto', $config->restic->compression);
         self::assertSame(300, $config->restic->lockWait);
+        self::assertFalse($config->restic->unlockStale, 'ArkHive never removes a lock unless told to');
         self::assertSame([7, 4, 6], [$config->keepDaily, $config->keepWeekly, $config->keepMonthly]);
         self::assertSame('5%', $config->checkSubset);
         self::assertNull($config->dumpDirectory);
@@ -98,6 +99,7 @@ final class ConfigFactoryTest extends TestCase
             'RESTIC_KEEP_MONTHLY' => '12',
             'RESTIC_CHECK_SUBSET' => '1/10',
             'LOCK_WAIT' => '0',
+            'UNLOCK_STALE' => 'yes',
             'DUMP_REQUIRED' => 'yes',
             'EXCLUSION_PATTERNS' => '*.log,/cache/*',
         ]);
@@ -109,6 +111,7 @@ final class ConfigFactoryTest extends TestCase
         self::assertSame([14, 0, 12], [$config->keepDaily, $config->keepWeekly, $config->keepMonthly]);
         self::assertSame('1/10', $config->checkSubset);
         self::assertSame(0, $config->restic->lockWait);
+        self::assertTrue($config->restic->unlockStale);
         self::assertTrue($config->dumpRequired);
         self::assertSame(['*.log', '/cache/*'], $config->exclusionPatterns);
         self::assertSame(['/srv/www/**/*.log', '/etc/**/*.log', '/srv/www/cache/*', '/etc/cache/*'], $config->resticExcludes);
@@ -305,9 +308,10 @@ final class ConfigFactoryTest extends TestCase
     public function testInvalidResticValues(): void
     {
         $this->assertInvalid(
-            ['RESTIC_COMPRESSION' => 'gzip', 'RESTIC_CHECK_SUBSET' => 'half', 'RESTIC_KEEP_DAILY' => '-1', 'RESTIC_KEEP_MONTHLY' => '6.5', 'LOCK_WAIT' => '5m', 'DUMP_REQUIRED' => 'maybe'],
+            ['RESTIC_COMPRESSION' => 'gzip', 'RESTIC_CHECK_SUBSET' => 'half', 'RESTIC_KEEP_DAILY' => '-1', 'RESTIC_KEEP_MONTHLY' => '6.5', 'LOCK_WAIT' => '5m', 'UNLOCK_STALE' => 'always', 'DUMP_REQUIRED' => 'maybe'],
             'RESTIC_COMPRESSION must be auto, max or off, got "gzip"',
             'LOCK_WAIT must be a whole number >= 0, got "5m"',
+            'UNLOCK_STALE must be true or false (also yes/no, 1/0), got "always"',
             'RESTIC_CHECK_SUBSET must be a percentage (5%), a fraction (1/10) or a size (500M), got "half"',
             'RESTIC_KEEP_DAILY must be a whole number >= 0, got "-1"',
             'RESTIC_KEEP_MONTHLY must be a whole number >= 0, got "6.5"',

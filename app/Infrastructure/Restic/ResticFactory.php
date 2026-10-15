@@ -6,13 +6,15 @@ namespace Mfonte\Arkhive\Infrastructure\Restic;
 
 use Mfonte\Arkhive\Application\Port\ProcessRunner;
 use Mfonte\Arkhive\Application\Port\SnapshotStoreFactory;
+use Mfonte\Arkhive\Application\Resilience\StaleLocks;
 use Mfonte\Arkhive\Application\System\Dependencies;
 use Mfonte\Arkhive\Domain\Configuration\ResticSettings;
 use Mfonte\Arkhive\Domain\System\Dependency;
 
 /**
  * Finds the restic binary (RESTIC_BINARY, or restic in PATH) and builds the client; $cacheDirectory
- * is the RESTIC_CACHE_DIR to give it (null: restic's own choice).
+ * is the RESTIC_CACHE_DIR to give it (null: restic's own choice), $staleLocks tells a lock left by a
+ * dead process on this host from one held by a live run.
  */
 final class ResticFactory implements SnapshotStoreFactory
 {
@@ -20,6 +22,7 @@ final class ResticFactory implements SnapshotStoreFactory
         private readonly ProcessRunner $runner,
         private readonly Dependencies $dependencies,
         private readonly ?string $cacheDirectory = null,
+        private readonly ?StaleLocks $staleLocks = null,
     ) {
     }
 
@@ -29,6 +32,6 @@ final class ResticFactory implements SnapshotStoreFactory
             ? $this->dependencies->require(Dependency::Restic, $purpose)
             : $this->dependencies->requireConfigured($settings->binary, Dependency::Restic, $purpose, 'RESTIC_BINARY');
 
-        return new Restic($settings, $binary, $this->runner, $this->cacheDirectory);
+        return new Restic($settings, $binary, $this->runner, $this->cacheDirectory, $this->staleLocks);
     }
 }

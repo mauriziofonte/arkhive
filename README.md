@@ -166,6 +166,7 @@ arkhive self-update --allow-major    # needed to cross a major version (read the
    #RESTIC_KEEP_MONTHLY=6
    #RESTIC_CHECK_SUBSET=5%
    #LOCK_WAIT=300
+   #UNLOCK_STALE=false
 
    # Database dumps: one plain .sql file per database, staged here, included in the snapshot,
    # removed after each successful backup. A dedicated directory.
@@ -250,6 +251,7 @@ Syntax: one `KEY=value` per line, optionally prefixed by `export`. `'single quot
 | `RESTIC_KEEP_MONTHLY` | no | `6` | Monthly snapshots kept by `maintain` |
 | `RESTIC_CHECK_SUBSET` | no | `5%` | Data read back by `maintain`: a percentage (`5%`), a fraction (`1/10`) or a size (`500M`); with restic before 0.12 (percentage) or 0.14 (size) ArkHive reads the nearest fraction instead, a different one at each run |
 | `LOCK_WAIT` | no | `300` | Seconds to wait for a repository locked by another ArkHive run or another restic client before giving up with exit 75; `0` gives up at once. See [Retries](#retries) |
+| `UNLOCK_STALE` | no | `false` | `true`: a restic lock left by a process that died on this host (killed, out of memory) is removed with `restic unlock` and the operation goes on. Off by default: ArkHive then names the dead process and the command, and never removes a lock. See [Retries](#retries) |
 | `EXCLUSION_PATTERNS` | no | none | Comma-separated 1.x patterns, see below |
 | `DUMP_DIRECTORY` | when dumps are enabled | | Absolute path of a dedicated staging directory for the dumps (`mysql/<db>.sql`, `pgsql/<db>.sql`), backed up as a path of its own and emptied after each successful backup. The dumps are private: the directory must belong to the running user and not be writable by group or others (exit 77 otherwise), its `mysql` and `pgsql` subdirectories are made 0700 and every dump file is 0600. It cannot be `/`, cannot be or contain a backup path, and must not be excluded by `EXCLUSION_PATTERNS` |
 | `DUMP_REQUIRED` | no | `false` | A database dump that fails never stops the other dumps nor the backup of the files. `false`: the run ends with exit 3 and names the failed dumps; `true`: the run fails with that dump's exit code (69 server down, 77 credentials, 66 unknown database) and a failure notification |
@@ -599,7 +601,7 @@ ArkHive follows the `sysexits.h` convention, so scripts and systemd can tell a c
 | 71 | OSERR | The operating system refused to start a process |
 | 73 | CANTCREAT | An output cannot be created: non-empty restore target, not enough space, an existing database for `--import-as`, an unwritable log file |
 | 74 | IOERR | A write failed because a filesystem is full (local repository, restic cache, dump staging, restore target, extraction); the message gives the free space found on each |
-| 75 | TEMPFAIL | Temporary, retry later: another ArkHive run or restic holds the repository lock, a timeout (see Deadlines below), restic killed or stopped by a signal ArkHive did not send (the out-of-memory killer, an administrator; not retried within the run), the GitHub API rate limit |
+| 75 | TEMPFAIL | Temporary, retry later: another ArkHive run or restic holds the repository lock (a lock left by a dead process on this host is reported as such and not waited for), a timeout (see Deadlines below), restic killed or stopped by a signal ArkHive did not send (the out-of-memory killer, an administrator; not retried within the run), the GitHub API rate limit |
 | 76 | PROTOCOL | The releases API answered something that is not a valid release |
 | 77 | NOPERM | Wrong repository or archive password, database credentials refused, permission denied, a password file readable by others or owned by another user |
 | 78 | CONFIG | Configuration missing or invalid, including removed 1.x keys |
@@ -612,7 +614,8 @@ ArkHive follows the `sysexits.h` convention, so scripts and systemd can tell a c
 
 Failures that may pass on their own are tried again within the same run, each retry logged as a warning with its reason and the wait; when the last try fails the exit code is that failure's own (75, 69).
 
-- A repository locked by another ArkHive run or another restic client (another host's backup, a `prune`): tried again after 5, 10, 20 seconds, then every minute, until `LOCK_WAIT` seconds have passed (300 by default; `0` fails at once). ArkHive never removes a lock.
+- A repository locked by another ArkHive run or another restic client (another host's backup, a `prune`): tried again after 5, 10, 20 seconds, then every minute, until `LOCK_WAIT` seconds have passed (300 by default; `0` fails at once). ArkHive never removes a lock unless `UNLOCK_STALE` says so.
+- A restic lock that nothing will release, because it was made on this host by a process that is gone or a zombie (restic killed with `kill -9` or by the out-of-memory killer) and no other ArkHive run uses the repository: not waited for. The run fails at once with exit 75, "a stale lock from a dead process on this host (PID N no longer exists)" and the `restic unlock` command. With `UNLOCK_STALE=true`, ArkHive runs `restic unlock` itself (never `--remove-all`) wherever it would wait for a lock (opening the repository, `backup`, `maintain`, `restore`) and tries again at once, when the PID no longer exists and no other lock made on this host in the last 30 minutes belongs to a running process. See [docs/OPERATIONS.md](docs/OPERATIONS.md#stale-restic-locks).
 - A repository that cannot be reached (connection refused or lost, name resolution, a timeout): three tries, about 5 and 15 seconds apart. A refused SSH key or an unknown host key is not tried again.
 - The notification e-mail, refused with a 4xx answer (greylisting, a rate limit) or not delivered for a network error: three tries, about 15 and 45 seconds apart. Its failure only turns the exit code into 3.
 

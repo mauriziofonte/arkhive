@@ -33,8 +33,7 @@ final class ResticErrors
 
     public static function exception(ProcessResult $result, string $what, ResticSettings $settings): ArkhiveException
     {
-        // JSON records (--json, restic 0.18+) are read as their messages, one line each
-        $stderr = implode("\n", self::lines($result->stderr));
+        $stderr = self::text($result->stderr);
         if ($result->timedOut) {
             return new TemporaryException($result->failure($what), hint: self::reachHint($settings));
         }
@@ -108,6 +107,14 @@ final class ResticErrors
     private static function caughtSignal(string $stderr): ?int
     {
         return preg_match('/^signal (hangup|interrupt|terminated) received, cleaning up/m', $stderr, $match) === 1 ? self::CAUGHT_SIGNALS[$match[1]] : null;
+    }
+
+    /**
+     * stderr as text: JSON records (--json, restic 0.18+) replaced by their messages.
+     */
+    public static function text(string $stderr): string
+    {
+        return implode("\n", self::lines($stderr));
     }
 
     /**

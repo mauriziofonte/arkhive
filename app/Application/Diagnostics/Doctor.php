@@ -101,7 +101,8 @@ final class Doctor
         private readonly array $logSockets = [],
     ) {
         $this->extensionLoaded = $extensionLoaded ?? static fn (string $extension): bool => extension_loaded($extension);
-        $this->processExists = $processExists ?? static fn (int $pid): bool => function_exists('posix_kill') && posix_kill($pid, 0);
+        // EPERM: the process exists, owned by another user
+        $this->processExists = $processExists ?? static fn (int $pid): bool => function_exists('posix_kill') && (posix_kill($pid, 0) || posix_get_last_error() === 1);
     }
 
     /**

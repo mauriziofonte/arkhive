@@ -163,6 +163,56 @@ final class RetrierTest extends TestCase
         }
     }
 
+    public function testALockLeftByADeadProcessIsNotWaitedFor(): void
+    {
+        $calls = 0;
+        $stale = LockedException::stale('The restic repository is locked by PID 25983 on host.example.com: a stale lock from a dead process on this host', 'Remove it with: restic unlock');
+        $this->expectExceptionObject($stale);
+        try {
+            $this->retrier->whileLocked(self::failing([$stale], $calls), RetryPolicy::lock(300), 'restic forget', $this->log);
+        } finally {
+            self::assertSame(1, $calls);
+            self::assertSame([], $this->pause->waits, 'LOCK_WAIT is not spent on a lock nothing will release');
+        }
+    }
+
+    public function testUnlockStaleRemovesTheLockOnceAndTriesAgainAtOnce(): void
+    {
+        $unlocks = 0;
+        $unlock = static function () use (&$unlocks): void {
+            $unlocks++;
+        };
+        $calls = 0;
+        $operation = self::failing([LockedException::stale('The restic repository is locked by PID 25983 on host.example.com: a stale lock from a dead process on this host', 'Remove it with: restic unlock', $unlock)], $calls);
+
+        self::assertSame('done', $this->retrier->whileLocked($operation, RetryPolicy::lock(300), 'restic forget', $this->log));
+        self::assertSame(2, $calls);
+        self::assertSame(1, $unlocks);
+        self::assertSame([], $this->pause->waits);
+        self::assertStringContainsString('warning restic forget: The restic repository is locked by PID 25983 on host.example.com: a stale lock from a dead process on this host; removing it with restic unlock (UNLOCK_STALE)', $this->stream->contents());
+
+        $calls = 0;
+        $again = LockedException::stale('still locked', 'Remove it with: restic unlock', $unlock);
+        $this->expectExceptionObject($again);
+        try {
+            $this->retrier->whileLocked(self::failing([LockedException::stale('locked', 'hint', $unlock), $again], $calls), RetryPolicy::lock(300), 'restic forget', $this->log);
+        } finally {
+            self::assertSame(2, $calls);
+            self::assertSame(2, $unlocks, 'one unlock per operation, never a loop');
+        }
+    }
+
+    public function testAfterUnlockingALiveLockIsStillWaitedFor(): void
+    {
+        $calls = 0;
+        $operation = self::failing([LockedException::stale('stale', 'hint', static function (): void {
+        }), new LockedException('locked by a prune on web2')], $calls);
+
+        self::assertSame('done', $this->retrier->whileLocked($operation, RetryPolicy::lock(300), 'restic backup', $this->log));
+        self::assertSame(3, $calls);
+        self::assertCount(1, $this->pause->waits);
+    }
+
     public function testLockWaitZeroFailsAtOnce(): void
     {
         $calls = 0;

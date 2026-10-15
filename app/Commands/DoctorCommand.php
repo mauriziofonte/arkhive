@@ -7,12 +7,14 @@ namespace Mfonte\Arkhive\Commands;
 use Mfonte\Arkhive\Application\Configuration\ConfigLocator;
 use Mfonte\Arkhive\Application\Diagnostics\Doctor;
 use Mfonte\Arkhive\Application\Port\ProcessRunner;
+use Mfonte\Arkhive\Application\Port\ProcessTable;
 use Mfonte\Arkhive\Application\Port\SnapshotStoreFactory;
 use Mfonte\Arkhive\Application\Run\RunJournal;
 use Mfonte\Arkhive\Application\System\Dependencies;
 use Mfonte\Arkhive\Domain\Configuration\ResticSettings;
 use Mfonte\Arkhive\Domain\Diagnostics\Check;
 use Mfonte\Arkhive\Domain\Diagnostics\CheckStatus;
+use Mfonte\Arkhive\Domain\System\ProcessState;
 use Mfonte\Arkhive\ExitCode;
 
 /**
@@ -30,6 +32,7 @@ final class DoctorCommand extends RepositoryCommand
 
     protected function perform(): int
     {
+        $processes = $this->laravel->make(ProcessTable::class);
         $doctor = new Doctor(
             $this->laravel->make(Dependencies::class),
             $this->laravel->make(SnapshotStoreFactory::class),
@@ -40,6 +43,7 @@ final class DoctorCommand extends RepositoryCommand
             $this->terminal->environment(),
             posix_geteuid(),
             self::hostname(),
+            processExists: static fn (int $pid): bool => $processes->state($pid) !== ProcessState::Gone,
             runs: $this->laravel->make(RunJournal::class),
         );
         $checks = $doctor->run(ConfigLocator::fromEnvironment($this->terminal->environment()), self::stringOption($this->option('config')), $this->bareMetal());
