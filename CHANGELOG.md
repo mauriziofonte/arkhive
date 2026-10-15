@@ -22,6 +22,12 @@ lock, run records, exit codes and messages.
   1 ("Measuring snapshot failed"). A backup that follows a `maintain` or `drill` that found damage,
   with no passing `maintain` since, ends with a warning (exit 3), since restic cannot detect the
   damage while backing up. See docs/OPERATIONS.md.
+- Any local user could block root's backups by creating root's lock file in the world-writable
+  `/run/lock` first; root then failed with exit 73 and a misleading hint. Root now locks in
+  `/run/arkhive` (0700 root:root, checked before use), the systemd units and root cron lines set
+  `ARKHIVE_LOCK_DIR=/run/arkhive` (units: `RuntimeDirectory=arkhive`, mode 0700, preserved between
+  runs), and a lock file of another user or a symbolic link in a shared directory is exit 77 naming
+  its owner. Reinstall the units with `arkhive schedule --install`.
 
 ## [2.1.0-rc.1] - 2026-10-14
 

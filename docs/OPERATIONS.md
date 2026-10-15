@@ -45,3 +45,29 @@ Recommended:
 - alert on any non-zero exit of `backup`, `maintain` and `drill`: `NOTIFY=true` with
   `NOTIFY_ON=failure` (exit 3 counts as a warning and is reported), or the `OnFailure=` unit the
   schedule installs, or an external monitor reading `arkhive status --json`.
+
+## The run lock
+
+ArkHive takes one lock file per repository (`arkhive-<hash>.lock`, the hash of the repository URL)
+so that two of its runs never work on the same repository at once. The directory must be the same
+for cron, systemd and a login shell, or two runs started from different places would not see each
+other:
+
+| Who | Directory |
+|---|---|
+| `ARKHIVE_LOCK_DIR` set (absolute, writable) | that directory |
+| root | `/run/arkhive`, created `0700 root:root` when the lock is first taken |
+| any other user | the first writable of `/run/lock`, `$XDG_RUNTIME_DIR`, `/run/user/<uid>`, the temp directory |
+
+Root used `/run/lock` until 2.1.0-rc.1. That directory is world-writable (mode 1777), so any local
+user could create root's lock file first and block every backup (with `fs.protected_regular=1`
+root cannot even open it). Root's directory is now private: ArkHive refuses it (exit 77) when it is
+a symbolic link or belongs to another user, and makes it 0700 when it is open to others. The
+systemd units installed by `arkhive schedule` as root name it as well (`RuntimeDirectory=arkhive`,
+`RuntimeDirectoryMode=0700`, `RuntimeDirectoryPreserve=yes`, `Environment=ARKHIVE_LOCK_DIR=/run/arkhive`;
+kept between runs, so that a unit that stops never removes a lock file another run holds), and so
+do the root cron lines. Reinstall the units (`arkhive schedule --install`) to get these settings.
+
+In a shared directory, a lock file that is a symbolic link or belongs to another user is refused
+with exit 77 and names the owner; the file opened must be the one found at the path. Set
+`ARKHIVE_LOCK_DIR` to a directory only the backup user can write when other users share the host.

@@ -17,6 +17,10 @@ CPUSchedulingPolicy=batch
 TimeoutStartSec=12h
 StateDirectory=arkhive
 CacheDirectory=arkhive
+RuntimeDirectory=arkhive
+RuntimeDirectoryMode=0700
+RuntimeDirectoryPreserve=yes
+Environment=ARKHIVE_LOCK_DIR=/run/arkhive
 ProtectSystem=full
 ProtectHome=read-only
 PrivateTmp=true

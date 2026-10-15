@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Domain\Schedule;
 
+use Mfonte\Arkhive\Application\System\Lock;
+use Mfonte\Arkhive\Domain\Schedule\CronTable;
 use Mfonte\Arkhive\Domain\Schedule\Schedule;
 use Mfonte\Arkhive\Domain\Schedule\SystemdUnits;
 use PHPUnit\Framework\TestCase;
@@ -43,6 +45,10 @@ final class SystemdUnitsTest extends TestCase
             . "TimeoutStartSec=6h\n"
             . "StateDirectory=arkhive\n"
             . "CacheDirectory=arkhive\n"
+            . "RuntimeDirectory=arkhive\n"
+            . "RuntimeDirectoryMode=0700\n"
+            . "RuntimeDirectoryPreserve=yes\n"
+            . "Environment=ARKHIVE_LOCK_DIR=/run/arkhive\n"
             . "ProtectSystem=full\n"
             . "ProtectHome=read-only\n"
             . "PrivateTmp=true\n"
@@ -119,6 +125,19 @@ final class SystemdUnitsTest extends TestCase
         $units = SystemdUnits::render(new Schedule(['/usr/bin/php8.4', '/home/deploy/bin/arkhive.phar'], '/home/deploy/.config/arkhive/config', 'deploy', 2, 30, '/home/deploy/.local/state/arkhive/arkhive.log'));
 
         self::assertStringContainsString("User=deploy\nExecStart=/usr/bin/php8.4 /home/deploy/bin/arkhive.phar backup --config /home/deploy/.config/arkhive/config\n", $units['/etc/systemd/system/arkhive-backup.service']);
+        self::assertStringNotContainsString('ARKHIVE_LOCK_DIR', $units['/etc/systemd/system/arkhive-backup.service'], 'another user keeps the lock directory its runs by hand use');
+        self::assertStringNotContainsString('RuntimeDirectory', $units['/etc/systemd/system/arkhive-backup.service']);
+    }
+
+    public function testRootUnitsLockInTheSamePrivateDirectoryAsRootRunsByHand(): void
+    {
+        $units = SystemdUnits::render(new Schedule(['/usr/local/bin/arkhive'], '/etc/arkhive/config', 'root', 2, 30, '/var/log/arkhive.log'));
+
+        foreach (['backup', 'maintain', 'drill'] as $job) {
+            self::assertStringContainsString('Environment=ARKHIVE_LOCK_DIR=' . Lock::PRIVATE_DIRECTORY . "\n", $units["/etc/systemd/system/arkhive-{$job}.service"]);
+            self::assertStringContainsString("RuntimeDirectoryPreserve=yes\n", $units["/etc/systemd/system/arkhive-{$job}.service"], 'kept when one unit stops while another still holds its lock');
+        }
+        self::assertStringContainsString(Lock::PRIVATE_DIRECTORY, CronTable::LOCK_DIR);
     }
 
     public function testTheDirectoriesTheJobsWriteStayWritable(): void
