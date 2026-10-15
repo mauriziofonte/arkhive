@@ -87,6 +87,12 @@ its mode and owner first, with the rule of sshd's `StrictModes`:
 | readable by others, no password in it | `doctor` warns; runs are not affected |
 
 The fix is in the message: `chmod 600 <path>` (and `chown` when the owner is wrong). `arkhive
-doctor` reports the same in its `config file` check, where readable passwords already fail. The
-repository password is never in the configuration: `RESTIC_PASSWORD_FILE` names a file that must
-be private as well.
+doctor` reports the same in its `config file` check, where readable passwords already fail.
+
+The repository password is never in the configuration: `RESTIC_PASSWORD_FILE` names a file that
+must be private as well, with no grace period (exit 78, an invalid configuration; 77 for
+`--password-file`). It must be a regular file (not a symbolic link) owned by the running user, with
+no permission for group or others (`chmod 600`), in a directory that group or others cannot write
+(a sticky directory such as `/tmp` is accepted: only the owner can replace a file there). Whoever
+can replace the file between the check and restic reading it chooses the password that
+`arkhive init` gives a new repository.

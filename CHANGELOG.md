@@ -36,6 +36,12 @@ lock, run records, exit codes and messages.
   a later minor version will refuse it with exit 77 (`ConfigFileAccess::ENFORCE_PRIVATE`). `doctor`
   has a new `config file` check: failed for both cases, a warning for a configuration without
   passwords that others can read.
+- The repository password file is checked more strictly: any permission for group or others
+  (0620, 0602, not only read bits) is refused, a symbolic link is refused (it is no longer followed:
+  point `RESTIC_PASSWORD_FILE` or `--password-file` at the file itself), and so is a file in a
+  directory that group or others can write without the sticky bit, where someone could replace it
+  with a password they know before restic reads it. `init` checks the directory before it generates
+  a password there.
 
 ## [2.1.0-rc.1] - 2026-10-14
 

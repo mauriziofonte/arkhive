@@ -240,7 +240,7 @@ Syntax: one `KEY=value` per line, optionally prefixed by `export`. `'single quot
 |---|---|---|---|
 | `BACKUP_PATHS` | yes | | Absolute paths to back up, space-separated; double quotes or a backslash keep spaces inside one path |
 | `RESTIC_REPOSITORY` | yes | | The restic repository, e.g. `sftp:u123456@backup.example.com:arkhive` or a local path |
-| `RESTIC_PASSWORD_FILE` | yes | | Absolute path of the repository password file. Refused if it is missing (except by `init`, which generates it), empty, not a regular file, readable by group or others, or not owned by the running user |
+| `RESTIC_PASSWORD_FILE` | yes | | Absolute path of the repository password file. Refused if it is missing (except by `init`, which generates it), empty, a symbolic link or not a regular file, accessible by group or others in any way (mode `& 077`), not owned by the running user, or in a directory that group or others can write (unless the directory is sticky) |
 | `RESTIC_SFTP_COMMAND` | no | restic's own `ssh` call | Passed to restic as `-o sftp.command=...`, for a port or key, e.g. `ssh -p 23 -i /root/.ssh/arkhive u123456@backup.example.com -s sftp`. Without it ArkHive adds `ServerAliveInterval=15`, `ServerAliveCountMax=4` and `BatchMode=yes` to an `sftp:` repository; with it the command is used as written, so add those `-o` options yourself if you want them |
 | `RESTIC_BINARY` | no | `restic` | A name searched in `PATH` and the standard directories, or a path; 0.11.0 or newer |
 | `RESTIC_HOST` | no | system hostname | Host name recorded in the snapshots; retention, `status` and `drill` follow it |
@@ -423,7 +423,7 @@ Under systemd with `CacheDirectory=arkhive`, restic keeps its cache in `$CACHE_D
 arkhive init [--json]
 ```
 
-Creates the repository of the configuration. If `RESTIC_PASSWORD_FILE` does not exist, it generates a random password into it (mode 0600; its directory must exist). If the repository already exists and the password opens it, there is nothing to do (exit 0); a generated password never replaces the one of an existing repository. Afterwards, copy the password file off the host.
+Creates the repository of the configuration. If `RESTIC_PASSWORD_FILE` does not exist, it generates a random password into it (mode 0600; its directory must exist, and group or others must not be able to write it). If the repository already exists and the password opens it, there is nothing to do (exit 0); a generated password never replaces the one of an existing repository. Afterwards, copy the password file off the host.
 
 ### drill
 

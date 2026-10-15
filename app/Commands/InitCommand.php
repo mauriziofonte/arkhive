@@ -89,6 +89,7 @@ final class InitCommand extends ConfiguredCommand
         if (!is_dir(dirname($path))) {
             throw new NoInputException("RESTIC_PASSWORD_FILE {$path} does not exist and neither does its directory", 'Create the directory (mkdir -p ' . dirname($path) . '), then run arkhive init again');
         }
+        PasswordFile::assertPrivateDirectory($path);
         $password = rtrim(strtr(base64_encode(random_bytes(self::PASSWORD_BYTES)), '+/', '-_'), '=');
         $umask = umask(0077);
         try {

@@ -9,29 +9,47 @@ use Mfonte\Arkhive\Exceptions\NoInputException;
 use Mfonte\Arkhive\Exceptions\PermissionException;
 
 /**
- * The repository password file must be private to the running user (spec §4).
+ * The repository password file must be private to the running user (spec §4): a regular file (not
+ * a symbolic link, which someone could point elsewhere), owned by that user, with no permission for
+ * group or others, in a directory that group or others cannot write (they could replace the file
+ * between this check and restic reading it, and `init` would then create the repository with a
+ * password they know). A sticky directory (/tmp) is accepted: there only the owner can rename or
+ * remove the file.
  */
 final class PasswordFile
 {
     public static function assertSafe(string $path, string $origin = 'RESTIC_PASSWORD_FILE'): void
     {
         clearstatcache(true, $path);
-        if (!file_exists($path)) {
+        $stat = @lstat($path);
+        if ($stat === false) {
             throw new NoInputException("{$origin} {$path} does not exist");
         }
-        if (!is_file($path)) {
+        if (($stat['mode'] & 0170000) === 0120000) {
+            $target = readlink($path);
+            throw new PermissionException(
+                "{$origin} {$path} is a symbolic link" . ($target === false ? '' : " (to {$target})") . ': whoever can change the link chooses the password',
+                "Point {$origin} at the file itself",
+            );
+        }
+        if (($stat['mode'] & 0170000) !== 0100000) {
             throw new NoInputException("{$origin} {$path} is not a regular file");
         }
 
-        $mode = fileperms($path) & 0777;
-        if (($mode & 0044) !== 0) {
+        $mode = $stat['mode'] & 0777;
+        if (($mode & 0077) !== 0) {
+            $access = match (true) {
+                ($mode & 0044) !== 0 => 'readable',
+                ($mode & 0022) !== 0 => 'writable',
+                default => 'accessible',
+            };
             throw new PermissionException(
-                sprintf('%s %s is readable by group or others (mode %04o)', $origin, $path, $mode),
+                sprintf('%s %s is %s by group or others (mode %04o)', $origin, $path, $access, $mode),
                 "Run: chmod 600 {$path}",
             );
         }
 
-        $owner = fileowner($path);
+        $owner = $stat['uid'];
         $uid = function_exists('posix_geteuid') ? posix_geteuid() : $owner;
         if ($owner !== $uid) {
             throw new PermissionException(
@@ -40,11 +58,33 @@ final class PasswordFile
             );
         }
 
+        self::assertPrivateDirectory($path, $origin);
+
         if (!is_readable($path)) {
             throw new PermissionException("{$origin} {$path} is not readable");
         }
-        if (filesize($path) === 0) {
+        if ($stat['size'] === 0) {
             throw new ConfigException("{$origin} {$path} is empty");
+        }
+    }
+
+    /**
+     * The directory of the password file: group or others must not be able to write it, unless it
+     * is sticky. `init` checks it before it generates a password there.
+     */
+    public static function assertPrivateDirectory(string $path, string $origin = 'RESTIC_PASSWORD_FILE'): void
+    {
+        $directory = dirname($path);
+        $stat = @stat($directory);
+        if ($stat === false) {
+            return;
+        }
+        $mode = $stat['mode'] & 07777;
+        if (($mode & 0022) !== 0 && ($mode & 01000) === 0) {
+            throw new PermissionException(
+                sprintf('%s %s is in %s, which group or others can write (mode %04o): they could replace the file with one whose password they know', $origin, $path, $directory, $mode),
+                "Run: chmod go-w {$directory}, or move the password file to a directory only its owner can write",
+            );
         }
     }
 }
