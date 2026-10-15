@@ -101,6 +101,24 @@ final class SnapshotContinuityTest extends TestCase
         self::assertSame(self::NEWEST, $continuity->toArray()['newest_snapshot']);
     }
 
+    public function testRecordsKeepWholeSecondsSoOnlyASnapshotTakenAfterTheRunEndedIsNewer(): void
+    {
+        // the run started at 14:17:50.9 and ended at 14:18:55.2: its record says 14:17:50 and 14:18:55
+        $before = self::repository(self::snapshot(self::OLDER, '2026-10-12T14:17:50.400Z'));
+        $missing = SnapshotContinuity::check(self::backup(self::GONE), self::key(), $before);
+        self::assertSame(SnapshotContinuity::MISSING, $missing->status, 'the backup before it, taken in the second the run started in');
+        self::assertTrue($missing->toArray()['newest_older']);
+
+        $during = self::repository(self::snapshot(self::OLDER, '2026-10-12T14:18:54.999Z'));
+        self::assertSame(SnapshotContinuity::MISSING, SnapshotContinuity::check(self::backup(self::GONE), self::key(), $during)->status);
+
+        $after = self::repository(self::snapshot(self::NEWEST, '2026-10-12T14:18:55.300Z'));
+        $superseded = SnapshotContinuity::check(self::backup(self::GONE), self::key(), $after);
+        self::assertSame(SnapshotContinuity::SUPERSEDED, $superseded->status, 'the next run, started in the second this one ended in');
+        self::assertFalse($superseded->toArray()['newest_older']);
+        self::assertSame(SnapshotContinuity::SUPERSEDED, SnapshotContinuity::check(self::backup(self::GONE), self::key(), self::repository(self::snapshot(self::NEWEST, '2026-10-12T14:18:55Z')))->status);
+    }
+
     public function testRecordsThatCannotBeCheckedAreNotRecorded(): void
     {
         $empty = self::repository();

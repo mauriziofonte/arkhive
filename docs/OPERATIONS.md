@@ -59,7 +59,7 @@ Every successful `backup` records its full snapshot id for its repository in the
 | The recorded snapshot | Result |
 |---|---|
 | is there | fine (`continuity.status` `ok`) |
-| is gone, a newer backup of the host is there | fine (`superseded`): retention may remove the recorded one once a newer exists |
+| is gone, a backup of the host taken after the recorded run ended is there | fine (`superseded`): retention may remove the recorded one once a newer exists |
 | is gone, nothing newer of the host | exit 65 (`missing`): deleted or rolled back |
 
 The message names the snapshot, when it was recorded, and the newest backup of the host left

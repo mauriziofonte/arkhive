@@ -15,8 +15,10 @@ use Mfonte\Arkhive\Domain\Repository\Snapshots;
  * the record of what this host backed up last can tell.
  *
  * A missing snapshot is not a problem when a newer backup of the same host is there (retention may
- * have removed the recorded one after it). Records without a repository (2.1.0-rc.1) are not checked:
- * they may belong to another repository of this host.
+ * have removed the recorded one after it): one taken at or after the end of the recorded run. Not its
+ * start: records keep whole seconds, and the backup before it can have been taken in the second the
+ * run started in, while a later run takes its snapshot only after this one ended. Records without a
+ * repository (2.1.0-rc.1) are not checked: they may belong to another repository of this host.
  */
 final readonly class SnapshotContinuity
 {
@@ -54,7 +56,7 @@ final readonly class SnapshotContinuity
             }
         }
         $newest = $repository->backups()->forHost($host)->snapshots[0] ?? null;
-        if ($newest !== null && $newest->time >= $lastBackup->started) {
+        if ($newest !== null && $newest->time >= $lastBackup->ended) {
             return new self(self::SUPERSEDED, $lastBackup, $newest);
         }
 
@@ -89,7 +91,7 @@ final readonly class SnapshotContinuity
      */
     public function toArray(): array
     {
-        $older = $this->newest !== null && $this->recorded !== null && $this->newest->time < $this->recorded->started;
+        $older = $this->status === self::MISSING && $this->newest !== null;
 
         return [
             'status' => $this->status,
