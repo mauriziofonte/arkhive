@@ -326,6 +326,37 @@ final class OperationsTest extends E2eTestCase
         self::assertDirectoryDoesNotExist("{$this->dir}/restored");
     }
 
+    public function testADeletedLastBackupIsCaughtByStatusAndDrill(): void
+    {
+        $repository = "{$this->dir}/repo";
+        $this->arkhiveInit($this->dir, $repository, null);
+        $config = $this->config($repository, null);
+        $this->backup($config);
+        file_put_contents("{$this->tree}/data/second.txt", "second run\n");
+        $this->backup($config);
+
+        $state = json_decode((string) file_get_contents("{$this->dir}/state/" . substr(hash('sha256', $repository), 0, 16) . '/backup.json'), true);
+        self::assertIsArray($state, 'run state kept per repository');
+        $last = (string) $state['last_success']['snapshot_id'];
+        self::assertMatchesRegularExpression('/^[0-9a-f]{64}$/', $last, 'the full snapshot id');
+        self::assertSame('ok', $this->json(['status'], 0, $config)['continuity']['status']);
+
+        // what a rollback of the storage to before the second backup leaves behind
+        unlink("{$repository}/snapshots/{$last}");
+
+        $status = $this->json(['status'], ExitCode::DATA_ERROR, $config);
+        self::assertSame('missing', $status['continuity']['status']);
+        self::assertTrue($status['continuity']['newest_older']);
+        $drill = self::arkhive(['drill', '--config', $config], $this->runEnv());
+        self::assertSame(ExitCode::DATA_ERROR, $drill->exitCode, $drill->output());
+        self::assertStringContainsString("Snapshot {$last} recorded as the last successful backup at", $drill->stderr);
+        self::assertStringContainsString('is missing from the repository (deleted or rolled back)', $drill->stderr);
+
+        $backup = self::arkhive(['backup', '--config', $config], $this->runEnv());
+        self::assertSame(ExitCode::WARNING, $backup->exitCode, 'the failed drill stands until a maintain passes: ' . $backup->output());
+        self::assertSame('ok', $this->json(['status'], 0, $config)['continuity']['status'], 'a new backup starts a new series');
+    }
+
     public function testDoctorIsGreenOnAHealthyHostAndNamesWhatIsMissing(): void
     {
         [$repository, $sftpCommand] = self::sftpRepository();
