@@ -286,6 +286,46 @@ final class OperationsTest extends E2eTestCase
         }
     }
 
+    /**
+     * Pack files deleted on the server: the backup cannot see it (restic trusts its index), maintain
+     * and restore report it as damage (65) with the repair order, and later backups carry a warning.
+     */
+    public function testPackFilesDeletedOnTheServerAreDamageNotSuccess(): void
+    {
+        $repository = "{$this->dir}/repo";
+        $this->arkhiveInit($this->dir, $repository, null);
+        $config = $this->config($repository, null, ['RESTIC_CHECK_SUBSET' => '100%']);
+        $this->backup($config);
+        file_put_contents("{$this->tree}/data/second.txt", "second run\n");
+        $this->backup($config);
+
+        $packs = glob("{$repository}/data/*/*") ?: [];
+        self::assertNotSame([], $packs);
+        foreach ($packs as $pack) {
+            unlink($pack);
+        }
+        file_put_contents("{$this->tree}/data/third.txt", "third run\n");
+        $this->backup($config);
+
+        $maintain = self::arkhive(['maintain', '--config', $config], $this->runEnv());
+        self::assertSame(ExitCode::DATA_ERROR, $maintain->exitCode, $maintain->output());
+        self::assertMatchesRegularExpression('/error The retention policy was not applied: .*pack file\(s\) listed in the index are missing/', $maintain->stderr);
+        self::assertStringContainsString('restic repair index, then arkhive backup', $maintain->stderr);
+        self::assertStringNotContainsString('"message_type"', $maintain->stderr, 'no raw restic JSON');
+        $report = $this->json(['maintain'], ExitCode::DATA_ERROR, $config);
+        self::assertFalse($report['healthy']);
+        self::assertNotSame([], $report['missing_packs']);
+
+        $backup = self::arkhive(['backup', '--config', $config], $this->runEnv());
+        self::assertSame(ExitCode::WARNING, $backup->exitCode, $backup->output());
+        self::assertStringContainsString('found the repository damaged and no maintain has passed since', $backup->stderr);
+
+        $restore = self::arkhive(['restore', '--config', $config, '--snapshot', 'latest', '--target', "{$this->dir}/restored", '--yes'], $this->runEnv());
+        self::assertSame(ExitCode::DATA_ERROR, $restore->exitCode, $restore->output());
+        self::assertStringContainsString('restic repair index', $restore->stderr);
+        self::assertDirectoryDoesNotExist("{$this->dir}/restored");
+    }
+
     public function testDoctorIsGreenOnAHealthyHostAndNamesWhatIsMissing(): void
     {
         [$repository, $sftpCommand] = self::sftpRepository();

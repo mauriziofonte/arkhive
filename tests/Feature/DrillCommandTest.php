@@ -77,7 +77,7 @@ final class DrillCommandTest extends TestCase
 
         self::assertSame(ExitCode::DATA_ERROR, Artisan::call('drill', ['--config' => $this->writeConfig(self::notify('failure'))]));
 
-        self::assertStringContainsString('error Drill: the restore failed: restic restore (drill) failed (restic exit 1): Fatal: failed to restore: ciphertext verification failed', $this->logOutput());
+        self::assertStringContainsString('error Drill: the restore failed: restic restore (drill) failed: the repository /srv/restic-repo holds damaged data: Fatal: failed to restore: ciphertext verification failed', $this->logOutput());
         self::assertStringContainsString('error Restore drill FAILED on snapshot e82340a7: 1 problem(s)', $this->logOutput());
         $mail = $this->mail->sent[0];
         self::assertSame('[ArkHive] restore drill FAILED on web1.example.com', $mail->getSubject());

@@ -6,6 +6,23 @@ All notable changes to ArkHive are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [2.1.0-rc.2] - 2026-10-15
+
+Fixes for weak points found by an isolated test against a simulated Hetzner Storage Box
+(chrooted SFTP on port 23, quota, synthetic data): repository damage, file permissions, the run
+lock, run records, exit codes and messages.
+
+### Fixed
+
+- A repository whose pack files were deleted on the server is reported as damaged (exit 65) by
+  `maintain`, `restore`, `ls`, `find` and `drill`, with restic's repair commands in the order of its
+  troubleshooting guide (`repair index`, a new backup, `repair snapshots --forget`, a check), never
+  run automatically. `maintain` exited 1 with raw restic JSON when `forget --prune` refused to run on
+  missing packs; it now still runs the check, names the missing packs and exits 65. `restore` exited
+  1 ("Measuring snapshot failed"). A backup that follows a `maintain` or `drill` that found damage,
+  with no passing `maintain` since, ends with a warning (exit 3), since restic cannot detect the
+  damage while backing up. See docs/OPERATIONS.md.
+
 ## [2.1.0-rc.1] - 2026-10-14
 
 ArkHive 2.1 works with the tools of the host: systemd (status, progress, watchdog, failure

@@ -10,6 +10,8 @@ use Mfonte\Arkhive\Application\Port\ProcessRunner;
 use Mfonte\Arkhive\Application\Process\Command;
 use Mfonte\Arkhive\Application\System\Dependencies;
 use Mfonte\Arkhive\Application\System\Lock;
+use Mfonte\Arkhive\Domain\Run\JobState;
+use Mfonte\Arkhive\Domain\Run\RunRecord;
 use Mfonte\Arkhive\ExitCode;
 use Mfonte\Arkhive\Infrastructure\Mail\SmtpNotifier;
 use Symfony\Component\Mailer\Exception\UnexpectedResponseException;
@@ -44,6 +46,26 @@ final class BackupCommandTest extends TestCase
         $this->app->instance(ProcessRunner::class, $this->runner);
         $this->app->instance(Dependencies::class, FakeBinaries::dependencies("{$this->dir}/bin", ['restic']));
         $this->app->instance(Notifier::class, new SmtpNotifier($this->mail->factory()));
+    }
+
+    public function testABackupAfterAFailedCheckEndsWithAWarningUntilAMaintainPasses(): void
+    {
+        // restic trusts its index: a backup succeeds on a repository that lost pack files
+        $at = new \DateTimeImmutable('2026-10-11T04:00:00+00:00');
+        $this->runs->states['maintain'] = (new JobState())->with(new RunRecord('maintain', $at, $at->modify('+5 minutes'), ExitCode::DATA_ERROR));
+        $config = $this->writeConfig(self::notify());
+
+        self::assertSame(ExitCode::WARNING, Artisan::call('backup', ['--config' => $config, '--json' => true]));
+
+        self::assertStringContainsString('warning The last maintain (2026-10-11 06:05 GMT+0200) found the repository damaged and no maintain has passed since: this snapshot may use data the repository no longer has; repair it (arkhive maintain names the steps)', $this->logOutput());
+        $json = json_decode(Artisan::output(), true);
+        self::assertIsArray($json);
+        self::assertCount(1, $json['warnings']);
+        self::assertSame('[ArkHive] backup completed with warnings on web1.example.com', $this->mail->sent[0]->getSubject());
+        self::assertSame(ExitCode::WARNING, $this->runs->load('backup')->last?->exitCode);
+
+        $this->runs->states['maintain'] = $this->runs->states['maintain']->with(new RunRecord('maintain', $at->modify('+1 day'), $at->modify('+1 day 5 minutes'), ExitCode::SUCCESS));
+        self::assertSame(ExitCode::SUCCESS, Artisan::call('backup', ['--config' => $config]));
     }
 
     public function testASuccessfulBackupIsExit0WithASummaryAndANotification(): void

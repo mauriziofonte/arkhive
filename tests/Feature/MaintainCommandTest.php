@@ -111,7 +111,7 @@ final class MaintainCommandTest extends TestCase
         self::assertSame(['check', '--json', '--read-data-subset=1/10'], $this->restic->callsOf('check')[1]);
     }
 
-    public function testADamagedPackIsExit1WithTheRepairStepsAndNotified(): void
+    public function testADamagedPackIsExit65WithTheRepairStepsAndNotified(): void
     {
         $this->damaged();
         $config = $this->writeConfig(self::notify('failure'));
@@ -120,7 +120,8 @@ final class MaintainCommandTest extends TestCase
 
         $log = $this->logOutput();
         self::assertStringContainsString('error The repository check found errors: pack ' . self::PACK . ' contains 2 errors', $log);
-        self::assertStringContainsString('notice Stop and read https://restic.readthedocs.io/en/stable/077_troubleshooting.html first; then: restic repair packs ' . self::PACK . ' and restic repair snapshots --forget; back up again afterwards (ArkHive never repairs a repository automatically)', $log);
+        self::assertStringContainsString('notice Stop and read https://restic.readthedocs.io/en/stable/077_troubleshooting.html first; then run, in this order: restic repair packs ' . self::PACK . ', then arkhive backup (uploads again what is still on this host), then restic repair snapshots --forget, then arkhive maintain (restic as: RESTIC_PASSWORD_FILE=', $log);
+        self::assertStringContainsString("restic -r '/srv/restic-repo'). ArkHive never repairs a repository automatically", $log);
         self::assertSame([], $this->restic->callsOf('repair'), 'never repaired automatically');
         $json = json_decode(Artisan::output(), true);
         self::assertIsArray($json);
@@ -140,7 +141,7 @@ final class MaintainCommandTest extends TestCase
 
         self::assertCount(1, $this->restic->callsOf('check'));
         self::assertStringContainsString('error The repository check found errors: error for tree 4b2a: tree 4b2a not found in repository', $this->logOutput());
-        self::assertStringContainsString('notice Stop and read https://restic.readthedocs.io/en/stable/077_troubleshooting.html first; back up again afterwards', $this->logOutput());
+        self::assertStringContainsString('notice Stop and read https://restic.readthedocs.io/en/stable/077_troubleshooting.html first; then run, in this order: restic repair index, then arkhive backup', $this->logOutput());
         $json = json_decode(Artisan::output(), true);
         self::assertIsArray($json);
         self::assertNull($json['read_data']);
@@ -157,6 +158,47 @@ final class MaintainCommandTest extends TestCase
         self::assertSame([], $this->restic->callsOf('check'));
         self::assertSame('[ArkHive] maintenance FAILED on web1.example.com', $this->mail->sent[0]->getSubject());
         self::assertStringStartsWith('The maintenance failed: The restic repository is locked', (string) $this->mail->sent[0]->getTextBody());
+    }
+
+    public function testPackFilesDeletedOnTheServerAreExit65WithTheRepairOrder(): void
+    {
+        // prune refuses to run on missing data (captured from restic 0.19.1): the checks still say what is wrong
+        $this->restic->answers['forget'] = [1, '', FakeRestic::fixture('forget-missing-0.19.stderr')];
+        $this->restic->answers['check'] = [1, FakeRestic::fixture('check-missing-0.19.jsonl'), FakeRestic::fixture('check-missing-0.19.stderr')];
+        $config = $this->writeConfig(self::notify('failure'));
+
+        self::assertSame(ExitCode::DATA_ERROR, Artisan::call('maintain', ['--config' => $config, '--json' => true]));
+
+        $log = $this->logOutput();
+        self::assertStringContainsString('error The retention policy was not applied: Applying the retention policy (restic forget --prune) failed: 3 pack file(s) listed in the index are missing from the repository /srv/restic-repo (381d4654, ca8af500, a1d3d946)', $log);
+        self::assertStringContainsString('error The repository check found errors: 3 pack file(s) listed in the index are missing from the repository (a1d3d946, 381d4654, ca8af500): the snapshots that use them cannot be restored in full', $log);
+        self::assertStringContainsString('notice Stop and read https://restic.readthedocs.io/en/stable/077_troubleshooting.html first; then run, in this order: restic repair index, then arkhive backup (uploads again what is still on this host), then restic repair snapshots --forget, then arkhive maintain', $log);
+        self::assertStringNotContainsString('message_type', $log, 'no raw restic JSON');
+        self::assertCount(1, $this->restic->callsOf('check'), 'no data read back on a broken structure');
+        self::assertSame([], $this->restic->callsOf('repair'), 'never repaired automatically');
+        self::assertSame([], $this->restic->callsOf('unlock'));
+
+        $json = json_decode(Artisan::output(), true);
+        self::assertIsArray($json);
+        self::assertFalse($json['healthy']);
+        self::assertCount(3, $json['missing_packs']);
+        self::assertSame([], $json['broken_packs']);
+        self::assertStringContainsString('3 pack file(s) listed in the index are missing', (string) $json['retention_error']);
+
+        $body = (string) $this->mail->sent[0]->getTextBody();
+        self::assertSame('[ArkHive] maintenance found ERRORS on web1.example.com', $this->mail->sent[0]->getSubject());
+        self::assertStringContainsString('Hint: Stop and read https://restic.readthedocs.io/en/stable/077_troubleshooting.html first; then run, in this order: restic repair index', $body);
+        self::assertStringContainsString('Retention:       not applied: Applying the retention policy', $body);
+        self::assertSame(ExitCode::DATA_ERROR, $this->runs->load('maintain')->last?->exitCode);
+    }
+
+    public function testARefusedPruneAloneStillFailsTheRun(): void
+    {
+        $this->restic->answers['forget'] = [1, '', FakeRestic::fixture('forget-missing-0.17.stderr')];
+
+        self::assertSame(ExitCode::DATA_ERROR, Artisan::call('maintain', ['--config' => $this->writeConfig()]));
+        self::assertStringContainsString('error Applying the retention policy (restic forget --prune) failed: 3 pack file(s) listed in the index are missing', $this->logOutput());
+        self::assertStringContainsString('restic repair index', $this->logOutput());
     }
 
     public function testItNeverRunsDuringABackup(): void

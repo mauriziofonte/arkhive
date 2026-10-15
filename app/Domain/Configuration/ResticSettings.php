@@ -37,4 +37,14 @@ final readonly class ResticSettings
 
         return str_starts_with($path, '/') ? $path : null;
     }
+
+    /**
+     * How to run restic by hand on this repository, for hints: the password file in the environment
+     * (never the password itself), the repository and, when set, the sftp command.
+     */
+    public function commandLine(): string
+    {
+        return 'RESTIC_PASSWORD_FILE=' . escapeshellarg($this->passwordFile) . ' restic -r ' . escapeshellarg($this->repository)
+            . ($this->sftpCommand === null ? '' : ' -o sftp.command=' . escapeshellarg($this->sftpCommand));
+    }
 }

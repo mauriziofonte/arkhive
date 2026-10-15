@@ -8,9 +8,11 @@ use Mfonte\Arkhive\Application\Backup\BackupRunner;
 use Mfonte\Arkhive\Application\Database\DatabaseDumps;
 use Mfonte\Arkhive\Application\Port\SnapshotStoreFactory;
 use Mfonte\Arkhive\Application\Resilience\Retrier;
+use Mfonte\Arkhive\Application\Run\RunJournal;
 use Mfonte\Arkhive\Domain\Backup\BackupReport;
 use Mfonte\Arkhive\Domain\Configuration\Config;
 use Mfonte\Arkhive\Domain\Notification\Notification;
+use Mfonte\Arkhive\Domain\Run\RepositoryHealth;
 use Mfonte\Arkhive\Domain\Shared\Bytes;
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
 use Mfonte\Arkhive\Exceptions\InterruptedException;
@@ -57,6 +59,13 @@ final class BackupCommand extends ConfiguredCommand
             $this->sendNotification($config, $this->failure($config, $e));
 
             throw $e;
+        }
+
+        $damage = RepositoryHealth::unresolvedDataError($this->laravel->make(RunJournal::class)->states());
+        if ($damage !== null) {
+            $warning = RepositoryHealth::warning($damage, $this->clock->now()->getTimezone());
+            $this->log->warning(ucfirst($warning));
+            $report = $report->withWarning($warning);
         }
 
         $this->runSnapshot = $report->summary->snapshotId;

@@ -6,7 +6,9 @@ namespace Mfonte\Arkhive\Infrastructure\Restic;
 
 use Mfonte\Arkhive\Application\Process\ProcessResult;
 use Mfonte\Arkhive\Domain\Configuration\ResticSettings;
+use Mfonte\Arkhive\Domain\Repository\RepairAdvice;
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
+use Mfonte\Arkhive\Exceptions\DataException;
 use Mfonte\Arkhive\Exceptions\IoException;
 use Mfonte\Arkhive\Exceptions\LockedException;
 use Mfonte\Arkhive\Exceptions\PermissionException;
@@ -22,6 +24,9 @@ final class ResticErrors
     public const NO_REPOSITORY = 10;
     public const LOCKED = 11;
     public const WRONG_PASSWORD = 12;
+
+    /** data that is there but fails verification: a damaged pack file */
+    private const DAMAGED_DATA = ['/ciphertext verification failed/', '/\bLoadRaw\(/'];
 
     public static function exception(ProcessResult $result, string $what, ResticSettings $settings): ArkhiveException
     {
@@ -60,6 +65,11 @@ final class ResticErrors
         if (stripos($stderr, 'no space left on device') !== false) {
             return new IoException($result->failure($what), hint: 'The filesystem holding the repository (or the restic cache) is full: free space, or prune old snapshots with arkhive maintain');
         }
+        $missing = self::firstMatch($stderr, ResticOutput::MISSING_DATA);
+        $damaged = $missing === null ? self::firstMatch($stderr, self::DAMAGED_DATA) : null;
+        if ($missing !== null || $damaged !== null) {
+            return self::dataError($what, $settings, $stderr, $missing, $damaged);
+        }
         if (self::looksLikeSsh($stderr)) {
             // a refused key or an unknown host key stays refused: only connection failures are retried
             return self::refusedBySsh($stderr)
@@ -68,6 +78,55 @@ final class ResticErrors
         }
 
         return new ArkhiveException($result->failure($what));
+    }
+
+    /**
+     * Exit 65 with the repair commands: a damaged repository is never retried and never repaired here.
+     */
+    private static function dataError(string $what, ResticSettings $settings, string $stderr, ?string $missing, ?string $damaged): DataException
+    {
+        $packs = [];
+        foreach (preg_split('/\R/', $stderr) ?: [] as $line) {
+            foreach (ResticOutput::missingPacks($line) as $id) {
+                $packs[$id] = true;
+            }
+        }
+        if ($packs !== []) {
+            $ids = array_keys($packs);
+            $message = sprintf(
+                '%s failed: %d pack file(s) listed in the index are missing from the repository %s (%s%s)',
+                $what,
+                count($ids),
+                $settings->repository,
+                implode(', ', array_map(static fn (string $id): string => substr($id, 0, 8), array_slice($ids, 0, 3))),
+                count($ids) > 3 ? ', and ' . (count($ids) - 3) . ' more' : '',
+            );
+        } elseif ($missing !== null) {
+            $message = "{$what} failed: data the repository {$settings->repository} should hold is missing (pack files deleted or lost on the server): {$missing}";
+        } else {
+            $message = "{$what} failed: the repository {$settings->repository} holds damaged data: {$damaged}";
+        }
+
+        return new DataException($message, hint: RepairAdvice::hint([], $missing !== null, $settings->commandLine()));
+    }
+
+    /**
+     * The first stderr line (a JSON record's message) matching one of $patterns.
+     *
+     * @param list<string> $patterns
+     */
+    private static function firstMatch(string $stderr, array $patterns): ?string
+    {
+        foreach (preg_split('/\R/', $stderr) ?: [] as $line) {
+            $text = ResticJson::message($line) ?? trim($line);
+            foreach ($patterns as $pattern) {
+                if ($text !== '' && preg_match($pattern, $text) === 1) {
+                    return $text;
+                }
+            }
+        }
+
+        return null;
     }
 
     /**

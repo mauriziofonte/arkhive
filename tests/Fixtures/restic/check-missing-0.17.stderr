@@ -1,0 +1,7 @@
+pack 957cd4778bf7a864335911f9d662ccdc6e992ad3d4a19adca086e929b89986e9: does not exist
+pack d4534473f5d4ec24adc0c8cd4e8a115653d02b89acc0302615267402a7ce82a8: does not exist
+pack 3492b8480c2b58bec8cb3370a2dd96b8972ac068733933bc176a2210882b4977: does not exist
+
+The repository is damaged and must be repaired. Please follow the troubleshooting guide at https://restic.readthedocs.io/en/stable/077_troubleshooting.html .
+
+Fatal: repository contains errors

@@ -23,6 +23,15 @@ use Mfonte\Arkhive\Domain\Repository\Snapshot;
 final class ResticOutput
 {
     /** the lines restic check prints as text when everything is fine; anything else is a finding */
+    /** data the repository should hold is gone: deleted or lost pack files, unreadable trees and blobs */
+    public const MISSING_DATA = [
+        '/packs from index missing in repo/',
+        '/needed pack files which are missing from the repository/',
+        '/\bpack [0-9a-f]{8,64}:? does not exist/',
+        '/\b(?:tree|blob) [0-9a-f]{4,64} not found/',
+        '/\b(?:LoadRaw|ReadFull|Load)\(<data\/[0-9a-f]+>.*(?:no such file or directory|file does not exist|not found)/i',
+    ];
+
     private const CHECK_PROGRESS = '/^(using temporary cache in |create (exclusive )?lock|load(ing)? ind|check (all packs|snapshots)|read (all data|[\\d.]+% of)|no errors were found|\\[\\d+:\\d+\\]|\\d+ additional files were found|counting files|ignoring|Fatal: repository contains errors)/';
 
     /**
@@ -168,10 +177,17 @@ final class ResticOutput
 
         return new ForgetResult($kept, $removed);
     }
+
+    /**
+     * `restic check`: JSON from 0.18, text before. Missing pack files are named one per line
+     * ("pack <id>: does not exist") and need `repair index`, not `repair packs`.
+     */
     public static function checkResult(int $exitCode, string $stdout, string $stderr): CheckResult
     {
         $errors = [];
         $broken = [];
+        $missing = [];
+        $dataMissing = false;
         $summaryErrors = null;
         foreach ([...(preg_split('/\R/', $stdout) ?: []), ...(preg_split('/\R/', $stderr) ?: [])] as $line) {
             $data = ResticJson::decode($line);
@@ -183,6 +199,8 @@ final class ResticOutput
                     if (preg_match('/^Pack ID does not match, want ([0-9a-f]{8,64})\b/', $line, $match) === 1) {
                         $broken[] = $match[1];
                     }
+                    array_push($missing, ...self::missingPacks($line));
+                    $dataMissing = $dataMissing || self::reportsMissingData($line);
                 }
                 continue;
             }
@@ -198,12 +216,54 @@ final class ResticOutput
                 $message = trim(ResticJson::string($data, 'message'));
                 if ($message !== '') {
                     $errors[] = $message;
+                    array_push($missing, ...self::missingPacks($message));
+                    $dataMissing = $dataMissing || self::reportsMissingData($message);
                 }
             }
         }
         $ok = $exitCode === 0 && ($summaryErrors ?? 0) === 0;
 
-        return new CheckResult($ok, $ok ? [] : array_values(array_unique($errors)), array_values(array_unique($broken)));
+        return new CheckResult(
+            $ok,
+            $ok ? [] : array_values(array_unique($errors)),
+            array_values(array_unique($broken)),
+            $ok ? [] : array_values(array_unique($missing)),
+            !$ok && ($missing !== [] || $dataMissing),
+        );
+    }
+
+    /**
+     * A line of restic's output saying that data the repository should hold is gone: a pack file,
+     * a tree or a blob not found, a pack that cannot be opened. Damaged data (it is there but fails
+     * verification) is not missing data.
+     */
+    public static function reportsMissingData(string $text): bool
+    {
+        foreach (self::MISSING_DATA as $pattern) {
+            if (preg_match($pattern, $text) === 1) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Pack ids a line reports as missing: check's "pack <id>: does not exist", or an id alone on an
+     * indented line of the list prune prints after "needed pack files which are missing".
+     *
+     * @return list<string>
+     */
+    public static function missingPacks(string $line): array
+    {
+        if (preg_match('/^pack ([0-9a-f]{8,64}):? does not exist/', trim($line), $match) === 1) {
+            return [$match[1]];
+        }
+        if (preg_match('/^\s+([0-9a-f]{64})$/', rtrim($line), $match) === 1) {
+            return [$match[1]];
+        }
+
+        return [];
     }
 
     /**

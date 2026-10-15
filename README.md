@@ -402,7 +402,7 @@ Mounts the repository read-only with FUSE (`restic mount`): snapshots appear und
 arkhive maintain [--json]
 ```
 
-Applies the retention policy to this host's `arkhive` snapshots (`restic forget --prune` with `RESTIC_KEEP_DAILY/WEEKLY/MONTHLY`; safety snapshots are never selected), then `restic check`, then `restic check --read-data-subset RESTIC_CHECK_SUBSET`. Holds the repository lock, so it never overlaps a backup. Errors found by the check are exit 65 with the repair hint; the notification reports kept and removed snapshots, the check results and the repository size.
+Applies the retention policy to this host's `arkhive` snapshots (`restic forget --prune` with `RESTIC_KEEP_DAILY/WEEKLY/MONTHLY`; safety snapshots are never selected), then `restic check`, then `restic check --read-data-subset RESTIC_CHECK_SUBSET`. Holds the repository lock, so it never overlaps a backup. Errors found by the check are exit 65 with the repair hint, which lists restic's repair commands in the order of its troubleshooting guide (ArkHive never runs them). When pack files are missing, `forget --prune` refuses to run: the check still runs, so the report names what is missing, and the exit is 65. The notification reports kept and removed snapshots, the check results and the repository size. A backup cannot see that the repository lost data: only `maintain` and `drill` can, so run them on a schedule and alert on their failures (see [docs/OPERATIONS.md](docs/OPERATIONS.md#repository-damage-what-detects-it-and-when)); until a `maintain` passes again, every backup ends with a warning (exit 3).
 
 ### status
 
@@ -592,7 +592,7 @@ ArkHive follows the `sysexits.h` convention, so scripts and systemd can tell a c
 | 3 | WARNING | Completed with warnings: unreadable files in a backup (the snapshot is saved), a notification that could not be sent, `doctor` warnings |
 | 10 | UPDATE | `self-update --check`: an update is available |
 | 64 | USAGE | Bad option or argument, a required answer missing in unattended mode, `--in-place` without `--force`, `self-update` across a major version without `--allow-major` |
-| 65 | DATAERR | Data verified and found wrong: `maintain` check errors, a failed `drill`, a damaged 1.x archive, a download that does not match its checksum |
+| 65 | DATAERR | Data verified and found wrong: `maintain` check errors, a failed `drill`, missing or damaged repository data met by `restore`, `ls` or `find`, a damaged 1.x archive, a download that does not match its checksum |
 | 66 | NOINPUT | Something named does not exist: configuration file, password file, snapshot, path in a snapshot, dump, database, release |
 | 69 | UNAVAILABLE | A service or dependency is unavailable: repository unreachable or missing, restic or a dump tool missing or too old, database server down, PHP too old or missing an extension |
 | 70 | SOFTWARE | Internal error, or output of restic that ArkHive cannot understand |

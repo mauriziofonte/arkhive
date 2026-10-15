@@ -29,6 +29,11 @@ final readonly class BackupReport
     ) {
     }
 
+    public function withWarning(string $warning): self
+    {
+        return new self($this->summary, $this->dumps, $this->resticVersion, [...$this->warnings, $warning], $this->duration, $this->dumpFailures, $this->dumpsRequired);
+    }
+
     public function hasWarnings(): bool
     {
         return $this->warnings !== [];

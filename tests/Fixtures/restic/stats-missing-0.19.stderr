@@ -1,0 +1,3 @@
+Load(<data/a1d3d9469a>, 332, 0) failed: open /srv/restic-repo/data/a1/a1d3d9469ac4a5d0b4cab5907701dbbb13e06f81021c0feb0d2eac4805140d57: no such file or directory
+Load(<data/a1d3d9469a>, 332, 0) failed: open /srv/restic-repo/data/a1/a1d3d9469ac4a5d0b4cab5907701dbbb13e06f81021c0feb0d2eac4805140d57: no such file or directory
+{"message_type":"exit_error","code":1,"message":"error walking snapshot: walking tree 2130f3e9ad0c3973330c8309b674e6a24306e661d9e559d78952b0b0bd36ce08: ReadFull(\u003cdata/a1d3d9469a\u003e): open /srv/restic-repo/data/a1/a1d3d9469ac4a5d0b4cab5907701dbbb13e06f81021c0feb0d2eac4805140d57: no such file or directory"}

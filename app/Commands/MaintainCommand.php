@@ -10,7 +10,6 @@ use Mfonte\Arkhive\Application\Resilience\Retrier;
 use Mfonte\Arkhive\Domain\Configuration\Config;
 use Mfonte\Arkhive\Domain\Maintenance\MaintainReport;
 use Mfonte\Arkhive\Domain\Notification\Notification;
-use Mfonte\Arkhive\Domain\Repository\CheckResult;
 use Mfonte\Arkhive\Domain\Shared\Bytes;
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
 use Mfonte\Arkhive\Exceptions\InterruptedException;
@@ -60,8 +59,8 @@ final class MaintainCommand extends ConfiguredCommand
         }
         $exit = ExitCode::SUCCESS;
         if (!$report->healthy()) {
-            $this->log->error('The repository check found errors: ' . $this->failedCheck($report)->describe(), ['broken_packs' => implode(' ', $report->brokenPacks())]);
-            $this->log->notice(MaintainRunner::repairHint($report->brokenPacks()));
+            $this->log->error($report->problem(), ['broken_packs' => implode(' ', $report->brokenPacks())]);
+            $this->log->notice(self::repairHint($config, $report));
             $exit = ExitCode::DATA_ERROR;
         } else {
             $this->log->success(sprintf('Maintenance done in %.1fs: the repository is healthy', $report->duration));
@@ -73,9 +72,9 @@ final class MaintainCommand extends ConfiguredCommand
         return $exit;
     }
 
-    private function failedCheck(MaintainReport $report): CheckResult
+    private static function repairHint(Config $config, MaintainReport $report): string
     {
-        return !$report->structure->ok || $report->data === null ? $report->structure : $report->data;
+        return MaintainRunner::repairHint($report->brokenPacks(), $report->dataMissing(), $config->restic->commandLine());
     }
 
     private function notification(Config $config, MaintainReport $report): Notification
@@ -87,11 +86,12 @@ final class MaintainCommand extends ConfiguredCommand
             '[ArkHive] maintenance ' . ($healthy ? 'OK' : 'found ERRORS') . " on {$config->restic->host}",
             $healthy
                 ? 'The maintenance completed and the repository is healthy.'
-                : 'The repository check found errors: ' . $this->failedCheck($report)->describe() . "\nHint: " . MaintainRunner::repairHint($report->brokenPacks()),
+                : $report->problem() . "\nHint: " . self::repairHint($config, $report),
             [
                 ...$this->commonFacts($config),
                 'Policy' => sprintf('%d daily, %d weekly, %d monthly', $config->keepDaily, $config->keepWeekly, $config->keepMonthly),
                 'Snapshots' => sprintf('%d kept, %d removed', count($report->forget->kept), count($report->forget->removed)),
+                ...($report->forgetError === null ? [] : ['Retention' => 'not applied: ' . $report->forgetError]),
                 'Check' => $report->structure->describe(),
                 'Data read back' => $report->data === null ? 'skipped (the structure check failed)' : "{$report->subset}: {$report->data->describe()}",
                 'Repository size' => $report->stats === null ? 'unknown' : Bytes::format($report->stats->rawBytes),

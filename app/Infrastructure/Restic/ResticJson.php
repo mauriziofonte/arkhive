@@ -60,4 +60,20 @@ final class ResticJson
 
         return is_string($value) ? $value : '';
     }
+
+    /**
+     * The text of a JSON error record (`message`, or `error.message`), null for any other line.
+     */
+    public static function message(string $line): ?string
+    {
+        $data = self::decode($line);
+        if ($data === null) {
+            return null;
+        }
+        $error = is_array($data['error'] ?? null) ? $data['error'] : [];
+        $message = is_string($error['message'] ?? null) ? $error['message'] : self::string($data, 'message');
+        $message = trim($message);
+
+        return $message === '' ? null : $message;
+    }
 }
