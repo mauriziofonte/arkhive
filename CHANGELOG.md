@@ -6,6 +6,43 @@ All notable changes to ArkHive are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [2.1.0-rc.3] - 2026-10-16
+
+Fixes for the gaps found by the retest of 2.1.0-rc.2 against a simulated Hetzner Storage Box
+(damaged repository, frozen server, quota, scale, unusual environments).
+
+### Changed
+
+- `maintain` runs `check` and `check --read-data-subset` first and applies the retention policy only
+  when both pass: a damaged repository keeps every snapshot (an older one may hold the only intact
+  copy of some data). `forget` and `prune` run apart, so a `prune` refused on missing data still
+  reports the snapshots `forget` removed. Before, `forget --prune` ran first: on a damaged
+  repository it removed snapshots (6 to 2 in the test), then prune refused and the report said
+  0 removed. `maintain --json` gains `retention_applied`.
+- `status` exits 1 while the last `maintain` or `drill` failed (until it runs again and passes;
+  exit 3 counts as done), and 65 while damage they found has not been cleared by a passing
+  `maintain`. Before it exited 0, so a monitor had to read `status --json` or each run's exit code.
+  `status --json` gains `failed_jobs`.
+- `doctor` recommends the static restic 0.19.x binary when the installed restic is older than
+  0.17.0 (information, the exit code does not change): restic 0.14.0 spent minutes in retries in
+  `maintain` and `drill` on a damaged repository.
+
+### Fixed
+
+- A `RESTIC_SFTP_COMMAND` lost the keepalives and batch mode ArkHive gives restic's own `ssh`, so
+  the README form (port and key) hung a backup for as long as the server stayed frozen. ArkHive now
+  adds `-o ServerAliveInterval=15 -o ServerAliveCountMax=4 -o BatchMode=yes` right after `ssh` for
+  each option the command does not set; a command that does not start with `ssh` is used as written
+  and `doctor` warns that it gets no keepalives.
+- A stale restic lock left by a run that was killed or lost its server says why it is there and
+  what it blocks (every `maintain` for a backup's lock, everything for an exclusive one). ArkHive
+  still removes it only with `UNLOCK_STALE=true`.
+- A password file in a directory that belongs to another user (even at mode 0755) is refused: its
+  owner could replace the file or remove it. The directory must belong to the running user or root.
+- With neither `HOME` nor `XDG_CACHE_HOME` set (`env -i`), restic had no cache directory and every
+  command failed with exit 1 and no hint. ArkHive now gives restic `.cache/restic` under the home
+  directory of the running user's account, and reports exit 78 with the fix when there is none.
+
 ## [2.1.0-rc.2] - 2026-10-15
 
 Fixes for weak points found by an isolated test against a simulated Hetzner Storage Box
@@ -259,7 +296,8 @@ encryption, deduplication and retention. The configuration is not compatible wit
 
 - Restrict the remote `chmod` to the backup directory of the day.
 
-[Unreleased]: https://github.com/mauriziofonte/arkhive/compare/v2.1.0-rc.2...HEAD
+[Unreleased]: https://github.com/mauriziofonte/arkhive/compare/v2.1.0-rc.3...HEAD
+[2.1.0-rc.3]: https://github.com/mauriziofonte/arkhive/compare/v2.1.0-rc.2...v2.1.0-rc.3
 [2.1.0-rc.2]: https://github.com/mauriziofonte/arkhive/compare/v2.1.0-rc.1...v2.1.0-rc.2
 [2.1.0-rc.1]: https://github.com/mauriziofonte/arkhive/compare/v2.0.0-rc.1...v2.1.0-rc.1
 [2.0.0-rc.1]: https://github.com/mauriziofonte/arkhive/compare/v1.7.1...v2.0.0-rc.1
