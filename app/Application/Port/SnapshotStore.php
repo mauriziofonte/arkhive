@@ -125,9 +125,15 @@ interface SnapshotStore
     public function mount(string $directory, ?string $host = null): void;
 
     /**
-     * Applies the retention policy to this host's snapshots carrying $tag and prunes unused data.
+     * Applies the retention policy to this host's snapshots carrying $tag (snapshots only: the data
+     * they no longer share stays until prune()).
      */
     public function forget(string $host, string $tag, int $daily, int $weekly, int $monthly): ForgetResult;
+
+    /**
+     * Removes the data no snapshot uses any more.
+     */
+    public function prune(): void;
 
     /**
      * Checks the repository structure, optionally reading back a subset of the data (5%, 1/10, 500M).

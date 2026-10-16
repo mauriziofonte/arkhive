@@ -10,15 +10,19 @@ use Mfonte\Arkhive\Domain\Repository\RepositoryStats;
 
 final readonly class MaintainReport
 {
+    /** why forget did not run on a repository the checks found damaged */
+    public const RETENTION_SKIPPED = 'the repository check found errors, so no snapshot was removed';
+
     public function __construct(
-        public ForgetResult $forget,
+        /** what forget removed; null when it did not run (a failed check) or refused to run */
+        public ?ForgetResult $forget,
         public CheckResult $structure,
         public ?CheckResult $data,
         public string $subset,
         public ?RepositoryStats $stats,
         public string $resticVersion,
         public float $duration,
-        /** why forget --prune refused to run (missing data), when it did */
+        /** why forget or prune refused to run (missing data), when one did */
         public ?string $forgetError = null,
     ) {
     }
@@ -60,19 +64,32 @@ final readonly class MaintainReport
     }
 
     /**
+     * Why the retention policy was not applied in full, or null when it was.
+     */
+    public function retentionError(): ?string
+    {
+        if ($this->forgetError !== null) {
+            return $this->forgetError;
+        }
+
+        return $this->forget === null ? self::RETENTION_SKIPPED : null;
+    }
+
+    /**
      * @return array<string, mixed>
      */
     public function toArray(): array
     {
         return [
             'healthy' => $this->healthy(),
-            'snapshots_kept' => count($this->forget->kept),
-            'snapshots_removed' => $this->forget->removed,
+            'retention_applied' => $this->forget !== null,
+            'snapshots_kept' => count($this->forget->kept ?? []),
+            'snapshots_removed' => $this->forget->removed ?? [],
             'check' => ['ok' => $this->structure->ok, 'errors' => $this->structure->errors],
             'read_data' => $this->data === null ? null : ['subset' => $this->subset, 'ok' => $this->data->ok, 'errors' => $this->data->errors],
             'broken_packs' => $this->brokenPacks(),
             'missing_packs' => array_values(array_unique([...$this->structure->missingPacks, ...($this->data->missingPacks ?? [])])),
-            'retention_error' => $this->forgetError,
+            'retention_error' => $this->retentionError(),
             'raw_size' => $this->stats?->rawBytes,
             'restic_version' => $this->resticVersion,
             'duration' => round($this->duration, 3),

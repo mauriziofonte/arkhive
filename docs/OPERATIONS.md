@@ -19,8 +19,10 @@ its [troubleshooting guide](https://restic.readthedocs.io/en/stable/077_troubles
 `restic repair packs <ids>` for damaged packs, `restic repair index` for missing ones, then a new
 `arkhive backup` (it uploads again whatever is still on the host, which can heal older snapshots),
 then `restic repair snapshots --forget`, then `arkhive maintain` to confirm. ArkHive never runs any of
-them on its own. When `forget --prune` refuses to run because packs are missing, `maintain` still
-runs the check so the report names everything wrong, and exits 65.
+them on its own. `maintain` runs both checks before the retention policy: on a damaged repository it
+removes no snapshot (an older one may hold the only intact copy of some data), reports the retention
+as not applied, and exits 65. When `prune` refuses to run on missing data after `forget`, the report
+still lists the snapshots `forget` removed.
 
 `restore` (and `ls`, `find`, `stats`) on missing data also exits 65 with the same hint, instead of 1.
 
