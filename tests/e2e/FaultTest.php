@@ -57,6 +57,49 @@ final class FaultTest extends E2eTestCase
         self::assertCount(1, $this->snapshots());
     }
 
+    /**
+     * The same freeze with a RESTIC_SFTP_COMMAND in the README's form (port and key, no keepalives):
+     * ArkHive adds ServerAliveInterval=15 and ServerAliveCountMax=4, so the run fails in about a
+     * minute instead of hanging for as long as the server is frozen.
+     */
+    public function testTheSftpServerFrozenMidBackupWithACommandWithoutKeepalives(): void
+    {
+        $this->needsPause();
+        $this->sftpCommand = str_replace(' -o BatchMode=yes -o ServerAliveInterval=5 -o ServerAliveCountMax=3', '', $this->sftpCommand);
+        self::assertStringNotContainsString('ServerAlive', $this->sftpCommand);
+        $this->arkhiveInit($this->dir, $this->repository, $this->sftpCommand);
+        file_put_contents("{$this->tree}/data/large.bin", random_bytes(16 * 1024 * 1024));
+        $config = $this->config(['RESTIC_BINARY' => $this->throttledRestic('--limit-upload')]);
+
+        $started = self::startArkhive(['backup', '--config', $config], $this->runEnv());
+        self::assertTrue(self::waitFor($this->lockHeld(...), 60), 'the backup started');
+        sleep(3);
+        $begin = microtime(true);
+        $result = $this->whilePaused(static function () use ($started): CliResult {
+            // proc_close() cannot report an exit status proc_get_status() already collected: keep it
+            $exit = null;
+            $ended = self::waitFor(static function () use ($started, &$exit): bool {
+                $status = proc_get_status($started[0]);
+                $exit = $status['exitcode'];
+
+                return !$status['running'];
+            }, 180);
+            if (!$ended) {
+                proc_terminate($started[0], 9);
+                self::finish($started);
+                self::fail('the backup still hung 180 s after the server froze');
+            }
+            $output = self::finish($started);
+
+            return new CliResult((int) $exit, $output->stdout, $output->stderr);
+        });
+
+        self::assertSame(ExitCode::UNAVAILABLE, $result->exitCode, $result->output());
+        self::assertLessThan(150, microtime(true) - $begin, 'failed by the keepalives (15 s x 4), not by the end of the freeze');
+        $this->assertCleanAfterFailure();
+        self::assertSame([], $this->snapshots(), 'no snapshot from the interrupted upload');
+    }
+
     public function testTheSftpServerFrozenMidRestore(): void
     {
         $this->needsPause();

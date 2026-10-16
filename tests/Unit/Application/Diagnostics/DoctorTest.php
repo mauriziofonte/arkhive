@@ -343,6 +343,25 @@ final class DoctorTest extends TestCase
         self::assertSame("{$this->dir}/bin/ssh, with this user's default keys (~/.ssh) and ssh_config", $checks['SSH']->message);
     }
 
+    public function testAnSftpCommandThatDoesNotRunSshWarnsThatItGetsNoKeepalives(): void
+    {
+        $wrapper = "{$this->dir}/box-ssh";
+        file_put_contents($wrapper, "#!/bin/sh\nexec ssh -p 23 \"\$@\"\n");
+        chmod($wrapper, 0755);
+        $settings = static fn (string $command): ResticSettings => new ResticSettings('sftp:backup@backup.example.com:/restic', '/nonexistent', $command);
+
+        $checks = $this->diagnose(null, $settings("{$wrapper} -o BatchMode=yes backup@backup.example.com"));
+        self::assertSame(CheckStatus::Warning, $checks['SSH']->status);
+        self::assertSame("{$wrapper}, with this user's default keys (~/.ssh) and ssh_config; RESTIC_SFTP_COMMAND does not start with ssh, so ArkHive cannot add -o ServerAliveInterval=15 -o ServerAliveCountMax=4: a server that stops answering would hang the run", $checks['SSH']->message);
+        self::assertSame('Start RESTIC_SFTP_COMMAND with ssh, or pass -o ServerAliveInterval=15 -o ServerAliveCountMax=4 to the ssh your command runs', $checks['SSH']->hint);
+
+        $checks = $this->diagnose(null, $settings("{$wrapper} -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -o BatchMode=yes backup@backup.example.com"));
+        self::assertSame(CheckStatus::Ok, $checks['SSH']->status, 'a wrapper that passes them all on is fine');
+
+        $checks = $this->diagnose(null, $settings('ssh -p 23 backup@backup.example.com -s sftp'));
+        self::assertSame(CheckStatus::Ok, $checks['SSH']->status, 'ArkHive adds them to ssh');
+    }
+
     public function testAnUnreachableRepositoryFails(): void
     {
         $this->restic->catConfig = [1, '', FakeRestic::fixture('sftp-unreachable-0.19.stderr')];

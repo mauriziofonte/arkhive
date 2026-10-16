@@ -25,6 +25,7 @@ use Mfonte\Arkhive\Domain\Repository\RepositoryStats;
 use Mfonte\Arkhive\Domain\Repository\ResticCapabilities;
 use Mfonte\Arkhive\Domain\Repository\RestoreProgress;
 use Mfonte\Arkhive\Domain\Repository\RestoreRequest;
+use Mfonte\Arkhive\Domain\Repository\SftpCommand;
 use Mfonte\Arkhive\Domain\Repository\SftpLocation;
 use Mfonte\Arkhive\Domain\Repository\Snapshot;
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
@@ -45,7 +46,7 @@ final class Restic implements SnapshotStore
     /** the restic of Debian 11 (docs/2.1-PLAN.md §3) */
     public const MINIMUM_VERSION = ResticCapabilities::MINIMUM;
 
-    /** keepalives so that a server that stops answering fails the run instead of hanging it */
+    /** keepalives so that a server that stops answering fails the run instead of hanging it (SftpCommand::OPTIONS) */
     public const SFTP_ARGS = '-o ServerAliveInterval=15 -o ServerAliveCountMax=4 -o BatchMode=yes';
 
     /** seconds allowed for the reachability check and the other metadata reads */
@@ -80,7 +81,7 @@ final class Restic implements SnapshotStore
     {
         $options = [];
         if ($this->settings->sftpCommand !== null) {
-            $options = ['--option', 'sftp.command=' . $this->settings->sftpCommand];
+            $options = ['--option', 'sftp.command=' . SftpCommand::withKeepalives($this->settings->sftpCommand)];
         } elseif (str_starts_with($this->settings->repository, 'sftp:')) {
             $options = $this->sftpOptions();
         }

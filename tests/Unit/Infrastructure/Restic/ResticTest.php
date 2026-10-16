@@ -208,7 +208,10 @@ final class ResticTest extends TestCase
         ], $command->env);
 
         $custom = new Restic(self::settings(sftpCommand: 'ssh -i /root/.ssh/arkhive_backup -p 23 backup-user@backup.example.com -s sftp'), '/usr/bin/restic', new FakeProcessRunner());
-        self::assertSame(['/usr/bin/restic', '--option', 'sftp.command=ssh -i /root/.ssh/arkhive_backup -p 23 backup-user@backup.example.com -s sftp', 'cat', 'config'], $custom->command(['cat', 'config'])->argv);
+        self::assertSame(['/usr/bin/restic', '--option', 'sftp.command=ssh -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -o BatchMode=yes -i /root/.ssh/arkhive_backup -p 23 backup-user@backup.example.com -s sftp', 'cat', 'config'], $custom->command(['cat', 'config'])->argv, 'the keepalives are added to a custom command too');
+
+        $wrapper = new Restic(self::settings(sftpCommand: '/usr/local/bin/box-ssh backup-user@backup.example.com'), '/usr/bin/restic', new FakeProcessRunner());
+        self::assertSame(['/usr/bin/restic', '--option', 'sftp.command=/usr/local/bin/box-ssh backup-user@backup.example.com', 'cat', 'config'], $wrapper->command(['cat', 'config'])->argv, 'a wrapper is left as written');
 
         $local = new Restic(self::settings('/srv/restic-repo'), '/usr/bin/restic', new FakeProcessRunner());
         self::assertSame(['/usr/bin/restic', 'cat', 'config'], $local->command(['cat', 'config'])->argv);
