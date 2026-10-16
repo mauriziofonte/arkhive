@@ -69,6 +69,7 @@ final class StatusCommandTest extends TestCase
                 'drill' => ['last' => null, 'last_success' => null],
             ],
             'continuity' => ['status' => 'not_recorded', 'recorded_snapshot' => null, 'recorded_at' => null, 'newest_snapshot' => null, 'newest_time' => null, 'newest_older' => false],
+            'failed_jobs' => [],
         ], $status);
         self::assertSame(['stats', '--json', '--no-lock', '--mode', 'raw-data'], $this->restic->callsOf('stats')[0]);
     }
@@ -107,6 +108,42 @@ final class StatusCommandTest extends TestCase
         self::assertSame('aaaa1111bbbb2222', $runs['backup']['last_success']['snapshot_id']);
         self::assertSame(62.0, $runs['backup']['last_success']['duration_seconds']);
         self::assertNull($runs['drill']['last']);
+    }
+
+    public function testAFailedLastMaintainOrDrillIsExit1UntilOnePasses(): void
+    {
+        $at = new DateTimeImmutable('2026-10-12 04:00:00', new DateTimeZone('UTC'));
+        $this->runs->states['maintain'] = (new JobState())->with(new RunRecord('maintain', $at, $at->modify('+40 seconds'), 75, error: 'The restic repository is locked'));
+        $this->runs->states['drill'] = (new JobState())->with(new RunRecord('drill', $at, $at->modify('+40 seconds'), 69, error: 'The repository is unreachable'));
+
+        self::assertSame(ExitCode::FAILURE, Artisan::call('status', ['--config' => $this->writeConfig(), '--json' => true]));
+        self::assertSame(['maintain', 'drill'], json_decode(Artisan::output(), true)['failed_jobs']);
+        $log = $this->logOutput();
+        self::assertStringContainsString('error The last maintain failed: 2026-10-12 04:00 UTC, FAILED with exit 75: The restic repository is locked', $log);
+        self::assertStringContainsString('error The last drill failed: 2026-10-12 04:00 UTC, FAILED with exit 69: The repository is unreachable', $log);
+        self::assertStringContainsString('notice Hint: its log says why (journalctl -u arkhive-maintain, or the cron mail); status passes again once a maintain succeeds', $log);
+
+        self::assertSame(ExitCode::FAILURE, Artisan::call('status', ['--config' => $this->writeConfig(), '--max-age' => '26']), 'a fresh backup does not hide it');
+
+        $later = $at->modify('+1 hour');
+        $this->runs->states['maintain'] = $this->runs->states['maintain']->with(new RunRecord('maintain', $later, $later->modify('+40 seconds'), 3));
+        $this->runs->states['drill'] = $this->runs->states['drill']->with(new RunRecord('drill', $later, $later->modify('+40 seconds'), 0));
+        self::assertSame(ExitCode::SUCCESS, Artisan::call('status', ['--config' => $this->writeConfig(), '--json' => true]), 'exit 3 is done, with warnings');
+        self::assertSame([], json_decode(Artisan::output(), true)['failed_jobs']);
+    }
+
+    public function testDamageFoundByTheLastDrillIsExit65UntilAMaintainPasses(): void
+    {
+        $at = new DateTimeImmutable('2026-10-12 05:00:00', new DateTimeZone('UTC'));
+        $this->runs->states['drill'] = (new JobState())->with(new RunRecord('drill', $at, $at->modify('+40 seconds'), 65, error: 'restored files differ'));
+
+        self::assertSame(ExitCode::DATA_ERROR, Artisan::call('status', ['--config' => $this->writeConfig()]));
+        self::assertStringContainsString('error The last drill (2026-10-12 05:00 UTC) found the repository damaged and no maintain has passed since', $this->logOutput());
+        self::assertStringContainsString('notice Hint: arkhive maintain names the repair steps; ArkHive never repairs a repository automatically', $this->logOutput());
+
+        $later = $at->modify('+1 hour');
+        $this->runs->states['maintain'] = (new JobState())->with(new RunRecord('maintain', $later, $later->modify('+40 seconds'), 0));
+        self::assertSame(ExitCode::FAILURE, Artisan::call('status', ['--config' => $this->writeConfig()]), 'repaired, but the drill has not passed again yet');
     }
 
     public function testBareMetalWithoutAConfigCoversEveryHost(): void

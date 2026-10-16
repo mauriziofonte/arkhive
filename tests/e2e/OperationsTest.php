@@ -358,7 +358,14 @@ final class OperationsTest extends E2eTestCase
 
         $backup = self::arkhive(['backup', '--config', $config], $this->runEnv());
         self::assertSame(ExitCode::WARNING, $backup->exitCode, 'the failed drill stands until a maintain passes: ' . $backup->output());
-        self::assertSame('ok', $this->json(['status'], 0, $config)['continuity']['status'], 'a new backup starts a new series');
+        $status = $this->json(['status'], ExitCode::DATA_ERROR, $config);
+        self::assertSame('ok', $status['continuity']['status'], 'a new backup starts a new series');
+        self::assertSame(['drill'], $status['failed_jobs'], 'the damage the drill found stands until a maintain passes');
+
+        self::assertTrue($this->json(['maintain'], 0, $config)['healthy']);
+        self::assertSame(['drill'], $this->json(['status'], ExitCode::FAILURE, $config)['failed_jobs'], 'the drill itself has not passed again yet');
+        self::assertTrue($this->json(['drill'], 0, $config)['passed']);
+        self::assertSame([], $this->json(['status'], 0, $config)['failed_jobs']);
     }
 
     public function testALockOfAResticKilledOnThisHostIsNamedAndRemovedOnlyWithUnlockStale(): void
