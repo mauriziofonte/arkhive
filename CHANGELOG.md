@@ -6,6 +6,44 @@ All notable changes to ArkHive are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-10-16
+
+The first stable release of ArkHive 2: restic as the backend (incremental, encrypted, deduplicated
+backups with a guided restore), systemd units with notifications and a watchdog, the journal and
+syslog, `sysexits.h` exit codes, and the restic packaged by Debian 11 and later. It includes every
+change listed below under 2.0.0-rc.1 and 2.1.0-rc.1 to rc.3, none of which was published as a
+release. Coming from 1.x: the configuration is not compatible, see "Migrating from 1.x" in the
+README.
+
+Changes since 2.1.0-rc.3, from its retest against a frozen storage box and a paused database:
+
+### Added
+
+- `DUMP_STALL_TIMEOUT` (optional, default `300`): a database dump that writes nothing for that many
+  seconds is stopped and counts as a failed dump (exit 75), and the other databases of the same
+  server are not attempted, since each would wait just as long. The other server's dumps and the
+  files are backed up, and `DUMP_REQUIRED` decides the exit code as for any failed dump. Before, a
+  dump against a paused server held the backup until the server came back (8 minutes and more in
+  the test), bounded only by the unit's `TimeoutStartSec`, and under cron not at all. `0` turns it
+  off.
+- `DUMP_TIMEOUT` (optional, default `0`, no limit): the longest one dump may run.
+
+### Fixed
+
+- A storage box frozen while `ssh` was still connecting (the TCP connection accepted, no SSH
+  greeting) held the run until the box came back: the keepalives only start once the session is
+  up. ArkHive now adds `-o ConnectTimeout=30` along with the keepalives, so each attempt to open the
+  repository fails after 30 seconds and the run ends with exit 69 after its three attempts.
+
+### Unchanged, on purpose
+
+- A configuration file that holds passwords and is readable by group or others is still a warning
+  (in every run's log and a failure in `doctor`), not a refusal: refusing it in this release would
+  stop the scheduled backups of every host upgraded from 2.0 with a 0644 configuration. A later
+  minor version refuses it with exit 77; run `chmod 600` on the configuration now.
+- The first backup after the repository lost data, before any check, still ends with exit 0: restic
+  trusts its index. Run `drill` daily and `maintain` weekly (docs/OPERATIONS.md).
+
 ## [2.1.0-rc.3] - 2026-10-16
 
 Fixes for the gaps found by the retest of 2.1.0-rc.2 against a simulated Hetzner Storage Box
@@ -296,7 +334,8 @@ encryption, deduplication and retention. The configuration is not compatible wit
 
 - Restrict the remote `chmod` to the backup directory of the day.
 
-[Unreleased]: https://github.com/mauriziofonte/arkhive/compare/v2.1.0-rc.3...HEAD
+[Unreleased]: https://github.com/mauriziofonte/arkhive/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/mauriziofonte/arkhive/compare/v1.7.1...v2.1.0
 [2.1.0-rc.3]: https://github.com/mauriziofonte/arkhive/compare/v2.1.0-rc.2...v2.1.0-rc.3
 [2.1.0-rc.2]: https://github.com/mauriziofonte/arkhive/compare/v2.1.0-rc.1...v2.1.0-rc.2
 [2.1.0-rc.1]: https://github.com/mauriziofonte/arkhive/compare/v2.0.0-rc.1...v2.1.0-rc.1
