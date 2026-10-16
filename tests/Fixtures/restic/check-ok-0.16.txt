@@ -1,0 +1,7 @@
+using temporary cache in /tmp/restic-check-cache-1234
+create exclusive lock for repository
+load indexes
+check all packs
+check snapshots, trees and blobs
+
+no errors were found

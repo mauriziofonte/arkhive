@@ -1,0 +1,41 @@
+{
+    "check-requirements": false,
+    "chmod": "0755",
+    "directories": [
+        "app",
+        "bootstrap",
+        "config"
+    ],
+    "finder": [
+        {
+            "in": "vendor",
+            "exclude": [
+                "laravel-zero/framework/bin",
+                "jolicode/jolinotif/bin",
+                "jolicode/jolinotif/doc",
+                "nunomaduro/termwind/art",
+                "nunomaduro/collision/docs",
+                "nunomaduro/laravel-console-summary/docs",
+                "nunomaduro/laravel-console-task/docs"
+            ]
+        }
+    ],
+    "files": [
+        "composer.json"
+    ],
+    "exclude-composer-files": false,
+    "exclude-dev-files": true,
+    "compression": "GZ",
+    "compactors": [
+        "KevinGH\\Box\\Compactor\\Php",
+        "KevinGH\\Box\\Compactor\\Json"
+    ],
+    "banner": [
+        "This file is part of the ArkHive project.",
+        "",
+        "(c) Maurizio Fonte <fonte.maurizio@gmail.com>",
+        "",
+        "This source file is subject to the MIT license that is bundled",
+        "with this source code in the file LICENSE."
+    ]
+}

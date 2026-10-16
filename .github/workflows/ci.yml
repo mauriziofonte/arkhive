@@ -1,0 +1,254 @@
+name: CI
+
+on:
+  # branches only: a v* tag runs this workflow inside release.yml, and a second run of it on the
+  # same tag would share the concurrency group below and cancel the one the release waits for
+  push:
+    branches: ['**']
+  pull_request:
+  # release.yml runs the full CI on the tag before publishing
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Coding standard and static analysis
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2.37.2
+        with:
+          php-version: '8.4'
+          coverage: none
+      - run: composer validate --strict
+      - run: composer install --no-interaction --no-progress --prefer-dist
+      - name: PHP-CS-Fixer (PSR-12)
+        run: vendor/bin/php-cs-fixer check --diff
+      - name: PHPStan (level 8)
+        run: vendor/bin/phpstan analyse --memory-limit=1G --no-progress
+
+  tests:
+    name: PHPUnit (PHP ${{ matrix.php }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.3', '8.4']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2.37.2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: pcntl, posix, mbstring, curl, zlib
+          coverage: ${{ matrix.php == '8.4' && 'pcov' || 'none' }}
+      - run: composer install --no-interaction --no-progress --prefer-dist
+      - name: Install the pinned restic release
+        run: sudo tests/bin/install-restic.sh /usr/local/bin/restic
+      - name: PHPUnit
+        if: matrix.php != '8.4'
+        run: vendor/bin/phpunit
+        env:
+          ARKHIVE_REQUIRE_RESTIC: '1'
+      - name: PHPUnit with coverage
+        if: matrix.php == '8.4'
+        run: vendor/bin/phpunit --coverage-clover build/coverage/clover.xml --coverage-text=build/coverage/coverage.txt --log-junit build/coverage/junit.xml
+        env:
+          ARKHIVE_REQUIRE_RESTIC: '1'
+      - name: Coverage gate (>= 90% of app/)
+        if: matrix.php == '8.4'
+        run: php tests/bin/coverage-gate.php build/coverage/clover.xml 90
+      - uses: actions/upload-artifact@v4
+        if: always() && matrix.php == '8.4'
+        with:
+          name: coverage
+          path: build/coverage
+
+  mutation:
+    name: Mutation testing (Infection)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2.37.2
+        with:
+          php-version: '8.4'
+          extensions: pcntl, posix, mbstring, curl, zlib
+          coverage: pcov
+      - run: composer install --no-interaction --no-progress --prefer-dist
+      - name: Install the pinned restic release
+        run: sudo tests/bin/install-restic.sh /usr/local/bin/restic
+      - name: Infection (MSI >= 80%)
+        run: vendor/bin/infection --threads=max --show-mutations=0 --no-progress
+        env:
+          ARKHIVE_REQUIRE_RESTIC: '1'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: infection
+          path: build/infection/*.log
+
+  restic-compat:
+    name: restic ${{ matrix.restic }} compatibility
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        # docs/2.1-PLAN.md §3: Debian 11, Ubuntu 22.04, Debian 12, the 0.15 and 0.17 feature
+        # boundaries, Ubuntu 24.04, Debian 13 and the pinned current release
+        restic: ['0.11.0', '0.12.1', '0.14.0', '0.15.2', '0.16.4', '0.17.3', '0.18.0', 'pinned']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2.37.2
+        with:
+          php-version: '8.4'
+          extensions: pcntl, posix, mbstring, curl, zlib
+          coverage: none
+      - run: composer install --no-interaction --no-progress --prefer-dist
+      - name: Install OpenSSH (for the sftp case)
+        run: |
+          sudo apt-get update -q
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends openssh-server openssh-client
+      - name: Install restic ${{ matrix.restic }} and the pinned release
+        run: |
+          mkdir -p build/restic
+          tests/bin/install-restic.sh build/restic/restic-pinned
+          if [ "$VERSION" = pinned ]; then
+            cp build/restic/restic-pinned build/restic/restic
+          else
+            tests/bin/install-restic.sh build/restic/restic "$VERSION"
+          fi
+        env:
+          VERSION: ${{ matrix.restic }}
+      - name: tests/Compat
+        run: vendor/bin/phpunit --testsuite compat --log-junit build/compat-junit.xml
+        env:
+          ARKHIVE_TEST_RESTIC: ${{ github.workspace }}/build/restic/restic
+          ARKHIVE_TEST_RESTIC_V2: ${{ github.workspace }}/build/restic/restic-pinned
+
+  phar:
+    name: PHAR build and smoke test
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2.37.2
+        with:
+          php-version: '8.3'
+          coverage: none
+          ini-values: phar.readonly=0
+      - run: composer install --no-interaction --no-progress --prefer-dist --no-dev
+      - name: Build
+        run: |
+          mkdir -p build
+          tests/bin/build-phar.sh build/arkhive.phar
+      - name: Smoke test
+        run: |
+          version="$(php -r 'echo (require "config/app.php")["version"];')"
+          test "$(php build/arkhive.phar --version)" = "ArkHive ${version}"
+          php build/arkhive.phar list --raw
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arkhive-phar
+          path: build/arkhive.phar
+
+  old-php:
+    name: Startup check on PHP ${{ matrix.php }} (unsupported)
+    needs: phar
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['7.4', '8.1', '8.2']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2.37.2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+      - uses: actions/download-artifact@v4
+        with:
+          name: arkhive-phar
+          path: build
+      - name: The PHAR refuses to start and names the PHP source for Ubuntu
+        run: |
+          set +e
+          php build/arkhive.phar --version > out.txt 2> err.txt
+          status=$?
+          set -e
+          cat err.txt
+          test "$status" -eq 69
+          test ! -s out.txt
+          grep -q '^ArkHive needs PHP 8.3 or newer; this is PHP ${{ matrix.php }}' err.txt
+          grep -q 'ppa:ondrej/php' err.txt
+
+  systemd:
+    name: Units under a real systemd
+    needs: phar
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2.37.2
+        with:
+          php-version: '8.4'
+          extensions: pcntl, posix, mbstring, curl, zlib
+          coverage: none
+      - name: Install the pinned restic release
+        run: sudo tests/bin/install-restic.sh /usr/local/bin/restic
+      - uses: actions/download-artifact@v4
+        with:
+          name: arkhive-phar
+          path: build
+      - name: tests/systemd/run.sh
+        # the runner's own systemd (PID 1): schedule --install, units that succeed and fail, the journal
+        run: sudo tests/systemd/run.sh build/arkhive.phar
+
+  e2e:
+    name: End-to-end (Docker)
+    needs: phar
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2.37.2
+        with:
+          php-version: '8.4'
+          extensions: pcntl, posix, mbstring, curl, zlib
+          coverage: none
+      - run: composer install --no-interaction --no-progress --prefer-dist
+      - name: Install the MariaDB and PostgreSQL client tools
+        # the runner's MySQL 8 mysqldump cannot dump MariaDB 11 (it queries COLUMN_STATISTICS)
+        run: |
+          sudo apt-get update -q
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends mariadb-client postgresql-client
+          mariadb-dump --version
+          pg_dump --version
+      - uses: actions/download-artifact@v4
+        with:
+          name: arkhive-phar
+          path: build
+      - name: Run tests/e2e/run.sh
+        # as root, so ownership, tmpfs (insufficient space) and non-root (setpriv) restore cases run too
+        run: sudo -E env "PATH=$PATH" tests/e2e/run.sh
+        env:
+          E2E_PHAR: build/arkhive.phar
+      - name: Summary
+        if: always()
+        run: cat tests/e2e/work/e2e-summary.txt >> "$GITHUB_STEP_SUMMARY" || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e
+          path: |
+            tests/e2e/work/junit.xml
+            tests/e2e/work/e2e-summary.txt
+
+  distro:
+    name: Distro matrix
+    needs: phar
+    uses: ./.github/workflows/distro.yml
+    with:
+      platform: linux/amd64
+      artifact: arkhive-phar

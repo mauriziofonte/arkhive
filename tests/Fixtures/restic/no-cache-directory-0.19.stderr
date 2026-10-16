@@ -1,0 +1,2 @@
+unable to open cache: unable to locate cache directory: neither $XDG_CACHE_HOME nor $HOME are defined
+{"message_type":"exit_error","code":1,"message":"unable to locate cache directory: neither $XDG_CACHE_HOME nor $HOME are defined"}

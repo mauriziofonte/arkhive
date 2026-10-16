@@ -1,0 +1,6 @@
+using temporary cache in /var/cache/restic/restic-check-cache-4176077515
+create exclusive lock for repository
+load indexes
+check all packs
+check snapshots, trees and blobs
+[0:00] 100.00%  3 / 3 snapshots

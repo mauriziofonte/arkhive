@@ -1,0 +1,3 @@
+Fatal: unable to open config file: stat /srv/no-repo/config: no such file or directory
+Is there a repository at the following location?
+/srv/no-repo

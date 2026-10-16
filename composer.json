@@ -1,0 +1,71 @@
+{
+    "name": "mfonte/arkhive",
+    "description": "ArkHive is a disaster recovery and backup tool built with Laravel Zero. Designed to streamline and encrypt backups, ArkHive ensures that your critical data is safely vaulted and easily recoverable.",
+    "keywords": [
+        "backup",
+        "encryption",
+        "disaster recovery",
+        "laravel zero"
+    ],
+    "homepage": "https://github.com/mauriziofonte/arkhive",
+    "type": "project",
+    "license": "MIT",
+    "support": {
+        "issues": "https://github.com/mauriziofonte/arkhive/issues",
+        "source": "https://github.com/mauriziofonte/arkhive"
+    },
+    "authors": [
+        {
+            "name": "Maurizio Fonte",
+            "email": "fonte.maurizio@gmail.com"
+        }
+    ],
+    "require": {
+        "php": "^8.3",
+        "laravel-zero/framework": "^13.0",
+        "symfony/mailer": "^7.4"
+    },
+    "require-dev": {
+        "friendsofphp/php-cs-fixer": "^3.95",
+        "infection/infection": "^0.35",
+        "phpstan/phpstan": "^2.3",
+        "phpunit/phpunit": "^12"
+    },
+    "autoload": {
+        "psr-4": {
+            "Mfonte\\Arkhive\\": "app/"
+        },
+        "files": [
+            "bootstrap/requirements.php"
+        ]
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Tests\\": "tests/"
+        }
+    },
+    "config": {
+        "preferred-install": "dist",
+        "sort-packages": true,
+        "optimize-autoloader": true,
+        "platform": {
+            "php": "8.3.0"
+        },
+        "allow-plugins": {
+            "infection/extension-installer": true
+        },
+        "platform-check": false
+    },
+    "scripts": {
+        "test": "phpunit",
+        "analyse": "phpstan analyse --memory-limit=1G",
+        "cs": "php-cs-fixer check --diff",
+        "cs:fix": "php-cs-fixer fix",
+        "mutation": "infection --threads=max --show-mutations=0"
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true,
+    "bin": [
+        "arkhive"
+    ]
+}
