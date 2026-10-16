@@ -9,6 +9,7 @@ use Mfonte\Arkhive\Application\Process\Cleanup;
 use Mfonte\Arkhive\Application\Process\Command;
 use Mfonte\Arkhive\Application\Process\Timeouts;
 use Mfonte\Arkhive\Application\System\Dependencies;
+use Mfonte\Arkhive\Domain\Backup\DumpLimits;
 use Mfonte\Arkhive\Domain\Backup\DumpResult;
 use Mfonte\Arkhive\Domain\Configuration\PgsqlConfig;
 use Mfonte\Arkhive\Domain\System\Dependency;
@@ -32,6 +33,7 @@ final class PgsqlDumper
         private readonly ProcessRunner $runner,
         private readonly Dependencies $dependencies,
         private readonly Cleanup $cleanup,
+        private readonly DumpLimits $limits = new DumpLimits(),
     ) {
     }
 
@@ -106,7 +108,7 @@ final class PgsqlDumper
             '--file=' . $partial,
             '--dbname=' . $database,
         ], $this->environment());
-        $result = $this->runner->run($command);
+        $result = $this->runner->run($this->limited($command, $partial));
         if (!$result->succeeded()) {
             @unlink($partial);
             $hint = str_contains($result->stderr, 'server version mismatch')
@@ -131,6 +133,18 @@ final class PgsqlDumper
             $this->cleanupId = null;
         }
         $this->passfile = null;
+    }
+
+    /**
+     * The dump command with DUMP_TIMEOUT and DUMP_STALL_TIMEOUT; progress is the dump file growing.
+     */
+    private function limited(Command $command, string $partial): Command
+    {
+        if ($this->limits->timeout !== null) {
+            $command = $command->withTimeout((float) $this->limits->timeout);
+        }
+
+        return $this->limits->stallTimeout === null ? $command : $command->withStallTimeout((float) $this->limits->stallTimeout, $partial);
     }
 
     private function query(string $sql, string $what): string

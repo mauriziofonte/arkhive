@@ -38,6 +38,11 @@ DUMP_DIRECTORY=/var/backups/arkhive-dumps
 # A database whose dump fails is a warning (exit 3): the other dumps and the files are backed up.
 # true makes it a failure of the run (with the dump's exit code), still after backing up the rest.
 #DUMP_REQUIRED=false
+# A dump that runs longer than DUMP_TIMEOUT seconds (0: no limit), or writes nothing for
+# DUMP_STALL_TIMEOUT seconds (a database server that stopped answering), is stopped and counts as
+# failed; the other databases of a server that stopped answering are skipped.
+#DUMP_TIMEOUT=0
+#DUMP_STALL_TIMEOUT=300
 
 WITH_MYSQL=true
 MYSQL_HOST=localhost

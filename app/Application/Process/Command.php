@@ -19,6 +19,9 @@ final readonly class Command
      * @param float|null                 $timeout   seconds before the process gets SIGTERM (then SIGKILL)
      * @param string|null                $inputFile stdin read from this file (large inputs, e.g. a dump to import)
      * @param resource|null              $output    stdout copied to this stream as it arrives, not kept in memory
+     * @param float|null                 $stallTimeout seconds without progress before the process gets SIGTERM (then SIGKILL):
+     *                                                 no output, and $progressFile (when given) not growing
+     * @param string|null                $progressFile a file the process writes into (a dump's --result-file), watched for growth
      */
     public function __construct(
         public array $argv,
@@ -28,6 +31,8 @@ final readonly class Command
         public ?float $timeout = null,
         public ?string $inputFile = null,
         public mixed $output = null,
+        public ?float $stallTimeout = null,
+        public ?string $progressFile = null,
     ) {
         if ($argv === [] || $argv[0] === '') {
             throw new InvalidArgumentException('A command needs at least the binary');
@@ -38,6 +43,9 @@ final readonly class Command
         if ($output !== null && !is_resource($output)) {
             throw new InvalidArgumentException('The output of a command must be a stream');
         }
+        if (($timeout !== null && $timeout <= 0) || ($stallTimeout !== null && $stallTimeout <= 0)) {
+            throw new InvalidArgumentException('A command timeout must be positive');
+        }
     }
 
     /**
@@ -45,17 +53,17 @@ final readonly class Command
      */
     public function withEnv(array $env): self
     {
-        return new self($this->argv, [...$this->env, ...$env], $this->cwd, $this->input, $this->timeout, $this->inputFile, $this->output);
+        return new self($this->argv, [...$this->env, ...$env], $this->cwd, $this->input, $this->timeout, $this->inputFile, $this->output, $this->stallTimeout, $this->progressFile);
     }
 
     public function withInput(string $input): self
     {
-        return new self($this->argv, $this->env, $this->cwd, $input, $this->timeout, null, $this->output);
+        return new self($this->argv, $this->env, $this->cwd, $input, $this->timeout, null, $this->output, $this->stallTimeout, $this->progressFile);
     }
 
     public function withInputFile(string $path): self
     {
-        return new self($this->argv, $this->env, $this->cwd, null, $this->timeout, $path, $this->output);
+        return new self($this->argv, $this->env, $this->cwd, null, $this->timeout, $path, $this->output, $this->stallTimeout, $this->progressFile);
     }
 
     /**
@@ -63,12 +71,21 @@ final readonly class Command
      */
     public function withOutput($stream): self
     {
-        return new self($this->argv, $this->env, $this->cwd, $this->input, $this->timeout, $this->inputFile, $stream);
+        return new self($this->argv, $this->env, $this->cwd, $this->input, $this->timeout, $this->inputFile, $stream, $this->stallTimeout, $this->progressFile);
     }
 
     public function withTimeout(float $seconds): self
     {
-        return new self($this->argv, $this->env, $this->cwd, $this->input, $seconds, $this->inputFile, $this->output);
+        return new self($this->argv, $this->env, $this->cwd, $this->input, $seconds, $this->inputFile, $this->output, $this->stallTimeout, $this->progressFile);
+    }
+
+    /**
+     * Stops the process when it makes no progress for $seconds: no output on stdout or stderr and,
+     * when given, $progressFile not growing (a dump tool writing its --result-file).
+     */
+    public function withStallTimeout(float $seconds, ?string $progressFile = null): self
+    {
+        return new self($this->argv, $this->env, $this->cwd, $this->input, $this->timeout, $this->inputFile, $this->output, $seconds, $progressFile);
     }
 
     /**

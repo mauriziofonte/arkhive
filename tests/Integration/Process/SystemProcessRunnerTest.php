@@ -223,6 +223,65 @@ final class SystemProcessRunnerTest extends TestCase
         self::assertLessThan(5.0, $result->duration);
     }
 
+    public function testAProcessThatMakesNoProgressIsStopped(): void
+    {
+        $result = $this->runner->run(self::php('echo "started\n"; sleep(30);')->withStallTimeout(0.5));
+
+        self::assertTrue($result->stalled);
+        self::assertTrue($result->timedOut, 'a stall is a timeout for the callers that only check that');
+        self::assertSame(143, $result->exitCode);
+        self::assertNull($result->signal, 'ArkHive sent it');
+        self::assertGreaterThanOrEqual(0.5, $result->duration);
+        self::assertLessThan(5.0, $result->duration);
+        self::assertSame('Dumping made no progress for 0.5s and was stopped (' . basename(PHP_BINARY) . ')', $result->failure('Dumping'));
+    }
+
+    public function testOutputIsProgress(): void
+    {
+        $result = $this->runner->run(self::php('for ($i = 0; $i < 8; $i++) { fwrite(STDERR, "tick\n"); usleep(200000); } echo "done";')->withStallTimeout(0.6));
+
+        self::assertFalse($result->stalled);
+        self::assertFalse($result->timedOut);
+        self::assertSame(0, $result->exitCode);
+        self::assertSame('done', $result->stdout);
+        self::assertGreaterThan(1.2, $result->duration, 'ran well past the stall timeout');
+    }
+
+    public function testAGrowingProgressFileIsProgress(): void
+    {
+        $file = $this->tempDir() . '/dump.sql.partial';
+        touch($file);
+        $code = sprintf('for ($i = 0; $i < 5; $i++) { file_put_contents(%s, "row\n", FILE_APPEND); sleep(1); } echo "done";', var_export($file, true));
+
+        $result = $this->runner->run(self::php($code)->withStallTimeout(2.5, $file));
+
+        self::assertFalse($result->stalled, 'the file grew every second');
+        self::assertSame(0, $result->exitCode);
+        self::assertSame(5 * 4, filesize($file));
+    }
+
+    public function testAProgressFileThatStopsGrowingIsAStall(): void
+    {
+        $file = $this->tempDir() . '/dump.sql.partial';
+        touch($file);
+        $code = sprintf('file_put_contents(%s, "header\n"); sleep(30);', var_export($file, true));
+
+        $result = $this->runner->run(self::php($code)->withStallTimeout(1.5, $file));
+
+        self::assertTrue($result->stalled);
+        self::assertSame(143, $result->exitCode);
+        self::assertLessThan(6.0, $result->duration);
+    }
+
+    public function testTheOverallTimeoutWinsOverAStallThatHasNotHappened(): void
+    {
+        $result = $this->runner->run(self::php('while (true) { echo "x"; usleep(50000); }')->withStallTimeout(5.0)->withTimeout(0.5));
+
+        self::assertTrue($result->timedOut);
+        self::assertFalse($result->stalled, 'it kept writing: the overall deadline stopped it');
+        self::assertStringStartsWith('Dumping timed out after 0.5s', $result->failure('Dumping'));
+    }
+
     public function testTimeoutEscalatesToSigkillWhenSigtermIsIgnored(): void
     {
         if (!function_exists('pcntl_signal')) {

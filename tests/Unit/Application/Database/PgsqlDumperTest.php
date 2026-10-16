@@ -10,6 +10,7 @@ use Mfonte\Arkhive\Application\Process\Cleanup;
 use Mfonte\Arkhive\Application\Process\Command;
 use Mfonte\Arkhive\Application\Process\ProcessResult;
 use Mfonte\Arkhive\Application\Process\Timeouts;
+use Mfonte\Arkhive\Domain\Backup\DumpLimits;
 use Mfonte\Arkhive\Domain\Configuration\PgsqlConfig;
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
 use Mfonte\Arkhive\ExitCode;
@@ -41,13 +42,14 @@ final class PgsqlDumperTest extends TestCase
     /**
      * @param list<string> $databases
      */
-    private function dumper(array $databases = ['inventory', 'crm'], ?string $password = self::PASSWORD, string $osRelease = "ID=debian\n"): PgsqlDumper
+    private function dumper(array $databases = ['inventory', 'crm'], ?string $password = self::PASSWORD, string $osRelease = "ID=debian\n", DumpLimits $limits = new DumpLimits()): PgsqlDumper
     {
         return new PgsqlDumper(
             new PgsqlConfig('pg.example.com', 5433, 'backup', $password, $databases, ['--no-owner', '--no-privileges']),
             $this->runner,
             FakeBinaries::dependencies($this->bin, ['pg_dump', 'psql'], $osRelease),
             $this->cleanup,
+            $limits,
         );
     }
 
@@ -58,6 +60,28 @@ final class PgsqlDumperTest extends TestCase
                 file_put_contents(substr($arg, strlen('--file=')), $content);
             }
         }
+    }
+
+    public function testADumpHasTheDumpLimitsAndAStallIsTemporary(): void
+    {
+        $this->runner->on('pg_dump', static function (Command $command): ProcessResult {
+            self::writeDump($command, '-- PostgreSQL');
+
+            return new ProcessResult($command, 143, '', '', 60.2, true, null, true);
+        });
+
+        try {
+            $this->dumper(limits: new DumpLimits(3600, 60))->dump('inventory', $this->staging);
+            self::fail('expected the dump to fail');
+        } catch (ArkhiveException $e) {
+            self::assertSame(ExitCode::TEMPORARY, $e->exitCode());
+            self::assertSame('PostgreSQL dump of database inventory made no progress for 60s and was stopped (pg_dump)', $e->getMessage());
+        }
+        $command = $this->runner->commands[0];
+        self::assertSame(3600.0, $command->timeout);
+        self::assertSame(60.0, $command->stallTimeout);
+        self::assertSame($this->staging->directory . '/pgsql/inventory.sql.partial', $command->progressFile);
+        self::assertSame([], glob($this->staging->directory . '/pgsql/*') ?: []);
     }
 
     public function testPassfileLineEscapesColonsAndBackslashes(): void

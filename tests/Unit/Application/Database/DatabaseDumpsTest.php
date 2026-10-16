@@ -9,6 +9,7 @@ use Mfonte\Arkhive\Application\Database\DatabaseDumps;
 use Mfonte\Arkhive\Application\Output\Logger;
 use Mfonte\Arkhive\Application\Process\Cleanup;
 use Mfonte\Arkhive\Application\Process\Command;
+use Mfonte\Arkhive\Application\Process\ProcessResult;
 use Mfonte\Arkhive\Domain\Configuration\Config;
 use Mfonte\Arkhive\Domain\Execution\ExecutionContext;
 use Mfonte\Arkhive\Domain\Execution\LogFormat;
@@ -130,6 +131,39 @@ final class DatabaseDumpsTest extends TestCase
         $this->dumps->clear($run);
         self::assertSame([], glob("{$this->dumpDir}/*/*") ?: []);
         self::assertSame(0, $this->cleanup->pending());
+    }
+
+    public function testAServerThatStoppedAnsweringFailsOneDumpAndSkipsItsOtherDatabases(): void
+    {
+        $this->servers();
+        $this->runner->on('mariadb-dump', static fn (Command $c): ProcessResult => new ProcessResult($c, 143, '', '', 5.0, true, null, true));
+
+        $run = $this->dumps->run($this->config(['DUMP_STALL_TIMEOUT' => '5']), $this->log);
+
+        self::assertNotNull($run);
+        self::assertCount(1, $this->runner->commandsOf('mariadb-dump'), 'blog is not attempted: the server would hold it just as long');
+        self::assertSame(
+            [
+                ['MySQL', 'shop', ExitCode::TEMPORARY, 'MySQL dump of database shop made no progress for 5s and was stopped (mariadb-dump)'],
+                ['MySQL', 'blog', ExitCode::TEMPORARY, 'Not attempted: the MySQL server did not answer the dump of shop'],
+            ],
+            array_map(static fn ($f): array => [$f->engine, $f->database, $f->exitCode, $f->error], $run->failures),
+        );
+        self::assertSame(["{$this->dumpDir}/pgsql/inventory.sql", "{$this->dumpDir}/pgsql/crm.sql"], array_map(static fn ($r): string => $r->path, $run->results), 'the other server is dumped');
+        self::assertStringContainsString('warning The MySQL dump of blog was skipped, the backup goes on without it: Not attempted: the MySQL server did not answer the dump of shop', $this->stream->contents());
+        self::assertSame(5.0, $this->runner->commandsOf('mariadb-dump')[0]->stallTimeout);
+    }
+
+    public function testAnOrdinaryDumpFailureDoesNotSkipTheOtherDatabases(): void
+    {
+        $this->servers();
+        $this->runner->on('mariadb-dump', static fn (Command $c): ProcessResult => new ProcessResult($c, 143, '', '', 60.0, true));
+
+        $run = $this->dumps->run($this->config(['DUMP_TIMEOUT' => '60']), $this->log);
+
+        self::assertNotNull($run);
+        self::assertCount(2, $this->runner->commandsOf('mariadb-dump'), 'DUMP_TIMEOUT stops one large database, not the server');
+        self::assertSame(['shop', 'blog'], array_map(static fn ($f): ?string => $f->database, $run->failures));
     }
 
     public function testNoDumpsConfiguredDoesNothing(): void

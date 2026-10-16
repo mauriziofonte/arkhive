@@ -8,6 +8,7 @@ use Mfonte\Arkhive\Application\Configuration\ConfigFactory;
 use Mfonte\Arkhive\Application\Configuration\ConfigLoader;
 use Mfonte\Arkhive\Application\Configuration\ConfigLocator;
 use Mfonte\Arkhive\Application\Configuration\ConfigParser;
+use Mfonte\Arkhive\Domain\Backup\DumpLimits;
 use Mfonte\Arkhive\Domain\Configuration\Config;
 use Mfonte\Arkhive\Domain\Configuration\RemovedKeys;
 use Mfonte\Arkhive\Domain\Execution\LogTarget;
@@ -85,6 +86,25 @@ final class ConfigFactoryTest extends TestCase
         self::assertFalse($config->hasDumps());
         self::assertSame([], $config->unknownKeys);
         self::assertFalse($config->dumpRequired);
+        self::assertNull($config->dumpLimits->timeout, 'no overall limit on a dump unless DUMP_TIMEOUT is set');
+        self::assertSame(DumpLimits::DEFAULT_STALL_TIMEOUT, $config->dumpLimits->stallTimeout);
+        self::assertSame(300, DumpLimits::DEFAULT_STALL_TIMEOUT);
+    }
+
+    public function testTheDumpTimeLimitsAreReadAndZeroMeansNone(): void
+    {
+        $config = $this->create(['DUMP_TIMEOUT' => '7200', 'DUMP_STALL_TIMEOUT' => '60']);
+        self::assertSame([7200, 60], [$config->dumpLimits->timeout, $config->dumpLimits->stallTimeout]);
+
+        $config = $this->create(['DUMP_TIMEOUT' => '0', 'DUMP_STALL_TIMEOUT' => '0']);
+        self::assertSame([null, null], [$config->dumpLimits->timeout, $config->dumpLimits->stallTimeout]);
+        self::assertSame([], $config->unknownKeys);
+
+        $this->assertInvalid(
+            ['DUMP_TIMEOUT' => '2h', 'DUMP_STALL_TIMEOUT' => '-1'],
+            'DUMP_TIMEOUT must be a whole number >= 0, got "2h"',
+            'DUMP_STALL_TIMEOUT must be a whole number >= 0, got "-1"',
+        );
     }
 
     public function testEveryResticSettingIsRead(): void

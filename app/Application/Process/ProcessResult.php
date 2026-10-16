@@ -15,6 +15,7 @@ final readonly class ProcessResult
     /**
      * @param int|null $signal the signal that killed the process when ArkHive did not send it (its
      *                         exit code is then 128 + signal); null when it exited by itself
+     * @param bool     $stalled  stopped for making no progress (Command::$stallTimeout); $timedOut is then true too
      */
     public function __construct(
         public Command $command,
@@ -24,6 +25,7 @@ final readonly class ProcessResult
         public float $duration = 0.0,
         public bool $timedOut = false,
         public ?int $signal = null,
+        public bool $stalled = false,
     ) {
     }
 
@@ -43,6 +45,7 @@ final readonly class ProcessResult
     public function failure(string $what): string
     {
         $message = match (true) {
+            $this->stalled => sprintf('%s made no progress for %ss and was stopped (%s)', $what, (string) $this->command->stallTimeout, $this->command->name()),
             $this->timedOut => sprintf('%s timed out after %ss (%s)', $what, (string) $this->command->timeout, $this->command->name()),
             $this->signal !== null => sprintf('%s failed (%s killed by %s)', $what, $this->command->name(), self::signalName($this->signal)),
             default => sprintf('%s failed (%s exit %d)', $what, $this->command->name(), $this->exitCode),

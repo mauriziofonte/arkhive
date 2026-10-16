@@ -174,6 +174,8 @@ arkhive self-update --allow-major    # needed to cross a major version (read the
    # removed after each successful backup. A dedicated directory.
    DUMP_DIRECTORY=/var/backups/arkhive-dumps
    #DUMP_REQUIRED=false
+   #DUMP_TIMEOUT=0
+   #DUMP_STALL_TIMEOUT=300
 
    WITH_MYSQL=false
    MYSQL_HOST=localhost
@@ -256,6 +258,8 @@ Syntax: one `KEY=value` per line, optionally prefixed by `export`. `'single quot
 | `UNLOCK_STALE` | no | `false` | `true`: a restic lock left by a process that died on this host (killed, out of memory) is removed with `restic unlock` and the operation goes on. Off by default: ArkHive then names the dead process and the command, and never removes a lock. See [Retries](#retries) |
 | `EXCLUSION_PATTERNS` | no | none | Comma-separated 1.x patterns, see below |
 | `DUMP_DIRECTORY` | when dumps are enabled | | Absolute path of a dedicated staging directory for the dumps (`mysql/<db>.sql`, `pgsql/<db>.sql`), backed up as a path of its own and emptied after each successful backup. The dumps are private: the directory must belong to the running user and not be writable by group or others (exit 77 otherwise), its `mysql` and `pgsql` subdirectories are made 0700 and every dump file is 0600. It cannot be `/`, cannot be or contain a backup path, and must not be excluded by `EXCLUSION_PATTERNS` |
+| `DUMP_TIMEOUT` | no | `0` | Seconds one database dump may run before it is stopped and counted as failed (exit 75); `0`: no limit (a systemd unit is still bounded by its `TimeoutStartSec`) |
+| `DUMP_STALL_TIMEOUT` | no | `300` | Seconds a database dump may go without writing a byte before it is stopped and counted as failed (exit 75): a server that stops answering (paused, frozen storage, a lock never released) no longer holds the backup until it comes back, also under cron. The other databases of that server are skipped, the files are backed up, and `DUMP_REQUIRED` decides the exit code. `0`: no limit |
 | `DUMP_REQUIRED` | no | `false` | A database dump that fails never stops the other dumps nor the backup of the files. `false`: the run ends with exit 3 and names the failed dumps; `true`: the run fails with that dump's exit code (69 server down, 77 credentials, 66 unknown database) and a failure notification |
 | `WITH_MYSQL` | no | `false` | Dump MySQL/MariaDB databases |
 | `MYSQL_HOST` | no | `localhost` | |
@@ -671,7 +675,7 @@ rsync -aHAX --numeric-ids "$TARGET/etc/nginx/" /etc/nginx/
 
 ## Upgrading from 2.0
 
-`arkhive self-update` installs 2.1 (same major version). The configuration, the repository and the password file stay as they are; the new keys (`LOCK_WAIT`, `UNLOCK_STALE`, `DUMP_REQUIRED`, `LOG_TARGET`, `SYSLOG_FACILITY`) are optional. What to check:
+`arkhive self-update` installs 2.1 (same major version). The configuration, the repository and the password file stay as they are; the new keys (`LOCK_WAIT`, `UNLOCK_STALE`, `DUMP_REQUIRED`, `DUMP_TIMEOUT`, `DUMP_STALL_TIMEOUT`, `LOG_TARGET`, `SYSLOG_FACILITY`) are optional. What to check:
 
 - **Exit codes**: scripts or monitors that test for `2` (usage or configuration error) or `4` (refused) must test for `64`/`78` and `73` (see [Exit codes](#exit-codes)); a failed `drill` or repository check is `65` instead of `1`, and a database dump that fails is named and skipped (exit 3) unless `DUMP_REQUIRED=true`.
 - **Permissions**: run `arkhive doctor` before the first scheduled run. A configuration that group or others can write, or that another user owns, is refused (exit 77); one that holds a database or SMTP password and that others can read is a warning. The password file must be `chmod 600`, owned by the running user, not a symbolic link, in a directory only its owner can write, owned by the running user or root; `DUMP_DIRECTORY` must belong to the running user and not be writable by others. Each message gives the `chmod` or `chown` to run.

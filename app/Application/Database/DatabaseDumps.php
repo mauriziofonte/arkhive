@@ -16,12 +16,16 @@ use Mfonte\Arkhive\Exceptions\ArkhiveException;
 use Mfonte\Arkhive\Exceptions\InterruptedException;
 use Mfonte\Arkhive\Exceptions\IoException;
 use Mfonte\Arkhive\Exceptions\RefusedException;
+use Mfonte\Arkhive\Exceptions\StalledException;
+use Mfonte\Arkhive\ExitCode;
 use Throwable;
 
 /**
  * Runs every configured dump into DUMP_DIRECTORY before restic backup. A database (or a server) that
  * fails is recorded and the other dumps go on, so one broken database never costs the backup of the
- * rest; a failed dump leaves no partial file. Running out of space (73, 74) aborts every dump.
+ * rest; a failed dump leaves no partial file. Running out of space (73, 74) aborts every dump. A dump
+ * stopped by DUMP_STALL_TIMEOUT (the server stopped answering, exit 75) skips the other databases of
+ * that server.
  */
 final class DatabaseDumps
 {
@@ -58,14 +62,14 @@ final class DatabaseDumps
         $failures = [];
         try {
             if ($config->mysql !== null) {
-                $mysql = $dumpers[] = new MysqlDumper($config->mysql, $this->runner, $this->dependencies, $this->cleanup);
+                $mysql = $dumpers[] = new MysqlDumper($config->mysql, $this->runner, $this->dependencies, $this->cleanup, $config->dumpLimits);
                 $databases = $this->attempt('MySQL', null, $mysql->databases(...), $failures, $log);
                 if ($databases !== null) {
                     $plan[] = ['MySQL', $mysql, $databases];
                 }
             }
             if ($config->pgsql !== null) {
-                $pgsql = $dumpers[] = new PgsqlDumper($config->pgsql, $this->runner, $this->dependencies, $this->cleanup);
+                $pgsql = $dumpers[] = new PgsqlDumper($config->pgsql, $this->runner, $this->dependencies, $this->cleanup, $config->dumpLimits);
                 $databases = $this->attempt('PostgreSQL', null, static function () use ($pgsql, $log): array {
                     $warning = $pgsql->versionWarning();
                     if ($warning !== null) {
@@ -84,10 +88,20 @@ final class DatabaseDumps
                 if ($databases === []) {
                     $log->warning("No {$engine} database to dump: the server has none besides the system schemas");
                 }
+                $stopped = null;
                 foreach ($databases as $database) {
+                    if ($stopped !== null) {
+                        $failures[] = $failure = new DumpFailure($engine, $database, "Not attempted: the {$engine} server did not answer the dump of {$stopped}", ExitCode::TEMPORARY);
+                        $log->warning(ucfirst($failure->describe()) . ' was skipped, the backup goes on without it: ' . $failure->error, ['engine' => $engine, 'database' => $database, 'exit_code' => $failure->exitCode]);
+                        continue;
+                    }
                     $log->info("Dumping {$engine} database {$database}");
-                    $result = $this->attempt($engine, $database, static fn () => DiskSpace::whenFull(static fn () => $dumper->dump($database, $staging), $staging->directory), $failures, $log);
+                    $result = $this->attempt($engine, $database, static fn () => DiskSpace::whenFull(static fn () => $dumper->dump($database, $staging), $staging->directory), $failures, $log, $stalled);
                     if ($result === null) {
+                        if ($stalled) {
+                            // the server stopped answering: it would hold each of the next dumps just as long
+                            $stopped = $database;
+                        }
                         continue;
                     }
                     $results[] = $result;
@@ -118,16 +132,19 @@ final class DatabaseDumps
      *
      * @param \Closure(): T     $step
      * @param list<DumpFailure> $failures
+     * @param-out bool          $stalled  whether the step failed because the server stopped answering
      *
      * @return T|null null when the step failed
      */
-    private function attempt(string $engine, ?string $database, \Closure $step, array &$failures, Logger $log): mixed
+    private function attempt(string $engine, ?string $database, \Closure $step, array &$failures, Logger $log, ?bool &$stalled = null): mixed
     {
+        $stalled = false;
         try {
             return $step();
         } catch (InterruptedException | IoException | RefusedException $e) {
             throw $e;
         } catch (ArkhiveException $e) {
+            $stalled = $e instanceof StalledException;
             $failure = new DumpFailure($engine, $database, $e->getMessage(), $e->exitCode(), $e->hint());
             $failures[] = $failure;
             $log->warning(ucfirst($failure->describe()) . ' failed, the backup goes on without it: ' . $e->getMessage(), ['engine' => $engine, 'database' => $database, 'exit_code' => $e->exitCode()]);

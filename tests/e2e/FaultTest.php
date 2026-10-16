@@ -11,7 +11,7 @@ use Tests\Support\CliResult;
 
 /**
  * spec §13.6 fault injection: the SFTP server frozen before and during a backup and mid-restore, a
- * full repository disk, a clock that jumped, a dump server that is down. Each case ends with a precise error, no
+ * full repository disk, a clock that jumped, a dump server that is down or frozen. Each case ends with a precise error, no
  * snapshot counted as a success, no leftover temporary data and the lock released. (The corrupted
  * pack is OperationsTest::testACorruptedPackFailsTheDrillAndMaintain.)
  */
@@ -239,6 +239,49 @@ final class FaultTest extends E2eTestCase
         self::assertMatchesRegularExpression('/error 1 database dump\(s\) failed and DUMP_REQUIRED is true: the files are in snapshot [0-9a-f]{8}, those databases are not/', $result->stderr);
         self::assertCount(1, $this->snapshots());
         self::assertSame([], glob("{$this->dir}/dumps/*/*") ?: []);
+        $this->assertCleanAfterFailure();
+    }
+
+    /**
+     * A database server frozen (paused, its storage hung): the dump connects and then receives
+     * nothing. DUMP_STALL_TIMEOUT stops it, the other database of that server is not attempted, the
+     * other server's dump and the files are saved, and the run ends with exit 3 in seconds instead of
+     * waiting for the server to come back.
+     */
+    public function testAFrozenDatabaseServerFailsItsDumpsAndTheRestIsSaved(): void
+    {
+        if ((getenv('E2E_MYSQL_PAUSE') ?: '') === '' || (getenv('E2E_MYSQL_RESUME') ?: '') === '') {
+            self::markTestSkipped('E2E_MYSQL_PAUSE / E2E_MYSQL_RESUME are not set (run.sh sets them to docker compose pause/unpause)');
+        }
+        $this->arkhiveInit($this->dir, $this->repository, $this->sftpCommand);
+        $config = $this->config([
+            ...$this->oneDatabaseServerDown(),
+            'MYSQL_PORT' => self::env('E2E_MYSQL_PORT'),
+            'MYSQL_DATABASES' => 'shop blog',
+            'DUMP_STALL_TIMEOUT' => '5',
+        ]);
+
+        $pause = self::exec(['sh', '-c', self::env('E2E_MYSQL_PAUSE')]);
+        self::assertSame(0, $pause->exitCode, $pause->output());
+        $begin = microtime(true);
+        try {
+            $result = self::arkhive(['backup', '--config', $config], $this->runEnv());
+        } finally {
+            $resume = self::exec(['sh', '-c', self::env('E2E_MYSQL_RESUME')]);
+            self::assertSame(0, $resume->exitCode, $resume->output());
+        }
+
+        self::assertSame(ExitCode::WARNING, $result->exitCode, $result->output());
+        self::assertLessThan(120, microtime(true) - $begin, 'stopped by DUMP_STALL_TIMEOUT, not by the end of the freeze');
+        self::assertStringContainsString('warning The MySQL dump of shop failed, the backup goes on without it: MySQL dump of database shop made no progress for 5s and was stopped', $result->stderr);
+        self::assertStringContainsString('warning The MySQL dump of blog was skipped, the backup goes on without it: Not attempted: the MySQL server did not answer the dump of shop', $result->stderr);
+        self::assertStringContainsString('success Dumped PostgreSQL database inventory', $result->stderr);
+        self::assertCount(1, $this->snapshots());
+        $listed = self::restic(['ls', 'latest', '--no-lock'], $this->repository, $this->sftpCommand);
+        self::assertSame(0, $listed->exitCode, $listed->stderr);
+        self::assertStringContainsString("{$this->dir}/dumps/pgsql/inventory.sql", $listed->stdout);
+        self::assertStringNotContainsString("{$this->dir}/dumps/mysql/", $listed->stdout);
+        self::assertSame([], glob("{$this->dir}/dumps/*/*") ?: [], 'no partial dump left');
         $this->assertCleanAfterFailure();
     }
 

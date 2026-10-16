@@ -70,7 +70,7 @@ final class SystemProcessRunner implements ProcessRunner
         });
 
         try {
-            [$stdout, $stderr, $exitCode, $timedOut, $signal] = $this->communicate($command, $process, $pipes, $started, $onStdoutLine, $onStderrLine);
+            [$stdout, $stderr, $exitCode, $timedOut, $signal, $stalled] = $this->communicate($command, $process, $pipes, $started, $onStdoutLine, $onStderrLine);
         } finally {
             $this->signals->forget($listener);
             foreach ($pipes as $pipe) {
@@ -83,7 +83,7 @@ final class SystemProcessRunner implements ProcessRunner
 
         $this->signals->check();
 
-        return new ProcessResult($command, $exitCode, $stdout, $stderr, (hrtime(true) - $started) / 1e9, $timedOut, $signal);
+        return new ProcessResult($command, $exitCode, $stdout, $stderr, (hrtime(true) - $started) / 1e9, $timedOut, $signal, $stalled);
     }
 
     /**
@@ -92,8 +92,8 @@ final class SystemProcessRunner implements ProcessRunner
      * @param (callable(string): void)|null $onStdoutLine
      * @param (callable(string): void)|null $onStderrLine
      *
-     * @return array{string, string, int, bool, int|null} stdout, stderr, exit code, timed out, the signal
-     *                                                that killed it when ArkHive did not send it
+     * @return array{string, string, int, bool, int|null, bool} stdout, stderr, exit code, timed out, the
+     *                                                      signal that killed it when ArkHive did not send it, stalled
      */
     private function communicate(Command $command, $process, array $pipes, int $started, ?callable $onStdoutLine, ?callable $onStderrLine): array
     {
@@ -113,6 +113,11 @@ final class SystemProcessRunner implements ProcessRunner
         $stderr = '';
         $partial = [1 => '', 2 => ''];
         $timedOut = false;
+        $stalled = false;
+        // seconds since the start when the process last wrote output or grew its progress file
+        $lastProgress = 0.0;
+        $progressSize = null;
+        $progressCheckedAt = -1.0;
         /** @var string|null $outputClosed why the output stream stopped taking data */
         $outputClosed = null;
         $killAt = null;
@@ -157,6 +162,9 @@ final class SystemProcessRunner implements ProcessRunner
                             unset($readers[$fd]);
                             continue;
                         }
+                        if ($chunk !== '') {
+                            $lastProgress = (hrtime(true) - $started) / 1e9;
+                        }
                         if ($fd === 1) {
                             if ($command->output !== null) {
                                 $copyError = self::copy($command->output, $chunk);
@@ -184,10 +192,21 @@ final class SystemProcessRunner implements ProcessRunner
                 }
             }
 
-            if ($command->timeout !== null && $exitCode === null) {
+            if (($command->timeout !== null || $command->stallTimeout !== null) && $exitCode === null) {
                 $elapsed = (hrtime(true) - $started) / 1e9;
-                if (!$timedOut && $elapsed >= $command->timeout) {
+                if ($command->progressFile !== null && $elapsed - $progressCheckedAt >= 1.0) {
+                    $progressCheckedAt = $elapsed;
+                    clearstatcache(true, $command->progressFile);
+                    $size = @filesize($command->progressFile);
+                    if ($size !== false && $size !== $progressSize) {
+                        $progressSize = $size;
+                        $lastProgress = $elapsed;
+                    }
+                }
+                $stall = $command->stallTimeout !== null && $elapsed - $lastProgress >= $command->stallTimeout;
+                if (!$timedOut && (($command->timeout !== null && $elapsed >= $command->timeout) || $stall)) {
                     $timedOut = true;
+                    $stalled = $stall && ($command->timeout === null || $elapsed < $command->timeout);
                     $killAt = $elapsed + $this->killGrace;
                     proc_terminate($process, InterruptedException::SIGTERM);
                 } elseif ($killAt !== null && $elapsed >= $killAt) {
@@ -211,7 +230,7 @@ final class SystemProcessRunner implements ProcessRunner
             $stderr .= ($stderr === '' || str_ends_with($stderr, "\n") ? '' : "\n") . "ArkHive: the output stream was closed before {$command->name()} finished{$why}\n";
         }
 
-        return [$stdout, $stderr, $exitCode, $timedOut, $timedOut || $outputClosed !== null ? null : $signal];
+        return [$stdout, $stderr, $exitCode, $timedOut, $timedOut || $outputClosed !== null ? null : $signal, $stalled];
     }
 
     /**

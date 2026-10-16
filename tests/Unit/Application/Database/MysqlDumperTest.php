@@ -10,8 +10,10 @@ use Mfonte\Arkhive\Application\Process\Cleanup;
 use Mfonte\Arkhive\Application\Process\Command;
 use Mfonte\Arkhive\Application\Process\ProcessResult;
 use Mfonte\Arkhive\Application\Process\Timeouts;
+use Mfonte\Arkhive\Domain\Backup\DumpLimits;
 use Mfonte\Arkhive\Domain\Configuration\MysqlConfig;
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
+use Mfonte\Arkhive\Exceptions\StalledException;
 use Mfonte\Arkhive\ExitCode;
 use PHPUnit\Framework\TestCase;
 use Tests\Support\FakeBinaries;
@@ -42,13 +44,14 @@ final class MysqlDumperTest extends TestCase
      * @param list<string> $databases
      * @param list<string> $binaries
      */
-    private function dumper(array $databases = ['shop'], array $binaries = ['mariadb-dump', 'mariadb'], ?string $password = self::PASSWORD): MysqlDumper
+    private function dumper(array $databases = ['shop'], array $binaries = ['mariadb-dump', 'mariadb'], ?string $password = self::PASSWORD, DumpLimits $limits = new DumpLimits()): MysqlDumper
     {
         return new MysqlDumper(
             new MysqlConfig('db.example.com', 3307, 'backup', $password, $databases),
             $this->runner,
             FakeBinaries::dependencies($this->bin, $binaries),
             $this->cleanup,
+            $limits,
         );
     }
 
@@ -109,6 +112,44 @@ final class MysqlDumperTest extends TestCase
         self::assertFileDoesNotExist($credentials);
         self::assertSame(0, $this->cleanup->pending());
         $dumper->close();
+    }
+
+    public function testADumpIsStoppedWhenItsFileStopsGrowingAndHasNoOverallLimitByDefault(): void
+    {
+        $this->runner->on('mariadb-dump', static function (Command $command): int {
+            file_put_contents(substr($command->argv[8], strlen('--result-file=')), 'x');
+
+            return 0;
+        });
+
+        $this->dumper()->dump('shop', $this->staging);
+        $this->dumper(limits: new DumpLimits(7200, null))->dump('shop', $this->staging);
+
+        [$default, $limited] = $this->runner->commands;
+        self::assertSame((float) DumpLimits::DEFAULT_STALL_TIMEOUT, $default->stallTimeout);
+        self::assertSame($this->staging->directory . '/mysql/shop.sql.partial', $default->progressFile, 'progress is the dump file growing');
+        self::assertNull($default->timeout, 'DUMP_TIMEOUT=0: a large database may take as long as it needs');
+        self::assertSame(7200.0, $limited->timeout);
+        self::assertNull($limited->stallTimeout);
+    }
+
+    public function testADumpThatStalledIsTemporaryAndLeavesNoPartialFile(): void
+    {
+        $this->runner->on('mariadb-dump', static function (Command $command): ProcessResult {
+            file_put_contents(substr($command->argv[8], strlen('--result-file=')), '-- MariaDB dump');
+
+            return new ProcessResult($command, 143, '', '', 300.5, true, null, true);
+        });
+
+        try {
+            $this->dumper()->dump('shop', $this->staging);
+            self::fail('expected the dump to fail');
+        } catch (StalledException $e) {
+            self::assertSame(ExitCode::TEMPORARY, $e->exitCode());
+            self::assertSame('MySQL dump of database shop made no progress for 300s and was stopped (mariadb-dump)', $e->getMessage());
+            self::assertStringStartsWith('The database server stopped sending data: check that it is running, not paused and not blocked by a lock', (string) $e->hint());
+        }
+        self::assertSame([], glob($this->staging->directory . '/mysql/*') ?: []);
     }
 
     public function testMysqldumpIsUsedWhenMariadbDumpIsMissing(): void

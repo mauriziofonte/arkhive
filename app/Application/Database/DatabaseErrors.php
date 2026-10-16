@@ -9,12 +9,13 @@ use Mfonte\Arkhive\Exceptions\ArkhiveException;
 use Mfonte\Arkhive\Exceptions\IoException;
 use Mfonte\Arkhive\Exceptions\NoInputException;
 use Mfonte\Arkhive\Exceptions\PermissionException;
+use Mfonte\Arkhive\Exceptions\StalledException;
 use Mfonte\Arkhive\Exceptions\TemporaryException;
 use Mfonte\Arkhive\Exceptions\UnavailableException;
 
 /**
  * Turns a failed database client run (mysqldump, pg_dump, mysql, psql) into the exit code of its
- * cause: server down 69, credentials refused 77, database missing 66, disk full 74, timeout 75.
+ * cause: server down 69, credentials refused 77, database missing 66, disk full 74, timeout or no progress 75.
  * Anything else stays a plain failure (exit 1) with the client's own words.
  */
 final class DatabaseErrors
@@ -54,6 +55,9 @@ final class DatabaseErrors
     {
         $message = $result->failure($what);
         $stderr = $result->stderr;
+        if ($result->stalled) {
+            return new StalledException($message, $hint ?? 'The database server stopped sending data: check that it is running, not paused and not blocked by a lock, then run again (DUMP_STALL_TIMEOUT sets how long a dump may go without progress)');
+        }
         if ($result->timedOut) {
             return new TemporaryException($message, $hint ?? 'The database server did not answer in time: check its load, then run again');
         }

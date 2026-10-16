@@ -7,6 +7,7 @@ namespace Tests\Unit\Application\Database;
 use Mfonte\Arkhive\Application\Database\DatabaseErrors;
 use Mfonte\Arkhive\Application\Process\Command;
 use Mfonte\Arkhive\Application\Process\ProcessResult;
+use Mfonte\Arkhive\Exceptions\StalledException;
 use Mfonte\Arkhive\ExitCode;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -51,6 +52,18 @@ final class DatabaseErrorsTest extends TestCase
 
         self::assertSame(ExitCode::TEMPORARY, $exception->exitCode());
         self::assertStringContainsString('timed out after 30s', $exception->getMessage());
+    }
+
+    public function testADumpThatMadeNoProgressIsTemporaryAndSaysSo(): void
+    {
+        $command = (new Command(['/usr/bin/mysqldump']))->withStallTimeout(300.0, '/var/backups/dumps/mysql/shop.sql.partial');
+        $exception = DatabaseErrors::exception(new ProcessResult($command, 143, '', '', 300.4, true, null, true), 'MySQL dump of database shop');
+
+        self::assertInstanceOf(StalledException::class, $exception);
+        self::assertSame(ExitCode::TEMPORARY, $exception->exitCode());
+        self::assertTrue($exception->transient());
+        self::assertSame('MySQL dump of database shop made no progress for 300s and was stopped (mysqldump)', $exception->getMessage());
+        self::assertSame('The database server stopped sending data: check that it is running, not paused and not blocked by a lock, then run again (DUMP_STALL_TIMEOUT sets how long a dump may go without progress)', $exception->hint());
     }
 
     public function testTheCallersHintWins(): void

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Mfonte\Arkhive\Application\Configuration;
 
+use Mfonte\Arkhive\Domain\Backup\DumpLimits;
 use Mfonte\Arkhive\Domain\Configuration\Config;
 use Mfonte\Arkhive\Domain\Configuration\MysqlConfig;
 use Mfonte\Arkhive\Domain\Configuration\NotifyConfig;
@@ -29,7 +30,7 @@ final class ConfigFactory
     public const KNOWN_KEYS = [
         'BACKUP_PATHS', 'RESTIC_REPOSITORY', 'RESTIC_PASSWORD_FILE', 'RESTIC_SFTP_COMMAND', 'RESTIC_BINARY',
         'RESTIC_HOST', 'RESTIC_KEEP_DAILY', 'RESTIC_KEEP_WEEKLY', 'RESTIC_KEEP_MONTHLY', 'RESTIC_CHECK_SUBSET',
-        'RESTIC_COMPRESSION', 'LOCK_WAIT', 'UNLOCK_STALE', 'DUMP_DIRECTORY', 'DUMP_REQUIRED', 'EXCLUSION_PATTERNS',
+        'RESTIC_COMPRESSION', 'LOCK_WAIT', 'UNLOCK_STALE', 'DUMP_DIRECTORY', 'DUMP_REQUIRED', 'DUMP_TIMEOUT', 'DUMP_STALL_TIMEOUT', 'EXCLUSION_PATTERNS',
         'WITH_MYSQL', 'MYSQL_HOST', 'MYSQL_PORT', 'MYSQL_USER', 'MYSQL_PASSWORD', 'MYSQL_DATABASES',
         'WITH_PGSQL', 'PGSQL_HOST', 'PGSQL_PORT', 'PGSQL_USER', 'PGSQL_PASSWORD', 'PGSQL_DATABASES', 'PGSQL_DUMP_OPTIONS',
         'NOTIFY', 'NOTIFY_ON', 'SMTP_HOST', 'SMTP_PORT', 'SMTP_ENCRYPTION', 'SMTP_USER', 'SMTP_PASSWORD', 'SMTP_FROM', 'SMTP_TO',
@@ -177,6 +178,7 @@ final class ConfigFactory
             $logTarget,
             $facility,
             $warnings,
+            DumpLimits::fromSeconds($this->integer('DUMP_TIMEOUT', 0), $this->integer('DUMP_STALL_TIMEOUT', DumpLimits::DEFAULT_STALL_TIMEOUT)),
         );
 
         if ($this->errors !== []) {

@@ -84,6 +84,8 @@ if [ "${E2E_EXTERNAL:-0}" != "1" ]; then
     export E2E_SFTP_RESUME="${compose[*]} unpause sftp"
     export E2E_MYSQL_STOP="${compose[*]} stop mariadb"
     export E2E_MYSQL_START="${compose[*]} start mariadb"
+    export E2E_MYSQL_PAUSE="${compose[*]} pause mariadb"
+    export E2E_MYSQL_RESUME="${compose[*]} unpause mariadb"
     log "starting services"
     "${compose[@]}" up -d --wait --wait-timeout 180 mariadb postgres
     "${compose[@]}" up -d sftp releases

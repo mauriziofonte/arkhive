@@ -32,6 +32,30 @@ final class CommandTest extends TestCase
         self::assertSame(['A' => '1'], $command->env);
     }
 
+    public function testTheStallTimeoutAndItsProgressFileSurviveTheOtherWithers(): void
+    {
+        $command = (new Command(['/usr/bin/mysqldump']))->withStallTimeout(300.0, '/var/backups/dumps/mysql/shop.sql.partial');
+        $changed = $command->withEnv(['A' => '1'])->withInput('x')->withInputFile('/etc/hostname')->withTimeout(60.0)->withOutput(STDOUT);
+
+        self::assertSame(300.0, $changed->stallTimeout);
+        self::assertSame('/var/backups/dumps/mysql/shop.sql.partial', $changed->progressFile);
+        self::assertSame(60.0, $changed->timeout);
+        self::assertNull((new Command(['/bin/true']))->stallTimeout);
+        self::assertNull((new Command(['/bin/true']))->withStallTimeout(5.0)->progressFile, 'output alone is the progress');
+    }
+
+    public function testATimeoutMustBePositive(): void
+    {
+        foreach ([[0.0, null], [-1.0, null], [null, 0.0], [null, -5.0]] as [$timeout, $stall]) {
+            try {
+                new Command(['/bin/true'], timeout: $timeout, stallTimeout: $stall);
+                self::fail('accepted a timeout of ' . var_export([$timeout, $stall], true));
+            } catch (InvalidArgumentException $e) {
+                self::assertSame('A command timeout must be positive', $e->getMessage());
+            }
+        }
+    }
+
     public function testEmptyArgvIsRejected(): void
     {
         $this->expectException(InvalidArgumentException::class);

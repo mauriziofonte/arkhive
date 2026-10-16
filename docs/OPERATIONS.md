@@ -143,6 +143,31 @@ Hostnames must be unique among the hosts that share a repository (containers clo
 can share one): a lock made on another machine with the same hostname would look like one of this
 host's.
 
+## A server that stops answering
+
+A frozen server (a storage box that stops responding, a paused or hung database) does not close
+its connections: without a deadline the client waits for as long as the freeze lasts. Every wait
+that can hang has one, so the run fails with a named cause instead:
+
+| Where | Bounded by | Then |
+|---|---|---|
+| SSH connection to an `sftp:` repository, up to the server's greeting | `ConnectTimeout=30`, added by ArkHive | the attempt fails; opening the repository is tried three times, then exit 69 |
+| An open SSH session (upload, download, a check) | `ServerAliveInterval=15`, `ServerAliveCountMax=4`: about a minute | restic fails, exit 69; the restic lock it held is left behind (see above) |
+| restic opening the repository or reading its metadata | 300 seconds | exit 75 |
+| A database query (the list of databases, their size) | the client's 10-second connect timeout, then 300 seconds | that server's dumps fail, the backup goes on |
+| A database dump | `DUMP_STALL_TIMEOUT` (300 seconds without a byte written) and `DUMP_TIMEOUT` (off by default) | that dump fails with exit 75, the other databases of the same server are skipped, the files are backed up; `DUMP_REQUIRED` decides the run's exit code |
+
+The SSH keepalives only start once the session is up, which is why `ConnectTimeout` is needed too: a
+server frozen before it sends its greeting (the TCP connection is accepted, nothing else comes)
+held `ssh` until the server was back. A `RESTIC_SFTP_COMMAND` that does not start with `ssh` (a
+wrapper script) gets none of these options; `arkhive doctor` warns and names them.
+
+A dump makes progress as long as its file grows. A server waiting on a lock that is never released
+(a long `ALTER TABLE`, a `FLUSH TABLES WITH READ LOCK` left open) looks the same as a frozen one,
+and is stopped the same way; raise `DUMP_STALL_TIMEOUT` if such waits are expected. Under systemd
+the unit's `TimeoutStartSec` still bounds the whole run; under cron these deadlines are the only
+bound.
+
 ## The configuration file
 
 Whoever can change the configuration chooses the commands ArkHive runs (`RESTIC_BINARY`,
