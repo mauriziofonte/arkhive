@@ -47,6 +47,6 @@ final class CacheDirectory
         }
         $account = posix_getpwuid(posix_geteuid());
 
-        return is_array($account) && is_string($account['dir'] ?? null) && $account['dir'] !== '' ? $account['dir'] : null;
+        return is_array($account) && $account['dir'] !== '' ? $account['dir'] : null;
     }
 }
