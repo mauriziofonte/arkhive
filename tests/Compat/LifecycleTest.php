@@ -96,6 +96,34 @@ final class LifecycleTest extends CompatTestCase
         self::assertStringContainsString("restic {$version} at " . self::restic(), $doctor->output());
     }
 
+    /**
+     * env -i, or a wrapper that drops HOME: restic finds no cache directory and refuses to run unless
+     * ArkHive gives it one, under the home directory of the running user's account.
+     */
+    public function testWithoutHomeResticStillRuns(): void
+    {
+        $account = posix_getpwuid(posix_geteuid());
+        if (!is_array($account) || !str_starts_with((string) $account['dir'], '/') || !is_dir((string) $account['dir'])) {
+            self::markTestSkipped('the running user has no home directory in the password database');
+        }
+        $dir = $this->tempDir();
+        mkdir("{$dir}/www");
+        file_put_contents("{$dir}/www/index.html", "<h1>no HOME</h1>\n");
+        $config = self::writeConfig("{$dir}/arkhive.conf", [
+            'BACKUP_PATHS' => "{$dir}/www",
+            'RESTIC_REPOSITORY' => "{$dir}/repo",
+            'RESTIC_PASSWORD_FILE' => "{$dir}/password",
+            'RESTIC_BINARY' => self::restic(),
+        ]);
+        $noHome = ['HOME' => '', 'XDG_CACHE_HOME' => ''];
+
+        $init = self::arkhive(['init', '--config', $config], $noHome);
+        self::assertSame(ExitCode::SUCCESS, $init->exitCode, $init->output());
+        $backup = self::arkhive(['backup', '--config', $config], $noHome);
+        self::assertSame(ExitCode::SUCCESS, $backup->exitCode, $backup->output());
+        self::assertDirectoryExists(rtrim((string) $account['dir'], '/') . '/.cache/restic', 'the cache where HOME would have put it');
+    }
+
     public function testAWrongPasswordIsExit77AndAMissingRepository69(): void
     {
         $dir = $this->tempDir();

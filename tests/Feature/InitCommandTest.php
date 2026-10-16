@@ -7,6 +7,7 @@ namespace Tests\Feature;
 use Illuminate\Support\Facades\Artisan;
 use Mfonte\Arkhive\Application\Port\ProcessRunner;
 use Mfonte\Arkhive\Application\Process\Command;
+use Mfonte\Arkhive\Application\System\CacheDirectory;
 use Mfonte\Arkhive\Application\System\Dependencies;
 use Mfonte\Arkhive\Commands\InitCommand;
 use Mfonte\Arkhive\ExitCode;
@@ -69,13 +70,17 @@ final class InitCommandTest extends TestCase
             return [0, '{"message_type":"initialized","id":"ee41a650","repository":"/srv/restic-repo"}' . "\n", ''];
         };
 
+        $this->terminal->env = ['HOME' => "{$this->dir}/home"];
         self::assertSame(ExitCode::SUCCESS, Artisan::call('init', ['--config' => $this->writeConfig()]));
         $this->terminal->env = ['CACHE_DIRECTORY' => '/var/cache/arkhive'];
         self::assertSame(ExitCode::SUCCESS, Artisan::call('init', ['--config' => $this->writeConfig()]));
         $this->terminal->env = ['CACHE_DIRECTORY' => '/var/cache/arkhive', 'RESTIC_CACHE_DIR' => '/srv/restic-cache'];
         self::assertSame(ExitCode::SUCCESS, Artisan::call('init', ['--config' => $this->writeConfig()]));
+        $this->terminal->env = [];
+        self::assertSame(ExitCode::SUCCESS, Artisan::call('init', ['--config' => $this->writeConfig()]));
 
-        self::assertSame(['unset', '/var/cache/arkhive/restic', 'unset'], $seen);
+        $home = CacheDirectory::accountHome();
+        self::assertSame(['unset', '/var/cache/arkhive/restic', 'unset', $home === null || $home === '/' ? 'unset' : rtrim($home, '/') . '/.cache/restic'], $seen, 'without HOME, where HOME would have put it');
     }
 
     public function testGeneratesAMissingPasswordFile(): void

@@ -419,7 +419,7 @@ The latest backup of this host (`RESTIC_HOST`, or `--host`), its age, the snapsh
 
 Each `backup`, `maintain` and `drill` records how it ended in the state directory, replaced atomically: `<job>.json` for the last run on this host, and `<key>/<job>.json` for the runs on each repository, where `<key>` is the first 16 hex digits of the SHA-256 of the repository URL (as in the lock file name). `$STATE_DIRECTORY` under systemd (`StateDirectory=arkhive`), otherwise `/var/lib/arkhive` as root and `$XDG_STATE_HOME/arkhive` (or `~/.local/state/arkhive`) for other users. A state directory that cannot be written is a warning, never a failure of the run. The first read of a repository's records takes over the host records of 2.1.0-rc.1, which named no repository.
 
-Under systemd with `CacheDirectory=arkhive`, restic keeps its cache in `$CACHE_DIRECTORY/restic` (so a unit with `ProtectHome=` still has one); an exported `RESTIC_CACHE_DIR` wins, and elsewhere restic uses its own default (`~/.cache/restic`).
+Under systemd with `CacheDirectory=arkhive`, restic keeps its cache in `$CACHE_DIRECTORY/restic` (so a unit with `ProtectHome=` still has one); an exported `RESTIC_CACHE_DIR` wins, and elsewhere restic uses its own default (`~/.cache/restic`). With neither `HOME` nor `XDG_CACHE_HOME` set (`env -i`, a wrapper that clears the environment), restic would refuse to run; ArkHive then gives it `.cache/restic` under the home directory of the running user's account, and reports exit 78 with the fix when the account has none.
 
 ### init
 
