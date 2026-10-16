@@ -62,12 +62,5 @@ ArkHive 2 replaces the 1.x archive pipeline (`tar | gzip/xz | openssl` streamed 
 
 - The first backup after the repository lost data, before any check, ends with exit 0: restic trusts its index. Run `drill` daily and `maintain` weekly (docs/OPERATIONS.md).
 
-## [1.7.1] - 2026-09-26
-
-### Fixed
-
-- Restrict the remote `chmod` to the backup directory of the day.
-
 [Unreleased]: https://github.com/mauriziofonte/arkhive/compare/v2.0.0...HEAD
 [2.0.0]: https://github.com/mauriziofonte/arkhive/releases/tag/v2.0.0
-[1.7.1]: https://github.com/mauriziofonte/arkhive/releases/tag/v1.7.1

@@ -730,17 +730,11 @@ Then: `arkhive doctor` (it lists any removed key left), `arkhive init`, `arkhive
 
 A 1.x binary cannot upgrade itself to 2.0: 1.x `self-upgrade` downloads `builds/arkhive.phar` from the `main` branch, and `builds/` no longer exists there, so it fails without changing anything. Install 2.0 by downloading the PHAR as in [Install](#install) (over the 1.x file). From 2.x on, updates use `arkhive self-update`; crossing a future major version needs `arkhive self-update --allow-major`, and `self-update --check` says when the update is a new major.
 
-Keep a copy of the 1.x configuration before converting it: 2.0 refuses a file with 1.x keys, and 1.x does not understand 2.0 keys.
+Keep a copy of the 1.x binary and of the 1.x configuration before replacing them (`cp /usr/local/bin/arkhive /usr/local/bin/arkhive-1.x`): 2.0 refuses a file with 1.x keys, 1.x does not understand 2.0 keys, and 1.x is no longer published.
 
-### Rolling back to 1.7.1
+### Rolling back to 1.x
 
-From 2.x:
-
-```sh
-arkhive self-update v1.7.1 --allow-major
-```
-
-This installs the 1.7.1 release (verified like any update) and keeps the 2.x binary as `/usr/local/bin/arkhive.bak-<version>`. Put the 1.x configuration back. To return to 2.x later, download the PHAR again as in [Install](#install) (1.x has no `self-update`).
+Put the copies of the 1.x binary and configuration back; there is no 1.x release to download. To return to 2.x later, download the PHAR again as in [Install](#install) (1.x has no `self-update`).
 
 ### Old 1.x archives
 
