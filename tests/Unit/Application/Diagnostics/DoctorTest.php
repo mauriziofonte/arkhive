@@ -194,9 +194,22 @@ final class DoctorTest extends TestCase
 
         $checks = $this->diagnose($this->writeConfig());
 
-        self::assertSame(CheckStatus::Ok, $checks['restic']->status);
+        self::assertSame(CheckStatus::Info, $checks['restic']->status, 'a recommendation, not a warning');
         self::assertStringStartsWith('restic 0.12.1 at ', $checks['restic']->message);
         self::assertStringEndsWith('(no compression (repository format 1; format 2 needs restic 0.14.0 or newer); restores write sparse files in full; no restore progress)', $checks['restic']->message);
+        self::assertSame('restic before 0.17.0 works, but maintain and drill on a damaged repository can take minutes of retries and report less: prefer the static restic 0.19.x binary from https://github.com/restic/restic/releases (check it against SHA256SUMS, then set RESTIC_BINARY)', $checks['restic']->hint);
+    }
+
+    public function testACurrentResticIsOkWithoutARecommendation(): void
+    {
+        foreach (['0.17.0', '0.19.1'] as $version) {
+            $this->restic->version = "restic {$version} compiled with go1.24 on linux/amd64\n";
+            $checks = $this->diagnose($this->writeConfig());
+            self::assertSame(CheckStatus::Ok, $checks['restic']->status, $version);
+            self::assertNull($checks['restic']->hint, $version);
+        }
+        $this->restic->version = "restic 0.16.5 compiled with go1.22 on linux/amd64\n";
+        self::assertSame(CheckStatus::Info, $this->diagnose($this->writeConfig())['restic']->status);
     }
 
     public function testACompressionSettingThatAnOldResticIgnoresIsAWarning(): void
@@ -210,9 +223,9 @@ final class DoctorTest extends TestCase
         self::assertSame('Install restic 0.14.0 or newer, or remove RESTIC_COMPRESSION', $checks['restic']->hint);
 
         $this->restic->version = "restic 0.14.0 compiled with go1.19 on linux/amd64\n";
-        self::assertSame(CheckStatus::Ok, $this->diagnose($this->writeConfig(['RESTIC_COMPRESSION' => 'max']))['restic']->status);
+        self::assertSame(CheckStatus::Info, $this->diagnose($this->writeConfig(['RESTIC_COMPRESSION' => 'max']))['restic']->status);
         $this->restic->version = "restic 0.12.1 compiled with go1.18 on linux/amd64\n";
-        self::assertSame(CheckStatus::Ok, $this->diagnose($this->writeConfig(['RESTIC_COMPRESSION' => 'auto']))['restic']->status);
+        self::assertSame(CheckStatus::Info, $this->diagnose($this->writeConfig(['RESTIC_COMPRESSION' => 'auto']))['restic']->status);
     }
 
     public function testRemoved1xKeysAreListed(): void
@@ -341,6 +354,25 @@ final class DoctorTest extends TestCase
 
         $checks = $this->diagnose(null, new ResticSettings('sftp:backup@backup.example.com:/restic', '/nonexistent'));
         self::assertSame("{$this->dir}/bin/ssh, with this user's default keys (~/.ssh) and ssh_config", $checks['SSH']->message);
+    }
+
+    public function testAnSftpCommandThatDoesNotRunSshWarnsThatItGetsNoKeepalives(): void
+    {
+        $wrapper = "{$this->dir}/box-ssh";
+        file_put_contents($wrapper, "#!/bin/sh\nexec ssh -p 23 \"\$@\"\n");
+        chmod($wrapper, 0755);
+        $settings = static fn (string $command): ResticSettings => new ResticSettings('sftp:backup@backup.example.com:/restic', '/nonexistent', $command);
+
+        $checks = $this->diagnose(null, $settings("{$wrapper} -o BatchMode=yes backup@backup.example.com"));
+        self::assertSame(CheckStatus::Warning, $checks['SSH']->status);
+        self::assertSame("{$wrapper}, with this user's default keys (~/.ssh) and ssh_config; RESTIC_SFTP_COMMAND does not start with ssh, so ArkHive cannot add -o ServerAliveInterval=15 -o ServerAliveCountMax=4: a server that stops answering would hang the run", $checks['SSH']->message);
+        self::assertSame('Start RESTIC_SFTP_COMMAND with ssh, or pass -o ServerAliveInterval=15 -o ServerAliveCountMax=4 to the ssh your command runs', $checks['SSH']->hint);
+
+        $checks = $this->diagnose(null, $settings("{$wrapper} -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -o BatchMode=yes backup@backup.example.com"));
+        self::assertSame(CheckStatus::Ok, $checks['SSH']->status, 'a wrapper that passes them all on is fine');
+
+        $checks = $this->diagnose(null, $settings('ssh -p 23 backup@backup.example.com -s sftp'));
+        self::assertSame(CheckStatus::Ok, $checks['SSH']->status, 'ArkHive adds them to ssh');
     }
 
     public function testAnUnreachableRepositoryFails(): void

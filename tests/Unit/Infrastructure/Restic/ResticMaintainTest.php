@@ -6,13 +6,14 @@ namespace Tests\Unit\Infrastructure\Restic;
 
 use Mfonte\Arkhive\Domain\Configuration\ResticSettings;
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
+use Mfonte\Arkhive\Exceptions\DataException;
 use Mfonte\Arkhive\Infrastructure\Restic\Restic;
 use PHPUnit\Framework\TestCase;
 use Tests\Support\FakeProcessRunner;
 use Tests\Support\FakeRestic;
 
 /**
- * forget --prune, check and stats as run by maintain and status.
+ * forget, prune, check and stats as run by maintain and status.
  */
 final class ResticMaintainTest extends TestCase
 {
@@ -33,9 +34,28 @@ final class ResticMaintainTest extends TestCase
 
         $result = $this->restic->forget('web1.example.com', 'arkhive', 7, 4, 6);
 
-        self::assertSame(['forget', '--json', '--prune', '--host', 'web1.example.com', '--tag', 'arkhive', '--group-by', 'host', '--keep-daily', '7', '--keep-weekly', '4', '--keep-monthly', '6'], $this->fake->calls[0]);
+        self::assertSame(['forget', '--json', '--host', 'web1.example.com', '--tag', 'arkhive', '--group-by', 'host', '--keep-daily', '7', '--keep-weekly', '4', '--keep-monthly', '6'], $this->fake->calls[0]);
         self::assertCount(5, $result->removed);
+        self::assertNull($this->runner->commands[0]->timeout, 'forget waits for nothing but the lock');
+    }
+
+    public function testPruneRunsAloneWithoutATimeout(): void
+    {
+        $this->fake->answers['prune'] = [0, "done\n", ''];
+
+        $this->restic->prune();
+
+        self::assertSame([['prune']], $this->fake->calls);
         self::assertNull($this->runner->commands[0]->timeout, 'a prune may take hours');
+    }
+
+    public function testARefusedPruneIsADataError(): void
+    {
+        $this->fake->answers['prune'] = [1, '', FakeRestic::fixture('prune-missing-0.19.stderr')];
+
+        $this->expectException(DataException::class);
+        $this->expectExceptionMessage('Pruning the data no snapshot uses (restic prune) failed: 1 pack file(s) listed in the index are missing');
+        $this->restic->prune();
     }
 
     public function testAFailedForgetIsAnError(): void

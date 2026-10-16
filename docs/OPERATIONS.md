@@ -19,8 +19,10 @@ its [troubleshooting guide](https://restic.readthedocs.io/en/stable/077_troubles
 `restic repair packs <ids>` for damaged packs, `restic repair index` for missing ones, then a new
 `arkhive backup` (it uploads again whatever is still on the host, which can heal older snapshots),
 then `restic repair snapshots --forget`, then `arkhive maintain` to confirm. ArkHive never runs any of
-them on its own. When `forget --prune` refuses to run because packs are missing, `maintain` still
-runs the check so the report names everything wrong, and exits 65.
+them on its own. `maintain` runs both checks before the retention policy: on a damaged repository it
+removes no snapshot (an older one may hold the only intact copy of some data), reports the retention
+as not applied, and exits 65. When `prune` refuses to run on missing data after `forget`, the report
+still lists the snapshots `forget` removed.
 
 `restore` (and `ls`, `find`, `stats`) on missing data also exits 65 with the same hint, instead of 1.
 
@@ -103,8 +105,9 @@ with exit 77 and names the owner; the file opened must be the one found at the p
 
 restic keeps its own lock files in the repository (`locks/`), refreshed every few minutes while it
 runs and removed when it ends. A restic killed with `kill -9`, by the out-of-memory killer (prune
-and check need memory in proportion to the index) or by a crash leaves its lock behind, and restic
-never skips it: a backup's lock stops every `forget`, `prune` and `check`, a prune's lock stops
+and check need memory in proportion to the index) or by a crash leaves its lock behind, and so
+does a restic whose repository stopped answering (a server frozen mid-backup: the keepalives end the
+run, but the lock cannot be removed from a server that does not answer). restic never skips it: a backup's lock stops every `forget`, `prune` and `check`, a prune's lock stops
 everything, until someone runs `restic unlock`.
 
 When restic refuses to run on a lock, ArkHive looks at it. It calls the lock stale only when all of
@@ -117,8 +120,10 @@ these hold:
 
 Then the run fails at once with exit 75 instead of waiting `LOCK_WAIT`: "The restic repository is
 locked by PID 25983 on host.example.com by root ...: a stale lock from a dead process on this host
-(PID 25983 no longer exists)", with the command to remove it. Any other lock is waited for, up to
-`LOCK_WAIT`, as before.
+(PID 25983 no longer exists)", with what it blocks (a backup's lock: every `maintain`; an
+exclusive one: everything) and the command to remove it. Any other lock is waited for, up to
+`LOCK_WAIT`, as before. A failed `maintain` also makes `status` exit 1 until a `maintain` passes,
+so a monitor on `status` keeps reporting it between the weekly runs.
 
 ArkHive does not remove the lock unless `UNLOCK_STALE=true`. With it, wherever ArkHive would wait
 for a lock (when a command opens the repository, and during `backup`, `maintain` and `restore`) it
@@ -159,7 +164,9 @@ The repository password is never in the configuration: `RESTIC_PASSWORD_FILE` na
 must be private as well, with no grace period (exit 78, an invalid configuration; 77 for
 `--password-file`). It must be a regular file (not a symbolic link) owned by the running user, with
 no permission for group or others (`chmod 600`), in a directory that group or others cannot write
-(a sticky directory such as `/tmp` is accepted: only the owner can replace a file there). Whoever
+(a sticky directory such as `/tmp` is accepted: only the owner can replace a file there) and that
+belongs to the running user or root (the owner of the directory can replace or remove the file
+whatever its mode). Whoever
 can replace the file between the check and restic reading it chooses the password that
 `arkhive init` gives a new repository.
 

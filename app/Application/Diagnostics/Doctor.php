@@ -32,6 +32,7 @@ use Mfonte\Arkhive\Domain\Execution\LogTarget;
 use Mfonte\Arkhive\Domain\Execution\SyslogFacility;
 use Mfonte\Arkhive\Domain\Repository\RepositoryKey;
 use Mfonte\Arkhive\Domain\Repository\ResticCapabilities;
+use Mfonte\Arkhive\Domain\Repository\SftpCommand;
 use Mfonte\Arkhive\Domain\Repository\Snapshot;
 use Mfonte\Arkhive\Domain\Repository\Snapshots;
 use Mfonte\Arkhive\Domain\Shared\Bytes;
@@ -297,6 +298,13 @@ final class Doctor
             $compression = $this->config?->restic->compression;
             if ($compression !== null && $compression !== 'auto' && !$capabilities->compression()) {
                 $this->add('restic', CheckStatus::Warning, "{$found}: RESTIC_COMPRESSION={$compression} has no effect", 'Install restic ' . ResticCapabilities::REPOSITORY_V2 . ' or newer, or remove RESTIC_COMPRESSION');
+            } elseif (!$capabilities->recommended()) {
+                $this->add(
+                    'restic',
+                    CheckStatus::Info,
+                    $found,
+                    'restic before ' . ResticCapabilities::RECOMMENDED . ' works, but maintain and drill on a damaged repository can take minutes of retries and report less: prefer the static restic ' . ResticCapabilities::RECOMMENDED_LINE . ' binary from https://github.com/restic/restic/releases (check it against SHA256SUMS, then set RESTIC_BINARY)',
+                );
             } else {
                 $this->add('restic', CheckStatus::Ok, $found);
             }
@@ -347,7 +355,7 @@ final class Doctor
         }
         $key = self::identityFile($words);
         if ($key === null) {
-            $this->add('SSH', CheckStatus::Ok, "{$found}, with this user's default keys (~/.ssh) and ssh_config");
+            $this->sshReady("{$found}, with this user's default keys (~/.ssh) and ssh_config");
 
             return;
         }
@@ -368,7 +376,29 @@ final class Doctor
 
             return;
         }
-        $this->add('SSH', CheckStatus::Ok, "{$found} with the key {$key}");
+        $this->sshReady("{$found} with the key {$key}");
+    }
+
+    /**
+     * ssh is usable; a RESTIC_SFTP_COMMAND that does not run ssh itself (a wrapper) gets no keepalives
+     * from ArkHive, so a server that stops answering would hang the run.
+     */
+    private function sshReady(string $message): void
+    {
+        $command = $this->settings?->sftpCommand;
+        $missing = $command === null || SftpCommand::runsSsh($command) ? [] : SftpCommand::missingOptions($command);
+        if ($missing === []) {
+            $this->add('SSH', CheckStatus::Ok, $message);
+
+            return;
+        }
+        $options = implode(' ', array_map(static fn (string $name): string => "-o {$name}=" . SftpCommand::OPTIONS[$name], $missing));
+        $this->add(
+            'SSH',
+            CheckStatus::Warning,
+            "{$message}; RESTIC_SFTP_COMMAND does not start with ssh, so ArkHive cannot add {$options}: a server that stops answering would hang the run",
+            "Start RESTIC_SFTP_COMMAND with ssh, or pass {$options} to the ssh your command runs",
+        );
     }
 
     /**

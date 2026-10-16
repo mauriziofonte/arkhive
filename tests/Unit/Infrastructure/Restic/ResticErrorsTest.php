@@ -8,6 +8,7 @@ use Mfonte\Arkhive\Application\Process\Command;
 use Mfonte\Arkhive\Application\Process\ProcessResult;
 use Mfonte\Arkhive\Domain\Configuration\ResticSettings;
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
+use Mfonte\Arkhive\Exceptions\ConfigException;
 use Mfonte\Arkhive\Exceptions\DataException;
 use Mfonte\Arkhive\Exceptions\LockedException;
 use Mfonte\Arkhive\Exceptions\PermissionException;
@@ -121,6 +122,7 @@ final class ResticErrorsTest extends TestCase
         yield 'wrong password, JSON' => [12, null, '{"message_type":"exit_error","code":12,"message":"Fatal: wrong password or no key found"}' . "\n", PermissionException::class, ExitCode::NO_PERMISSION, 'Wrong password for the restic repository', false];
         yield 'missing packs, JSON 0.19' => [1, null, FakeRestic::fixture('forget-missing-0.19.stderr'), DataException::class, ExitCode::DATA_ERROR, 'restic backup failed: 3 pack file(s) listed in the index are missing', false];
         yield 'tree not found, JSON' => [1, null, '{"message_type":"exit_error","code":1,"message":"Fatal: tree 4b2a17c9 not found in repository"}' . "\n", DataException::class, ExitCode::DATA_ERROR, 'should hold is missing (pack files deleted or lost on the server): Fatal: tree 4b2a17c9 not found in repository', false];
+        yield 'no cache directory (no HOME), 0.19' => [1, null, FakeRestic::fixture('no-cache-directory-0.19.stderr'), ConfigException::class, ExitCode::CONFIG, 'restic backup failed: restic has no cache directory (neither HOME nor XDG_CACHE_HOME is set', false];
         yield 'unknown failure, JSON repeated' => [1, null, str_repeat('{"message_type":"error","error":{"message":"read /srv/www/a: input/output error"},"during":"archival","item":"/srv/www/a"}' . "\n", 3) . '{"message_type":"exit_error","code":1,"message":"Fatal: unable to save snapshot: boom"}' . "\n", ArkhiveException::class, ExitCode::FAILURE, 'restic backup failed (restic exit 1): read /srv/www/a: input/output error | Fatal: unable to save snapshot: boom', false];
     }
 

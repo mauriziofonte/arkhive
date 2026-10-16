@@ -208,7 +208,10 @@ final class ResticTest extends TestCase
         ], $command->env);
 
         $custom = new Restic(self::settings(sftpCommand: 'ssh -i /root/.ssh/arkhive_backup -p 23 backup-user@backup.example.com -s sftp'), '/usr/bin/restic', new FakeProcessRunner());
-        self::assertSame(['/usr/bin/restic', '--option', 'sftp.command=ssh -i /root/.ssh/arkhive_backup -p 23 backup-user@backup.example.com -s sftp', 'cat', 'config'], $custom->command(['cat', 'config'])->argv);
+        self::assertSame(['/usr/bin/restic', '--option', 'sftp.command=ssh -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -o BatchMode=yes -i /root/.ssh/arkhive_backup -p 23 backup-user@backup.example.com -s sftp', 'cat', 'config'], $custom->command(['cat', 'config'])->argv, 'the keepalives are added to a custom command too');
+
+        $wrapper = new Restic(self::settings(sftpCommand: '/usr/local/bin/box-ssh backup-user@backup.example.com'), '/usr/bin/restic', new FakeProcessRunner());
+        self::assertSame(['/usr/bin/restic', '--option', 'sftp.command=/usr/local/bin/box-ssh backup-user@backup.example.com', 'cat', 'config'], $wrapper->command(['cat', 'config'])->argv, 'a wrapper is left as written');
 
         $local = new Restic(self::settings('/srv/restic-repo'), '/usr/bin/restic', new FakeProcessRunner());
         self::assertSame(['/usr/bin/restic', 'cat', 'config'], $local->command(['cat', 'config'])->argv);
@@ -454,7 +457,7 @@ final class ResticTest extends TestCase
             self::fail('expected a failure');
         } catch (LockedException $e) {
             self::assertSame('The restic repository is locked by PID 25983 on host.example.com by root (UID 0, GID 0), created at 2026-10-12 13:58:02 (1.554904747s ago): a stale lock from a dead process on this host (PID 25983 no longer exists)', $e->getMessage());
-            self::assertStringStartsWith("Nothing will release it. Remove it with: RESTIC_PASSWORD_FILE='/etc/arkhive/restic-password' restic -r '/srv/restic-repo' unlock", (string) $e->hint());
+            self::assertStringStartsWith("Its run ended without removing it (killed, or the repository stopped answering), and nothing will release it: backups still run alongside it, but every maintain (forget, prune, check) stops on it until it is removed. Remove it with: RESTIC_PASSWORD_FILE='/etc/arkhive/restic-password' restic -r '/srv/restic-repo' unlock", (string) $e->hint());
             self::assertSame(ExitCode::TEMPORARY, $e->exitCode());
             self::assertFalse($e->transient());
             self::assertNull($e->unlock());

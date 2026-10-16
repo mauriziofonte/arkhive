@@ -37,6 +37,27 @@ final class RepositoryHealth
     }
 
     /**
+     * The last maintain and the last drill, each when it failed (exit 3 is done, with warnings):
+     * until it runs again and passes, the repository has not been verified as these jobs promise.
+     *
+     * @param array<string, JobState> $states by job
+     *
+     * @return list<RunRecord>
+     */
+    public static function failedChecks(array $states): array
+    {
+        $failed = [];
+        foreach (['maintain', 'drill'] as $job) {
+            $last = $states[$job]->last ?? null;
+            if ($last !== null && !$last->succeeded()) {
+                $failed[] = $last;
+            }
+        }
+
+        return $failed;
+    }
+
+    /**
      * The warning a backup ends with while the repository is known to be damaged.
      */
     public static function warning(RunRecord $damage, \DateTimeZone $zone): string

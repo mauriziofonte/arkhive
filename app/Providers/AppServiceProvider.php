@@ -64,12 +64,12 @@ class AppServiceProvider extends ServiceProvider
             heartbeat: static fn () => $app->make(ServiceStatus::class)->heartbeat(),
         ));
         $this->app->singleton(BinaryFinder::class, static fn (): BinaryFinder => BinaryFinder::fromEnvironment());
-        // restic's cache goes in systemd's CacheDirectory= when the unit has one
+        // restic's cache goes in systemd's CacheDirectory= when the unit has one, under the account's home without HOME
         $this->app->bind(ServiceUnits::class, Systemctl::class);
         $this->app->bind(SnapshotStoreFactory::class, static fn ($app): SnapshotStoreFactory => new ResticFactory(
             $app->make(ProcessRunner::class),
             $app->make(Dependencies::class),
-            CacheDirectory::restic($app->make(Terminal::class)->environment()),
+            CacheDirectory::restic($app->make(Terminal::class)->environment(), CacheDirectory::accountHome()),
             $app->make(StaleLocks::class),
         ));
         // a restic lock left by a dead process on this host, told apart from one a live run holds

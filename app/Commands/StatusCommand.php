@@ -8,6 +8,7 @@ use Mfonte\Arkhive\Application\Run\RunJournal;
 use Mfonte\Arkhive\Domain\Repository\RepositoryKey;
 use Mfonte\Arkhive\Domain\Repository\Snapshot;
 use Mfonte\Arkhive\Domain\Repository\Snapshots;
+use Mfonte\Arkhive\Domain\Run\RepositoryHealth;
 use Mfonte\Arkhive\Domain\Run\SnapshotContinuity;
 use Mfonte\Arkhive\Domain\Shared\Bytes;
 use Mfonte\Arkhive\Exceptions\UsageException;
@@ -15,9 +16,11 @@ use Mfonte\Arkhive\ExitCode;
 
 /**
  * spec §6 status: latest snapshot and its age, snapshot count, repository size, and the last run of
- * each job on this repository (from the state directory). With --max-age it is a monitoring probe:
- * exit 1 when the latest backup is older than that or missing. Exit 65 when the snapshot of the last
- * successful backup recorded here is gone from the repository (SnapshotContinuity).
+ * each job on this repository (from the state directory). It is a monitoring probe: exit 65 when the
+ * snapshot of the last successful backup recorded here is gone from the repository
+ * (SnapshotContinuity) or the last maintain or drill found damage no maintain has cleared since;
+ * exit 1 when the last maintain or drill failed, or with --max-age when the latest backup is older
+ * than that or missing.
  */
 final class StatusCommand extends RepositoryCommand
 {
@@ -46,6 +49,7 @@ final class StatusCommand extends RepositoryCommand
         $runs = $this->laravel->make(RunJournal::class)->states($key);
         $continuity = SnapshotContinuity::check($runs['backup']->lastSuccess ?? null, $key, $all);
         $age = $latest === null ? null : round(max(0, $now->getTimestamp() - $latest->time->getTimestamp()) / 3600, 1);
+        $failed = RepositoryHealth::failedChecks($runs);
 
         $status = [
             'repository' => $settings->repository,
@@ -63,6 +67,7 @@ final class StatusCommand extends RepositoryCommand
             'uncompressed_size' => $stats->uncompressedBytes,
             'runs' => array_map(static fn ($state): array => $state->toArray(), $runs),
             'continuity' => $continuity->toArray(),
+            'failed_jobs' => array_map(static fn ($run): string => $run->job, $failed),
         ];
         if ((bool) $this->option('json')) {
             $this->result(json_encode($status, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION));
@@ -77,9 +82,31 @@ final class StatusCommand extends RepositoryCommand
 
             return ExitCode::DATA_ERROR;
         }
+        $damage = RepositoryHealth::unresolvedDataError($runs);
+        if ($damage !== null) {
+            $this->log->error(sprintf('The last %s (%s) found the repository damaged and no maintain has passed since', $damage->job, $damage->ended->setTimezone($now->getTimezone())->format('Y-m-d H:i T')), ['job' => $damage->job, 'exit_code' => $damage->exitCode]);
+            $this->log->notice('Hint: arkhive maintain names the repair steps; ArkHive never repairs a repository automatically');
 
+            return ExitCode::DATA_ERROR;
+        }
+        $exit = ExitCode::SUCCESS;
+        foreach ($failed as $run) {
+            $this->log->error("The last {$run->job} failed: " . $run->describe($now->getTimezone()), ['job' => $run->job, 'exit_code' => $run->exitCode]);
+            $this->log->notice("Hint: its log says why (journalctl -u arkhive-{$run->job}, or the cron mail); status passes again once a {$run->job} succeeds");
+            $exit = ExitCode::FAILURE;
+        }
+
+        return $this->checkAge($maxAge, $latest, $age, $host) ?? $exit;
+    }
+
+    /**
+     * --max-age: exit 1 when the latest snapshot is missing or older than that; null when it passes
+     * or was not asked for.
+     */
+    private function checkAge(?float $maxAge, ?Snapshot $latest, ?float $age, ?string $host): ?int
+    {
         if ($maxAge === null) {
-            return ExitCode::SUCCESS;
+            return null;
         }
         if ($latest === null) {
             $this->log->error('No snapshot' . ($host === null ? '' : " of {$host}") . ' in the repository', ['max_age' => $maxAge]);
@@ -92,7 +119,7 @@ final class StatusCommand extends RepositoryCommand
             return ExitCode::FAILURE;
         }
 
-        return ExitCode::SUCCESS;
+        return null;
     }
 
     private function maxAge(): ?float

@@ -64,7 +64,7 @@ final class StaleLocks
         }
         $message = $locked->getMessage() . ": a stale lock from a dead process on this host (PID {$conflict->pid} no longer exists)";
         if (!$settings->unlockStale) {
-            return LockedException::stale($message, "Nothing will release it. Remove it with: {$command} (restic removes only the locks it finds stale), or set UNLOCK_STALE=yes to let ArkHive do so; ArkHive never removes a lock unless told to");
+            return LockedException::stale($message, self::blocks($conflict) . " Remove it with: {$command} (restic removes only the locks it finds stale), or set UNLOCK_STALE=yes to let ArkHive do so; ArkHive never removes a lock unless told to");
         }
         $blocker = $this->blocker($locks);
         if ($blocker !== null) {
@@ -72,6 +72,19 @@ final class StaleLocks
         }
 
         return LockedException::stale($message, "Remove it with: {$command}", $unlock);
+    }
+
+    /**
+     * What a lock left behind does: a run that ended without removing it (killed, or the repository
+     * stopped answering, as when the server froze) leaves it for good.
+     */
+    private static function blocks(LockConflict $conflict): string
+    {
+        $effect = $conflict->exclusive
+            ? 'no backup, restore or maintain can run until it is removed.'
+            : 'backups still run alongside it, but every maintain (forget, prune, check) stops on it until it is removed.';
+
+        return 'Its run ended without removing it (killed, or the repository stopped answering), and nothing will release it: ' . $effect;
     }
 
     /**

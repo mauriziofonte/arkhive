@@ -54,6 +54,16 @@ final class RepositoryHealthTest extends TestCase
         self::assertNull(RepositoryHealth::unresolvedDataError(self::states([$failed, $drill, self::record('maintain', 0, '2026-10-13 04:00')])), 'repaired and checked');
     }
 
+    public function testFailedChecksAreTheLastMaintainAndDrillThatFailed(): void
+    {
+        self::assertSame([], RepositoryHealth::failedChecks([]));
+        $maintain = self::record('maintain', 75, '2026-10-11 04:00');
+        $drill = self::record('drill', 65, '2026-10-11 05:00');
+        self::assertSame([$maintain, $drill], RepositoryHealth::failedChecks(self::states([self::record('backup', 1, '2026-10-11 03:00'), $maintain, $drill])), 'backups are not checks');
+        self::assertSame([$drill], RepositoryHealth::failedChecks(self::states([$maintain, $drill, self::record('maintain', 3, '2026-10-12 04:00')])), 'exit 3 is done, with warnings');
+        self::assertSame([], RepositoryHealth::failedChecks(self::states([$maintain, $drill, self::record('maintain', 0, '2026-10-12 04:00'), self::record('drill', 0, '2026-10-12 05:00')])));
+    }
+
     public function testThePassingDrillDoesNotClearAFailedCheck(): void
     {
         $failed = self::record('maintain', 65, '2026-10-11 04:00');

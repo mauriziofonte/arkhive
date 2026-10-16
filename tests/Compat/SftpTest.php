@@ -8,9 +8,9 @@ use Mfonte\Arkhive\ExitCode;
 use RuntimeException;
 
 /**
- * An sftp: repository on a throw-away local sshd, reached through restic's own ssh command: the
- * keepalive options reach ssh on every restic release (as sftp.args from 0.16.1, as a whole
- * sftp.command before). An `ssh` wrapper first in PATH records what restic runs.
+ * An sftp: repository on a throw-away local sshd, reached through restic's own ssh command or a
+ * RESTIC_SFTP_COMMAND: the keepalive options reach ssh on every restic release (as sftp.args from
+ * 0.16.1, as a whole sftp.command before, added to a custom command). An `ssh` wrapper first in PATH records what restic runs.
  */
 final class SftpTest extends CompatTestCase
 {
@@ -26,6 +26,22 @@ final class SftpTest extends CompatTestCase
     }
 
     public function testKeepalivesReachSshOnEveryRelease(): void
+    {
+        $this->assertKeepalivesReachSsh(null);
+    }
+
+    /**
+     * RESTIC_SFTP_COMMAND in the README's form (port and key, no -o): ArkHive adds the options.
+     */
+    public function testKeepalivesReachACustomSftpCommand(): void
+    {
+        $this->assertKeepalivesReachSsh(static fn (string $user, int $port): string => "ssh -p {$port} {$user}@127.0.0.1 -s sftp");
+    }
+
+    /**
+     * @param (callable(string, int): string)|null $sftpCommand
+     */
+    private function assertKeepalivesReachSsh(?callable $sftpCommand): void
     {
         $restic = self::restic();
         $sshd = self::which('sshd', ['/usr/sbin/sshd', '/usr/local/sbin/sshd']);
@@ -53,6 +69,7 @@ final class SftpTest extends CompatTestCase
             'RESTIC_REPOSITORY' => "sftp://{$user}@127.0.0.1:{$port}/{$dir}/repo",
             'RESTIC_PASSWORD_FILE' => "{$dir}/password",
             'RESTIC_BINARY' => $restic,
+            ...($sftpCommand === null ? [] : ['RESTIC_SFTP_COMMAND' => $sftpCommand($user, $port)]),
         ]);
 
         $init = self::arkhive(['init', '--config', $config], $env);

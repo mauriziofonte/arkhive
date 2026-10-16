@@ -17,6 +17,12 @@ final readonly class ResticCapabilities
     /** repository format 2 (compression) */
     public const REPOSITORY_V2 = '0.14.0';
 
+    /** older releases work, but `doctor` recommends the static binary of a current release */
+    public const RECOMMENDED = '0.17.0';
+
+    /** the release line `doctor` recommends, as published at https://github.com/restic/restic/releases */
+    public const RECOMMENDED_LINE = '0.19.x';
+
     public function __construct(public ResticVersion $version)
     {
     }
@@ -86,6 +92,15 @@ final readonly class ResticCapabilities
     public function dedicatedExitCodes(): bool
     {
         return $this->version->atLeast('0.17.0');
+    }
+
+    /**
+     * At least RECOMMENDED: dedicated exit codes, sftp.args, JSON restores, and faster, clearer
+     * failures on a damaged repository than the restic of Debian 11/12 and Ubuntu 22.04.
+     */
+    public function recommended(): bool
+    {
+        return $this->version->atLeast(self::RECOMMENDED);
     }
 
     /** `check --json` summary */

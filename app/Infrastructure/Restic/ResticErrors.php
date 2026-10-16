@@ -8,6 +8,7 @@ use Mfonte\Arkhive\Application\Process\ProcessResult;
 use Mfonte\Arkhive\Domain\Configuration\ResticSettings;
 use Mfonte\Arkhive\Domain\Repository\RepairAdvice;
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
+use Mfonte\Arkhive\Exceptions\ConfigException;
 use Mfonte\Arkhive\Exceptions\DataException;
 use Mfonte\Arkhive\Exceptions\IoException;
 use Mfonte\Arkhive\Exceptions\LockedException;
@@ -67,6 +68,12 @@ final class ResticErrors
             return new UnavailableException(
                 "This restic cannot open the repository {$settings->repository}: it uses a newer repository format",
                 hint: 'Repository format 2 (compression) needs restic 0.14.0 or newer: install it from your distribution or the static binary from https://github.com/restic/restic/releases (then set RESTIC_BINARY)',
+            );
+        }
+        if (str_contains($stderr, 'unable to locate cache directory')) {
+            return new ConfigException(
+                "{$what} failed: restic has no cache directory (neither HOME nor XDG_CACHE_HOME is set, and the running user's account has no home directory)",
+                hint: 'Set HOME, or RESTIC_CACHE_DIR to a directory this user can write; the systemd units from arkhive schedule set CacheDirectory= for this',
             );
         }
         if (stripos($stderr, 'no space left on device') !== false) {

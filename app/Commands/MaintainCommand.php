@@ -20,7 +20,7 @@ final class MaintainCommand extends ConfiguredCommand
     protected $signature = 'maintain
         {--json : Print the result as JSON on stdout}';
 
-    protected $description = 'Apply the retention policy (forget --prune), then check the repository and read back a subset of its data';
+    protected $description = 'Check the repository and read back a subset of its data, then apply the retention policy (forget, prune)';
 
     #[\Override]
     protected function recordedJob(): string
@@ -90,8 +90,8 @@ final class MaintainCommand extends ConfiguredCommand
             [
                 ...$this->commonFacts($config),
                 'Policy' => sprintf('%d daily, %d weekly, %d monthly', $config->keepDaily, $config->keepWeekly, $config->keepMonthly),
-                'Snapshots' => sprintf('%d kept, %d removed', count($report->forget->kept), count($report->forget->removed)),
-                ...($report->forgetError === null ? [] : ['Retention' => 'not applied: ' . $report->forgetError]),
+                'Snapshots' => $report->forget === null ? 'none removed' : sprintf('%d kept, %d removed', count($report->forget->kept), count($report->forget->removed)),
+                ...($report->retentionError() === null ? [] : ['Retention' => 'not applied: ' . $report->retentionError()]),
                 'Check' => $report->structure->describe(),
                 'Data read back' => $report->data === null ? 'skipped (the structure check failed)' : "{$report->subset}: {$report->data->describe()}",
                 'Repository size' => $report->stats === null ? 'unknown' : Bytes::format($report->stats->rawBytes),

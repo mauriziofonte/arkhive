@@ -307,9 +307,13 @@ final class OperationsTest extends E2eTestCase
         file_put_contents("{$this->tree}/data/third.txt", "third run\n");
         $this->backup($config);
 
+        $before = array_column(self::snapshots($repository, null), 0);
+        self::assertCount(3, $before);
         $maintain = self::arkhive(['maintain', '--config', $config], $this->runEnv());
         self::assertSame(ExitCode::DATA_ERROR, $maintain->exitCode, $maintain->output());
-        self::assertMatchesRegularExpression('/error The retention policy was not applied: .*pack file\(s\) listed in the index are missing/', $maintain->stderr);
+        self::assertStringContainsString('warning The retention policy was not applied: the repository check found errors, so no snapshot was removed', $maintain->stderr);
+        self::assertMatchesRegularExpression('/error The repository check found errors: .*pack file\(s\) listed in the index are missing/', $maintain->stderr);
+        self::assertSame($before, array_column(self::snapshots($repository, null), 0), 'a damaged repository keeps every snapshot (3 same-day backups, 1 daily kept otherwise)');
         self::assertStringContainsString('restic repair index, then arkhive backup', $maintain->stderr);
         self::assertStringNotContainsString('"message_type"', $maintain->stderr, 'no raw restic JSON');
         $report = $this->json(['maintain'], ExitCode::DATA_ERROR, $config);
@@ -354,7 +358,14 @@ final class OperationsTest extends E2eTestCase
 
         $backup = self::arkhive(['backup', '--config', $config], $this->runEnv());
         self::assertSame(ExitCode::WARNING, $backup->exitCode, 'the failed drill stands until a maintain passes: ' . $backup->output());
-        self::assertSame('ok', $this->json(['status'], 0, $config)['continuity']['status'], 'a new backup starts a new series');
+        $status = $this->json(['status'], ExitCode::DATA_ERROR, $config);
+        self::assertSame('ok', $status['continuity']['status'], 'a new backup starts a new series');
+        self::assertSame(['drill'], $status['failed_jobs'], 'the damage the drill found stands until a maintain passes');
+
+        self::assertTrue($this->json(['maintain'], 0, $config)['healthy']);
+        self::assertSame(['drill'], $this->json(['status'], ExitCode::FAILURE, $config)['failed_jobs'], 'the drill itself has not passed again yet');
+        self::assertTrue($this->json(['drill'], 0, $config)['passed']);
+        self::assertSame([], $this->json(['status'], 0, $config)['failed_jobs']);
     }
 
     public function testALockOfAResticKilledOnThisHostIsNamedAndRemovedOnlyWithUnlockStale(): void
