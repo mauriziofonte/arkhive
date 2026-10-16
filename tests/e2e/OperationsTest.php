@@ -307,13 +307,13 @@ final class OperationsTest extends E2eTestCase
         file_put_contents("{$this->tree}/data/third.txt", "third run\n");
         $this->backup($config);
 
-        $before = self::snapshots($repository, null);
+        $before = array_column(self::snapshots($repository, null), 0);
         self::assertCount(3, $before);
         $maintain = self::arkhive(['maintain', '--config', $config], $this->runEnv());
         self::assertSame(ExitCode::DATA_ERROR, $maintain->exitCode, $maintain->output());
         self::assertStringContainsString('warning The retention policy was not applied: the repository check found errors, so no snapshot was removed', $maintain->stderr);
         self::assertMatchesRegularExpression('/error The repository check found errors: .*pack file\(s\) listed in the index are missing/', $maintain->stderr);
-        self::assertSame($before, self::snapshots($repository, null), 'a damaged repository keeps every snapshot (3 same-day backups, 1 daily kept otherwise)');
+        self::assertSame($before, array_column(self::snapshots($repository, null), 0), 'a damaged repository keeps every snapshot (3 same-day backups, 1 daily kept otherwise)');
         self::assertStringContainsString('restic repair index, then arkhive backup', $maintain->stderr);
         self::assertStringNotContainsString('"message_type"', $maintain->stderr, 'no raw restic JSON');
         $report = $this->json(['maintain'], ExitCode::DATA_ERROR, $config);
