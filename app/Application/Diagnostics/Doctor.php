@@ -298,6 +298,13 @@ final class Doctor
             $compression = $this->config?->restic->compression;
             if ($compression !== null && $compression !== 'auto' && !$capabilities->compression()) {
                 $this->add('restic', CheckStatus::Warning, "{$found}: RESTIC_COMPRESSION={$compression} has no effect", 'Install restic ' . ResticCapabilities::REPOSITORY_V2 . ' or newer, or remove RESTIC_COMPRESSION');
+            } elseif (!$capabilities->recommended()) {
+                $this->add(
+                    'restic',
+                    CheckStatus::Info,
+                    $found,
+                    'restic before ' . ResticCapabilities::RECOMMENDED . ' works, but maintain and drill on a damaged repository can take minutes of retries and report less: prefer the static restic ' . ResticCapabilities::RECOMMENDED_LINE . ' binary from https://github.com/restic/restic/releases (check it against SHA256SUMS, then set RESTIC_BINARY)',
+                );
             } else {
                 $this->add('restic', CheckStatus::Ok, $found);
             }
