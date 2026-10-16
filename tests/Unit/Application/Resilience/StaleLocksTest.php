@@ -74,11 +74,19 @@ final class StaleLocksTest extends TestCase
 
         self::assertNotNull($stale);
         self::assertSame(self::MESSAGE . ': a stale lock from a dead process on this host (PID 25983 no longer exists)', $stale->getMessage());
-        self::assertSame('Nothing will release it. Remove it with: ' . self::COMMAND . ' (restic removes only the locks it finds stale), or set UNLOCK_STALE=yes to let ArkHive do so; ArkHive never removes a lock unless told to', $stale->hint());
+        self::assertSame('Its run ended without removing it (killed, or the repository stopped answering), and nothing will release it: backups still run alongside it, but every maintain (forget, prune, check) stops on it until it is removed. Remove it with: ' . self::COMMAND . ' (restic removes only the locks it finds stale), or set UNLOCK_STALE=yes to let ArkHive do so; ArkHive never removes a lock unless told to', $stale->hint());
         self::assertSame(ExitCode::TEMPORARY, $stale->exitCode());
         self::assertFalse($stale->transient(), 'nothing will release it: waiting LOCK_WAIT is pointless');
         self::assertNull($stale->unlock(), 'never removed unless UNLOCK_STALE is set');
         self::assertSame(0, $this->listed);
+    }
+
+    public function testAnExclusiveLockLeftBehindStopsBackupsToo(): void
+    {
+        $stale = $this->examine(stderr: str_replace('already locked by', 'already locked exclusively by', self::STDERR));
+
+        self::assertNotNull($stale);
+        self::assertStringStartsWith('Its run ended without removing it (killed, or the repository stopped answering), and nothing will release it: no backup, restore or maintain can run until it is removed. Remove it with: ' . self::COMMAND, (string) $stale->hint());
     }
 
     public function testAZombieIsDeadButResticUnlockWouldKeepItsLock(): void

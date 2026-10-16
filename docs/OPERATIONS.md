@@ -105,8 +105,9 @@ with exit 77 and names the owner; the file opened must be the one found at the p
 
 restic keeps its own lock files in the repository (`locks/`), refreshed every few minutes while it
 runs and removed when it ends. A restic killed with `kill -9`, by the out-of-memory killer (prune
-and check need memory in proportion to the index) or by a crash leaves its lock behind, and restic
-never skips it: a backup's lock stops every `forget`, `prune` and `check`, a prune's lock stops
+and check need memory in proportion to the index) or by a crash leaves its lock behind, and so
+does a restic whose repository stopped answering (a server frozen mid-backup: the keepalives end the
+run, but the lock cannot be removed from a server that does not answer). restic never skips it: a backup's lock stops every `forget`, `prune` and `check`, a prune's lock stops
 everything, until someone runs `restic unlock`.
 
 When restic refuses to run on a lock, ArkHive looks at it. It calls the lock stale only when all of
@@ -119,8 +120,10 @@ these hold:
 
 Then the run fails at once with exit 75 instead of waiting `LOCK_WAIT`: "The restic repository is
 locked by PID 25983 on host.example.com by root ...: a stale lock from a dead process on this host
-(PID 25983 no longer exists)", with the command to remove it. Any other lock is waited for, up to
-`LOCK_WAIT`, as before.
+(PID 25983 no longer exists)", with what it blocks (a backup's lock: every `maintain`; an
+exclusive one: everything) and the command to remove it. Any other lock is waited for, up to
+`LOCK_WAIT`, as before. A failed `maintain` also makes `status` exit 1 until a `maintain` passes,
+so a monitor on `status` keeps reporting it between the weekly runs.
 
 ArkHive does not remove the lock unless `UNLOCK_STALE=true`. With it, wherever ArkHive would wait
 for a lock (when a command opens the repository, and during `backup`, `maintain` and `restore`) it

@@ -205,7 +205,7 @@ final class MaintainCommandTest extends TestCase
 
         $log = $this->logOutput();
         self::assertStringContainsString('error The restic repository is locked by PID 25983 on host.example.com by root (UID 0, GID 0), created at 2026-10-12 13:58:02 (1.554904747s ago): a stale lock from a dead process on this host (PID 25983 no longer exists)', $log);
-        self::assertStringContainsString("notice Nothing will release it. Remove it with: RESTIC_PASSWORD_FILE='{$this->dir}/password' restic -r '/srv/restic-repo' unlock (restic removes only the locks it finds stale), or set UNLOCK_STALE=yes", $log);
+        self::assertStringContainsString("notice Its run ended without removing it (killed, or the repository stopped answering), and nothing will release it: backups still run alongside it, but every maintain (forget, prune, check) stops on it until it is removed. Remove it with: RESTIC_PASSWORD_FILE='{$this->dir}/password' restic -r '/srv/restic-repo' unlock (restic removes only the locks it finds stale), or set UNLOCK_STALE=yes", $log);
         self::assertSame(0.0, $this->pause->total(), 'LOCK_WAIT is not spent on a lock nothing will release');
         self::assertSame([], $this->restic->callsOf('unlock'));
         self::assertSame([], $this->restic->callsOf('list'));

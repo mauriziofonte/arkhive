@@ -457,7 +457,7 @@ final class ResticTest extends TestCase
             self::fail('expected a failure');
         } catch (LockedException $e) {
             self::assertSame('The restic repository is locked by PID 25983 on host.example.com by root (UID 0, GID 0), created at 2026-10-12 13:58:02 (1.554904747s ago): a stale lock from a dead process on this host (PID 25983 no longer exists)', $e->getMessage());
-            self::assertStringStartsWith("Nothing will release it. Remove it with: RESTIC_PASSWORD_FILE='/etc/arkhive/restic-password' restic -r '/srv/restic-repo' unlock", (string) $e->hint());
+            self::assertStringStartsWith("Its run ended without removing it (killed, or the repository stopped answering), and nothing will release it: backups still run alongside it, but every maintain (forget, prune, check) stops on it until it is removed. Remove it with: RESTIC_PASSWORD_FILE='/etc/arkhive/restic-password' restic -r '/srv/restic-repo' unlock", (string) $e->hint());
             self::assertSame(ExitCode::TEMPORARY, $e->exitCode());
             self::assertFalse($e->transient());
             self::assertNull($e->unlock());
