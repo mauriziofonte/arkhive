@@ -164,7 +164,9 @@ The repository password is never in the configuration: `RESTIC_PASSWORD_FILE` na
 must be private as well, with no grace period (exit 78, an invalid configuration; 77 for
 `--password-file`). It must be a regular file (not a symbolic link) owned by the running user, with
 no permission for group or others (`chmod 600`), in a directory that group or others cannot write
-(a sticky directory such as `/tmp` is accepted: only the owner can replace a file there). Whoever
+(a sticky directory such as `/tmp` is accepted: only the owner can replace a file there) and that
+belongs to the running user or root (the owner of the directory can replace or remove the file
+whatever its mode). Whoever
 can replace the file between the check and restic reading it chooses the password that
 `arkhive init` gives a new repository.
 

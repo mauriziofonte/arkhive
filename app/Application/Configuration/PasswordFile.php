@@ -13,7 +13,8 @@ use Mfonte\Arkhive\Exceptions\PermissionException;
  * a symbolic link, which someone could point elsewhere), owned by that user, with no permission for
  * group or others, in a directory that group or others cannot write (they could replace the file
  * between this check and restic reading it, and `init` would then create the repository with a
- * password they know). A sticky directory (/tmp) is accepted: there only the owner can rename or
+ * password they know), and that belongs to the running user or root (its owner can do the same
+ * whatever its mode). A sticky directory (/tmp) is accepted: there only the owner can rename or
  * remove the file.
  */
 final class PasswordFile
@@ -70,7 +71,8 @@ final class PasswordFile
 
     /**
      * The directory of the password file: group or others must not be able to write it, unless it
-     * is sticky. `init` checks it before it generates a password there.
+     * is sticky, and it must belong to the running user or root. `init` checks it before it
+     * generates a password there.
      */
     public static function assertPrivateDirectory(string $path, string $origin = 'RESTIC_PASSWORD_FILE'): void
     {
@@ -84,6 +86,14 @@ final class PasswordFile
             throw new PermissionException(
                 sprintf('%s %s is in %s, which group or others can write (mode %04o): they could replace the file with one whose password they know', $origin, $path, $directory, $mode),
                 "Run: chmod go-w {$directory}, or move the password file to a directory only its owner can write",
+            );
+        }
+        $owner = $stat['uid'];
+        $uid = function_exists('posix_geteuid') ? posix_geteuid() : $owner;
+        if ($owner !== $uid && $owner !== 0) {
+            throw new PermissionException(
+                "{$origin} {$path} is in {$directory}, which belongs to uid {$owner}, not to the running user (uid {$uid}) or root: its owner could replace the file, or remove it and stop every run",
+                "Move the password file to a directory owned by uid {$uid} or root (such as /etc/arkhive), or run: chown {$uid} {$directory}",
             );
         }
     }

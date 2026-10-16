@@ -142,6 +142,39 @@ final class PasswordFileTest extends TestCase
         self::assertSame("Run: chown 0 {$this->file}", $e->hint());
     }
 
+    public function testADirectoryOwnedBySomeoneElseIsRefusedEvenIfOnlyItsOwnerCanWriteIt(): void
+    {
+        if (posix_geteuid() !== 0) {
+            self::markTestSkipped('changing the owner of a directory needs root');
+        }
+        chmod($this->dir, 0755);
+        chown($this->dir, 65534);
+
+        $e = $this->refusal($this->file);
+
+        self::assertInstanceOf(PermissionException::class, $e);
+        self::assertSame("RESTIC_PASSWORD_FILE {$this->file} is in {$this->dir}, which belongs to uid 65534, not to the running user (uid 0) or root: its owner could replace the file, or remove it and stop every run", $e->getMessage());
+        self::assertSame("Move the password file to a directory owned by uid 0 or root (such as /etc/arkhive), or run: chown 0 {$this->dir}", $e->hint());
+
+        chmod($this->dir, 01777);
+        self::assertInstanceOf(PermissionException::class, $this->refusal($this->file), 'sticky or not: its owner can remove the file');
+
+        chown($this->dir, 0);
+        PasswordFile::assertSafe($this->file);
+    }
+
+    public function testADirectoryOwnedByRootIsAcceptedForAnyUser(): void
+    {
+        clearstatcache();
+        $stat = stat('/etc');
+        self::assertIsArray($stat);
+        self::assertSame(0, $stat['uid'], 'the fixture: /etc belongs to root');
+
+        PasswordFile::assertPrivateDirectory('/etc/arkhive-password-that-does-not-exist');
+
+        $this->addToAssertionCount(1);
+    }
+
     public function testMissingEmptyAndNotAFile(): void
     {
         $missing = $this->refusal("{$this->dir}/gone");
