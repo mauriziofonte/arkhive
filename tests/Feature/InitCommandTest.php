@@ -114,6 +114,29 @@ final class InitCommandTest extends TestCase
         self::assertSame([], $this->restic->calls);
     }
 
+    public function testNoPasswordIsGeneratedInADirectoryOthersCanWrite(): void
+    {
+        mkdir("{$this->dir}/shared");
+        chmod("{$this->dir}/shared", 0777);
+        $config = $this->writeConfig(['RESTIC_PASSWORD_FILE' => "{$this->dir}/shared/password"]);
+
+        self::assertSame(ExitCode::NO_PERMISSION, Artisan::call('init', ['--config' => $config]));
+        self::assertStringContainsString("error RESTIC_PASSWORD_FILE {$this->dir}/shared/password is in {$this->dir}/shared, which group or others can write (mode 0777): they could replace the file with one whose password they know", $this->logOutput());
+        self::assertFileDoesNotExist("{$this->dir}/shared/password");
+        self::assertSame([], $this->restic->calls);
+    }
+
+    public function testASymbolicLinkAsThePasswordFileIsRefusedNotReplaced(): void
+    {
+        $config = $this->writeConfig(['RESTIC_PASSWORD_FILE' => "{$this->dir}/link"]);
+        symlink("{$this->dir}/elsewhere", "{$this->dir}/link");
+
+        self::assertSame(ExitCode::NO_PERMISSION, Artisan::call('init', ['--config' => $config]));
+        self::assertStringContainsString("error RESTIC_PASSWORD_FILE {$this->dir}/link is a symbolic link (to {$this->dir}/elsewhere)", $this->logOutput());
+        self::assertFileDoesNotExist("{$this->dir}/elsewhere", 'nothing written through the link');
+        self::assertSame([], $this->restic->calls);
+    }
+
     public function testAnUnsafePasswordFileIsRefused(): void
     {
         $config = $this->writeConfig();

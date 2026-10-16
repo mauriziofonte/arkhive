@@ -36,7 +36,7 @@ final class DoctorTest extends TestCase
     use TempDir;
     use WritesConfig;
 
-    private const ORDER = ['PHP', 'distribution', 'restic', 'configuration', 'removed 1.x keys', 'password file', 'SSH', 'repository', 'latest snapshot', 'last runs', 'dump space', 'clock', 'execution context', 'log target', 'SELinux'];
+    private const ORDER = ['PHP', 'distribution', 'restic', 'configuration', 'config file', 'removed 1.x keys', 'password file', 'SSH', 'repository', 'latest snapshot', 'last runs', 'dump space', 'clock', 'execution context', 'log target', 'SELinux'];
 
     private FakeProcessRunner $runner;
     private FakeRestic $restic;
@@ -80,7 +80,7 @@ final class DoctorTest extends TestCase
             $this->clock,
             $context ?? new ExecutionContext(false, false, false, LogFormat::Plain, 'no terminal'),
             ['ARKHIVE_LOCK_DIR' => "{$this->dir}/locks"],
-            0,
+            posix_geteuid(),
             'web1.example.com',
             fn (string $extension): bool => in_array($extension, $this->extensions, true),
             static fn (int $pid): bool => $pid === 4242,
@@ -118,7 +118,7 @@ final class DoctorTest extends TestCase
         $checks = $this->diagnose($this->writeConfig());
 
         self::assertSame([
-            'PHP' => 'ok', 'distribution' => 'ok', 'restic' => 'ok', 'configuration' => 'ok', 'removed 1.x keys' => 'ok', 'password file' => 'ok',
+            'PHP' => 'ok', 'distribution' => 'ok', 'restic' => 'ok', 'configuration' => 'ok', 'config file' => 'ok', 'removed 1.x keys' => 'ok', 'password file' => 'ok',
             'SSH' => 'skipped', 'repository' => 'ok', 'latest snapshot' => 'ok', 'last runs' => 'info', 'dump space' => 'skipped', 'clock' => 'ok', 'execution context' => 'info', 'log target' => 'info', 'SELinux' => 'skipped',
         ], self::statuses($checks));
         self::assertSame('PHP 8.4.1 with phar, json, mbstring, posix, pcntl, curl', $checks['PHP']->message);
@@ -126,6 +126,7 @@ final class DoctorTest extends TestCase
         self::assertSame('debian 12, packages via apt install <package>', $checks['distribution']->message);
         self::assertSame("restic 0.19.1 at {$this->dir}/bin/restic", $checks['restic']->message);
         self::assertSame("{$this->dir}/config", $checks['configuration']->message);
+        self::assertSame(sprintf('%s/config is private (mode 0600, owner uid %d)', $this->dir, posix_geteuid()), $checks['config file']->message);
         self::assertSame("{$this->dir}/password is private (mode 0600)", $checks['password file']->message);
         self::assertSame('/srv/restic-repo is reachable, the password opens it, no lock', $checks['repository']->message);
         self::assertSame('e82340a7 of web1.example.com at 2026-10-12 14:17 UTC (6 h ago)', $checks['latest snapshot']->message);
@@ -241,6 +242,44 @@ final class DoctorTest extends TestCase
 
         self::assertSame(CheckStatus::Warning, $checks['configuration']->status);
         self::assertSame("{$this->dir}/config; unknown keys ignored: RESTIC_KEEP_DAYLY", $checks['configuration']->message);
+    }
+
+    public function testAConfigurationReadableByOthersFailsWhenItHoldsPasswords(): void
+    {
+        $config = $this->writeConfig(['MYSQL_PASSWORD' => 'db-password-placeholder']);
+        chmod($config, 0640);
+
+        $checks = $this->diagnose($config);
+
+        self::assertSame(CheckStatus::Failed, $checks['config file']->status);
+        self::assertSame("The configuration {$config} holds MYSQL_PASSWORD and is readable by group or others (mode 0640)", $checks['config file']->message);
+        self::assertSame("Run: chmod 600 {$config}", $checks['config file']->hint);
+        self::assertSame(CheckStatus::Ok, $checks['configuration']->status, 'the run itself only warns during the grace period');
+        self::assertSame(CheckStatus::Ok, $checks['repository']->status);
+    }
+
+    public function testAConfigurationReadableByOthersWithoutPasswordsIsAWarning(): void
+    {
+        $config = $this->writeConfig();
+        chmod($config, 0644);
+
+        $checks = $this->diagnose($config);
+
+        self::assertSame(CheckStatus::Warning, $checks['config file']->status);
+        self::assertSame(sprintf('%s (mode 0644, owner uid %d) holds no passwords but is not private: it names the repository and the password file', $config, posix_geteuid()), $checks['config file']->message);
+        self::assertSame("Run: chmod 600 {$config}", $checks['config file']->hint);
+    }
+
+    public function testAConfigurationOthersCanWriteFails(): void
+    {
+        $config = $this->writeConfig();
+        chmod($config, 0664);
+
+        $checks = $this->diagnose($config);
+
+        self::assertSame(CheckStatus::Failed, $checks['config file']->status);
+        self::assertSame("The configuration {$config} is writable by group or others (mode 0664): whoever can change it chooses the commands ArkHive runs", $checks['config file']->message);
+        self::assertSame(CheckStatus::Failed, Doctor::overall(array_values($checks)));
     }
 
     public function testNoConfigurationAtAll(): void

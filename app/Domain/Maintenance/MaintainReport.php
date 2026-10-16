@@ -18,12 +18,35 @@ final readonly class MaintainReport
         public ?RepositoryStats $stats,
         public string $resticVersion,
         public float $duration,
+        /** why forget --prune refused to run (missing data), when it did */
+        public ?string $forgetError = null,
     ) {
     }
 
     public function healthy(): bool
     {
-        return $this->structure->ok && $this->data !== null && $this->data->ok;
+        return $this->forgetError === null && $this->structure->ok && $this->data !== null && $this->data->ok;
+    }
+
+    /**
+     * Data the index lists is gone from the repository (repair index, not repair packs).
+     */
+    public function dataMissing(): bool
+    {
+        return $this->forgetError !== null || $this->structure->dataMissing || ($this->data !== null && $this->data->dataMissing);
+    }
+
+    /**
+     * What is wrong, in a sentence: the first failed check, or why prune refused to run.
+     */
+    public function problem(): string
+    {
+        $failed = !$this->structure->ok || $this->data === null ? $this->structure : $this->data;
+        if (!$failed->ok) {
+            return 'The repository check found errors: ' . $failed->describe();
+        }
+
+        return (string) $this->forgetError;
     }
 
     /**
@@ -48,6 +71,8 @@ final readonly class MaintainReport
             'check' => ['ok' => $this->structure->ok, 'errors' => $this->structure->errors],
             'read_data' => $this->data === null ? null : ['subset' => $this->subset, 'ok' => $this->data->ok, 'errors' => $this->data->errors],
             'broken_packs' => $this->brokenPacks(),
+            'missing_packs' => array_values(array_unique([...$this->structure->missingPacks, ...($this->data->missingPacks ?? [])])),
+            'retention_error' => $this->forgetError,
             'raw_size' => $this->stats?->rawBytes,
             'restic_version' => $this->resticVersion,
             'duration' => round($this->duration, 3),

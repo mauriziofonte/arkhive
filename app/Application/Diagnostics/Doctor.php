@@ -7,6 +7,7 @@ namespace Mfonte\Arkhive\Application\Diagnostics;
 use Closure;
 use DateTimeImmutable;
 use Mfonte\Arkhive\Application\Configuration\ConfigFactory;
+use Mfonte\Arkhive\Application\Configuration\ConfigLoader;
 use Mfonte\Arkhive\Application\Configuration\ConfigLocator;
 use Mfonte\Arkhive\Application\Configuration\ConfigParser;
 use Mfonte\Arkhive\Application\Configuration\PasswordFile;
@@ -21,6 +22,7 @@ use Mfonte\Arkhive\Application\Run\RunJournal;
 use Mfonte\Arkhive\Application\System\Dependencies;
 use Mfonte\Arkhive\Application\System\Lock;
 use Mfonte\Arkhive\Domain\Configuration\Config;
+use Mfonte\Arkhive\Domain\Configuration\ConfigFileAccess;
 use Mfonte\Arkhive\Domain\Configuration\RemovedKeys;
 use Mfonte\Arkhive\Domain\Configuration\ResticSettings;
 use Mfonte\Arkhive\Domain\Diagnostics\Check;
@@ -28,6 +30,7 @@ use Mfonte\Arkhive\Domain\Diagnostics\CheckStatus;
 use Mfonte\Arkhive\Domain\Execution\ExecutionContext;
 use Mfonte\Arkhive\Domain\Execution\LogTarget;
 use Mfonte\Arkhive\Domain\Execution\SyslogFacility;
+use Mfonte\Arkhive\Domain\Repository\RepositoryKey;
 use Mfonte\Arkhive\Domain\Repository\ResticCapabilities;
 use Mfonte\Arkhive\Domain\Repository\Snapshot;
 use Mfonte\Arkhive\Domain\Repository\Snapshots;
@@ -98,7 +101,8 @@ final class Doctor
         private readonly array $logSockets = [],
     ) {
         $this->extensionLoaded = $extensionLoaded ?? static fn (string $extension): bool => extension_loaded($extension);
-        $this->processExists = $processExists ?? static fn (int $pid): bool => function_exists('posix_kill') && posix_kill($pid, 0);
+        // EPERM: the process exists, owned by another user
+        $this->processExists = $processExists ?? static fn (int $pid): bool => function_exists('posix_kill') && (posix_kill($pid, 0) || posix_get_last_error() === 1);
     }
 
     /**
@@ -221,6 +225,7 @@ final class Doctor
 
             return [
                 new Check('configuration', CheckStatus::Info, 'none used: the repository comes from --repo (bare-metal recovery)'),
+                new Check('config file', CheckStatus::Skipped, 'no configuration'),
                 new Check('removed 1.x keys', CheckStatus::Skipped, 'no configuration'),
             ];
         }
@@ -230,9 +235,11 @@ final class Doctor
         } catch (ArkhiveException $e) {
             return [
                 new Check('configuration', CheckStatus::Failed, $e->getMessage(), $e->hint() ?? 'On a host with no configuration use: arkhive doctor --repo <repository> --password-file <file>'),
+                new Check('config file', CheckStatus::Skipped, 'no configuration'),
                 new Check('removed 1.x keys', CheckStatus::Skipped, 'no configuration'),
             ];
         }
+        $fileCheck = self::configFile(ConfigLoader::access($path, $values, $this->uid), $path);
         $removed = RemovedKeys::found($values);
         $removedCheck = $removed === []
             ? new Check('removed 1.x keys', CheckStatus::Ok, 'none')
@@ -242,6 +249,7 @@ final class Doctor
         } catch (ArkhiveException $e) {
             return [
                 new Check('configuration', $removed === [] ? CheckStatus::Failed : CheckStatus::Info, $removed === [] ? $e->getMessage() : "{$path} (unusable until the removed keys are migrated)", $e->hint()),
+                $fileCheck,
                 $removedCheck,
             ];
         }
@@ -250,8 +258,30 @@ final class Doctor
 
         return [
             new Check('configuration', $unknown === '' ? CheckStatus::Ok : CheckStatus::Warning, $path . $unknown, $unknown === '' ? null : 'Remove or correct the unknown keys (typos are ignored silently otherwise)'),
+            $fileCheck,
             $removedCheck,
         ];
+    }
+
+    /**
+     * Who else can read or change the configuration. Readable secrets fail here although a run
+     * only warns about them during the 2.1 grace period (ConfigFileAccess::ENFORCE_PRIVATE).
+     */
+    private static function configFile(?ConfigFileAccess $access, string $path): Check
+    {
+        if ($access === null) {
+            return new Check('config file', CheckStatus::Skipped, "{$path} cannot be inspected");
+        }
+        $mode = sprintf('mode %04o, owner uid %d', $access->mode, $access->owner);
+        $problem = $access->problem();
+        if ($problem !== null) {
+            return new Check('config file', CheckStatus::Failed, $problem, $access->hint());
+        }
+        if ($access->readableByOthers() || $access->owner !== $access->user) {
+            return new Check('config file', CheckStatus::Warning, "{$path} ({$mode}) holds no passwords but is not private: it names the repository and the password file", $access->hint());
+        }
+
+        return new Check('config file', CheckStatus::Ok, "{$path} is private ({$mode})");
     }
 
     private function resticBinary(): void
@@ -467,7 +497,7 @@ final class Doctor
         $zone = $this->clock->now()->getTimezone();
         $described = [];
         $failed = null;
-        foreach ($this->runs->states() as $job => $state) {
+        foreach ($this->runs->states($this->settings === null ? null : RepositoryKey::of($this->settings->repository)) as $job => $state) {
             if ($state->last === null) {
                 continue;
             }

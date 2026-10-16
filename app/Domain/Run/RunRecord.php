@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Mfonte\Arkhive\Domain\Run;
 
 use DateTimeImmutable;
+use Mfonte\Arkhive\Domain\Repository\RepositoryKey;
 use Mfonte\Arkhive\ExitCode;
 
 /**
@@ -19,6 +20,9 @@ final readonly class RunRecord
      * @param list<string> $warnings
      * @param string|null  $invocation systemd's INVOCATION_ID of the run, when it ran as a unit
      * @param bool         $notified   the run sent its notification e-mail
+     * @param string|null  $repository the repository it worked on (RepositoryKey); null when it never
+     *                                 got that far, and in the records of 2.1.0-rc.1
+     * @param string|null  $host       the host whose snapshots it made or tested (RESTIC_HOST)
      */
     public function __construct(
         public string $job,
@@ -30,6 +34,8 @@ final readonly class RunRecord
         public ?string $error = null,
         public ?string $invocation = null,
         public bool $notified = false,
+        public ?string $repository = null,
+        public ?string $host = null,
     ) {
     }
 
@@ -71,7 +77,7 @@ final readonly class RunRecord
     }
 
     /**
-     * @return array{job: string, started: string, ended: string, duration_seconds: float, exit_code: int, status: string, snapshot_id: string|null, warnings: list<string>, error: string|null, invocation: string|null, notified: bool}
+     * @return array{job: string, started: string, ended: string, duration_seconds: float, exit_code: int, status: string, snapshot_id: string|null, warnings: list<string>, error: string|null, invocation: string|null, notified: bool, repository: string|null, host: string|null}
      */
     public function toArray(): array
     {
@@ -87,6 +93,8 @@ final readonly class RunRecord
             'error' => $this->error,
             'invocation' => $this->invocation,
             'notified' => $this->notified,
+            'repository' => $this->repository,
+            'host' => $this->host,
         ];
     }
 
@@ -111,6 +119,8 @@ final readonly class RunRecord
         $snapshot = $data['snapshot_id'] ?? null;
         $error = $data['error'] ?? null;
         $invocation = $data['invocation'] ?? null;
+        $repository = $data['repository'] ?? null;
+        $host = $data['host'] ?? null;
 
         return new self(
             $data['job'],
@@ -122,6 +132,8 @@ final readonly class RunRecord
             is_string($error) ? $error : null,
             is_string($invocation) ? $invocation : null,
             ($data['notified'] ?? false) === true,
+            is_string($repository) && RepositoryKey::valid($repository) ? $repository : null,
+            is_string($host) && $host !== '' ? $host : null,
         );
     }
 }

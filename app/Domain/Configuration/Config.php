@@ -19,6 +19,7 @@ final readonly class Config
      * @param list<string> $unknownKeys
      * @param bool         $dumpRequired a failed dump fails the run (DUMP_REQUIRED), instead of a warning
      * @param LogTarget|null $logTarget  LOG_TARGET; null: auto
+     * @param list<string> $warnings     problems that do not stop a run (a configuration readable by others)
      */
     public function __construct(
         public string $source,
@@ -38,6 +39,7 @@ final readonly class Config
         public bool $dumpRequired = false,
         public ?LogTarget $logTarget = null,
         public SyslogFacility $syslogFacility = SyslogFacility::Daemon,
+        public array $warnings = [],
     ) {
     }
 

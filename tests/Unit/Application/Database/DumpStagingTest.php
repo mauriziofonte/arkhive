@@ -8,6 +8,9 @@ use Mfonte\Arkhive\Application\Database\DumpStaging;
 use Mfonte\Arkhive\Application\Database\SecretFile;
 use Mfonte\Arkhive\Domain\Shared\Bytes;
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
+use Mfonte\Arkhive\Exceptions\PermissionException;
+use Mfonte\Arkhive\ExitCode;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Tests\Support\TempDir;
 
@@ -120,5 +123,125 @@ final class DumpStagingTest extends TestCase
         self::assertSame('1.50 MiB', Bytes::format(1572864));
         self::assertSame('2.00 GiB', Bytes::format(2 * 1024 ** 3));
         self::assertSame('1024.00 PiB', Bytes::format(1024 ** 6));
+    }
+
+    public function testExistingSubdirectoriesAreMadePrivate(): void
+    {
+        $dir = $this->tempDir() . '/dumps';
+        mkdir("{$dir}/mysql", 0755, true);
+        mkdir("{$dir}/pgsql", 0755);
+        chmod("{$dir}/mysql", 0755);
+        chmod("{$dir}/pgsql", 0750);
+        chmod($dir, 0755);
+        file_put_contents("{$dir}/mysql/shop.sql", 'a dump of 2.1.0-rc.1, readable by everyone');
+        chmod("{$dir}/mysql/shop.sql", 0644);
+
+        (new DumpStaging($dir))->prepare();
+
+        clearstatcache();
+        self::assertSame(0700, fileperms("{$dir}/mysql") & 0777);
+        self::assertSame(0700, fileperms("{$dir}/pgsql") & 0777);
+        self::assertSame(0755, fileperms($dir) & 0777, 'DUMP_DIRECTORY itself may be the operator\'s, readable is fine');
+        self::assertFileDoesNotExist("{$dir}/mysql/shop.sql", 'the leftover dump is removed');
+    }
+
+    /**
+     * @return iterable<string, array{int}>
+     */
+    public static function openModes(): iterable
+    {
+        yield 'group-writable' => [0770];
+        yield 'world-writable' => [0777];
+        yield 'world-writable and sticky' => [01777];
+    }
+
+    #[DataProvider('openModes')]
+    public function testADumpDirectoryOthersCanWriteIsRefused(int $mode): void
+    {
+        $dir = $this->tempDir() . '/dumps';
+        mkdir($dir);
+        chmod($dir, $mode);
+
+        try {
+            (new DumpStaging($dir))->prepare();
+            self::fail('accepted');
+        } catch (PermissionException $e) {
+            self::assertSame(ExitCode::NO_PERMISSION, $e->exitCode());
+            self::assertSame(sprintf('The dump directory %s is writable by group or others (mode %04o): they could read or replace the dumps', $dir, $mode), $e->getMessage());
+            self::assertSame("Run: chmod 700 {$dir}", $e->hint());
+        }
+        self::assertDirectoryDoesNotExist("{$dir}/mysql");
+    }
+
+    public function testADumpDirectoryOfAnotherUserIsRefused(): void
+    {
+        $dir = $this->tempDir() . '/dumps';
+        mkdir($dir, 0700);
+
+        try {
+            (new DumpStaging($dir, posix_geteuid() + 1))->prepare();
+            self::fail('accepted');
+        } catch (PermissionException $e) {
+            self::assertSame(sprintf('The dump directory %s belongs to uid %d, not to the running user (uid %d): its owner could read every dump', $dir, posix_geteuid(), posix_geteuid() + 1), $e->getMessage());
+            self::assertSame(sprintf('Run: chown %d %s, or set DUMP_DIRECTORY to a directory of this user', posix_geteuid() + 1, $dir), $e->hint());
+        }
+    }
+
+    public function testASubdirectoryOfAnotherUserIsRefused(): void
+    {
+        if (posix_geteuid() !== 0) {
+            self::markTestSkipped('needs root to create a directory owned by another user');
+        }
+        $dir = $this->tempDir() . '/dumps';
+        mkdir("{$dir}/pgsql", 0700, true);
+        chown("{$dir}/pgsql", 65534);
+
+        try {
+            (new DumpStaging($dir))->prepare();
+            self::fail('accepted');
+        } catch (PermissionException $e) {
+            self::assertSame("The dump directory {$dir}/pgsql belongs to uid 65534, not to the running user (uid 0): its owner could read every dump", $e->getMessage());
+            self::assertSame("Remove {$dir}/pgsql: ArkHive creates it", $e->hint());
+        }
+    }
+
+    public function testASymbolicLinkAsASubdirectoryIsRefused(): void
+    {
+        $dir = $this->tempDir() . '/dumps';
+        $elsewhere = $this->tempDir();
+        mkdir($dir, 0700);
+        symlink($elsewhere, "{$dir}/mysql");
+
+        try {
+            (new DumpStaging($dir))->prepare();
+            self::fail('accepted');
+        } catch (PermissionException $e) {
+            self::assertSame("The dump directory {$dir}/mysql is not a directory but a symbolic link", $e->getMessage());
+        }
+    }
+
+    public function testPartialAndPublishedDumpsArePrivate(): void
+    {
+        $staging = new DumpStaging($this->tempDir() . '/dumps');
+        $staging->prepare();
+        $path = $staging->pathFor('mysql', 'shop');
+
+        $umask = umask(0);
+        try {
+            $partial = $staging->createPartial($path);
+        } finally {
+            umask($umask);
+        }
+        self::assertSame("{$path}.partial", $partial);
+        self::assertSame(0600, fileperms($partial) & 0777);
+        self::assertFalse($staging->publish($partial, $path), 'an empty dump is no dump');
+        self::assertFileDoesNotExist($path);
+
+        file_put_contents($partial, "-- dump\n");
+        chmod($partial, 0666);
+        self::assertTrue($staging->publish($partial, $path));
+        self::assertSame(0600, fileperms($path) & 0777);
+        self::assertFileDoesNotExist($partial);
+        self::assertFalse($staging->publish($partial, $path), 'nothing left to publish');
     }
 }

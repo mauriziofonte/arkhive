@@ -174,6 +174,37 @@ final class RestoreCommandTest extends TestCase
         self::assertSame([], $this->restic->callsOf('restore'));
     }
 
+    public function testMissingRepositoryDataIsExit65WithTheRepairStepsAndNoTargetIsLeft(): void
+    {
+        // restic stats --mode restore-size on a snapshot whose tree pack was deleted (restic 0.19.1)
+        $this->restic->on['stats'] = static fn (): array => [1, '', FakeRestic::fixture('stats-missing-0.19.stderr')];
+        $target = "{$this->dir}/out";
+
+        self::assertSame(ExitCode::DATA_ERROR, $this->restore(['--config' => $this->writeConfig(), '--snapshot' => 'latest', '--host' => 'web1.example.com', '--target' => $target, '--yes' => true]));
+
+        $log = $this->logOutput();
+        self::assertStringContainsString('error Measuring snapshot e82340a7', $log);
+        self::assertStringContainsString('should hold is missing (pack files deleted or lost on the server)', $log);
+        self::assertStringContainsString('restic repair index, then arkhive backup', $log);
+        self::assertDirectoryDoesNotExist($target);
+    }
+
+    public function testDataMissingDuringTheRestoreIsExit65AndThePartialTargetIsRemoved(): void
+    {
+        $this->restic->on['restore'] = static function (array $args): array {
+            $target = $args[(int) array_search('--target', $args, true) + 1];
+            mkdir("{$target}/srv/www", 0755, true);
+            file_put_contents("{$target}/srv/www/partial", 'x');
+
+            return [1, '', FakeRestic::fixture('restore-missing-0.19.stderr')];
+        };
+        $target = "{$this->dir}/out";
+
+        self::assertSame(ExitCode::DATA_ERROR, $this->restore(['--config' => $this->writeConfig(), '--snapshot' => 'latest', '--host' => 'web1.example.com', '--include' => ['/srv/www/site'], '--target' => $target, '--yes' => true]));
+        self::assertStringContainsString('error restic restore failed: data the repository /srv/restic-repo should hold is missing', $this->logOutput());
+        self::assertDirectoryDoesNotExist($target);
+    }
+
     public function testWrongPasswordIsExplainedAndNoTargetIsCreated(): void
     {
         $this->restic->catConfig = [12, '', FakeRestic::fixture('wrong-password-0.19.stderr')];

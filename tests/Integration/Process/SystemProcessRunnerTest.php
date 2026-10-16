@@ -119,6 +119,7 @@ final class SystemProcessRunnerTest extends TestCase
 
         self::assertFalse($result->timedOut, 'the producer was stopped, not left running until the timeout');
         self::assertNotSame(0, $result->exitCode);
+        self::assertNull($result->signal, 'ArkHive stopped it');
         self::assertStringContainsString('the output stream was closed before ' . basename(PHP_BINARY) . ' finished', $result->stderr);
     }
 
@@ -206,6 +207,9 @@ final class SystemProcessRunnerTest extends TestCase
         $result = $this->runner->run(new Command([PHP_BINARY, '-r', 'posix_kill(getmypid(), 9); sleep(5);']));
 
         self::assertSame(137, $result->exitCode);
+        self::assertSame(9, $result->signal, 'a signal ArkHive did not send');
+        self::assertSame('Running it failed (' . basename(PHP_BINARY) . ' killed by SIGKILL)', $result->failure('Running it'));
+        self::assertNull($this->runner->run(self::php('exit(137);'))->signal, 'an exit code is not a signal');
     }
 
     public function testTimeoutSendsSigterm(): void
@@ -214,6 +218,7 @@ final class SystemProcessRunnerTest extends TestCase
 
         self::assertTrue($result->timedOut);
         self::assertSame(143, $result->exitCode);
+        self::assertNull($result->signal, 'ArkHive sent it');
         self::assertSame("started\n", $result->stdout);
         self::assertLessThan(5.0, $result->duration);
     }

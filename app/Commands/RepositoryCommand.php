@@ -55,6 +55,8 @@ abstract class RepositoryCommand extends ConfiguredCommand
         $this->log->debug("Using the repository {$repository} from --repo, without a configuration file");
         // a configuration given explicitly still provides the database connections (--import-as)
         $config = self::stringOption($this->option('config')) === null ? null : $this->loadConfig();
+        $this->runRepository = $repository;
+        $this->runHost = self::hostname();
 
         return [new ResticSettings($repository, $absolute, self::stringOption($this->option('sftp-command')), host: self::hostname()), $config];
     }

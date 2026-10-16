@@ -70,6 +70,8 @@ final class RunRecordTest extends TestCase
             'error' => 'partial',
             'invocation' => null,
             'notified' => false,
+            'repository' => null,
+            'host' => null,
         ], $run->toArray());
         self::assertEquals($run, RunRecord::fromArray($run->toArray()));
         self::assertEquals(self::record(0), RunRecord::fromArray(self::record(0)->toArray()));
@@ -85,6 +87,16 @@ final class RunRecordTest extends TestCase
         self::assertSame([null, false], [$read->invocation, $read->notified], 'wrong types read as unknown');
         unset($stored['invocation'], $stored['notified']);
         self::assertNotNull(RunRecord::fromArray($stored), 'a 2.1.0-rc record without them still reads');
+
+        $keyed = new RunRecord('backup', $run->started, $run->ended, 0, 'e82340a77eda4178', repository: '0123456789abcdef', host: 'web1.example.com');
+        self::assertSame(['0123456789abcdef', 'web1.example.com'], [$keyed->toArray()['repository'], $keyed->toArray()['host']]);
+        self::assertEquals($keyed, RunRecord::fromArray($keyed->toArray()));
+        $stored = $keyed->toArray();
+        $stored['repository'] = '/srv/restic-repo';
+        $stored['host'] = '';
+        $read = RunRecord::fromArray($stored);
+        self::assertNotNull($read);
+        self::assertSame([null, null], [$read->repository, $read->host], 'only a RepositoryKey and a host name');
     }
 
     /**

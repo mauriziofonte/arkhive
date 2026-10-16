@@ -4,10 +4,14 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use DateTimeImmutable;
 use Illuminate\Support\Facades\Artisan;
 use Mfonte\Arkhive\Application\Port\Notifier;
 use Mfonte\Arkhive\Application\Port\ProcessRunner;
 use Mfonte\Arkhive\Application\System\Dependencies;
+use Mfonte\Arkhive\Domain\Repository\RepositoryKey;
+use Mfonte\Arkhive\Domain\Run\JobState;
+use Mfonte\Arkhive\Domain\Run\RunRecord;
 use Mfonte\Arkhive\ExitCode;
 use Mfonte\Arkhive\Infrastructure\Mail\SmtpNotifier;
 use Random\Engine\Mt19937;
@@ -69,6 +73,8 @@ final class DrillCommandTest extends TestCase
         $run = $this->runs->load('drill')->last;
         self::assertNotNull($run);
         self::assertSame([0, 'e82340a77eda41788f329309f282cd62f1d4cad85933d8b22b6e4e72a0ab05b2', null], [$run->exitCode, $run->snapshotId, $run->error]);
+        self::assertSame([RepositoryKey::of('/srv/restic-repo'), 'web1.example.com'], [$run->repository, $run->host]);
+        self::assertEquals($run, $this->runs->load('drill', RepositoryKey::of('/srv/restic-repo'))->last, 'recorded for the repository too');
     }
 
     public function testAFailingDrillIsExit1AndNotified(): void
@@ -77,7 +83,7 @@ final class DrillCommandTest extends TestCase
 
         self::assertSame(ExitCode::DATA_ERROR, Artisan::call('drill', ['--config' => $this->writeConfig(self::notify('failure'))]));
 
-        self::assertStringContainsString('error Drill: the restore failed: restic restore (drill) failed (restic exit 1): Fatal: failed to restore: ciphertext verification failed', $this->logOutput());
+        self::assertStringContainsString('error Drill: the restore failed: restic restore (drill) failed: the repository /srv/restic-repo holds damaged data: Fatal: failed to restore: ciphertext verification failed', $this->logOutput());
         self::assertStringContainsString('error Restore drill FAILED on snapshot e82340a7: 1 problem(s)', $this->logOutput());
         $mail = $this->mail->sent[0];
         self::assertSame('[ArkHive] restore drill FAILED on web1.example.com', $mail->getSubject());
@@ -135,5 +141,19 @@ final class DrillCommandTest extends TestCase
     private static function last(array $list): ?string
     {
         return $list[array_key_last($list)] ?? null;
+    }
+
+    public function testADrillOnARepositoryThatLostTheLastBackupIsExit65WithoutRestoring(): void
+    {
+        $key = RepositoryKey::of('/srv/restic-repo');
+        $at = new DateTimeImmutable('2026-10-12T19:00:00+00:00');
+        $this->runs->repositories[$key]['backup'] = (new JobState())->with(new RunRecord('backup', $at, $at->modify('+65 seconds'), 0, str_repeat('9a3f1c0e', 8), repository: $key, host: 'web1.example.com'));
+
+        self::assertSame(ExitCode::DATA_ERROR, Artisan::call('drill', ['--config' => $this->writeConfig(self::notify('failure'))]));
+
+        self::assertSame([], $this->restic->callsOf('restore'), 'an older snapshot would pass');
+        self::assertStringContainsString('error Snapshot ' . str_repeat('9a3f1c0e', 8) . ' recorded as the last successful backup at 2026-10-12 21:01 GMT+0200 is missing from the repository (deleted or rolled back)', $this->logOutput());
+        self::assertStringStartsWith('The restore drill could not run: Snapshot 9a3f1c0e', (string) $this->mail->sent[0]->getTextBody());
+        self::assertSame(ExitCode::DATA_ERROR, $this->runs->load('drill', $key)->last?->exitCode);
     }
 }

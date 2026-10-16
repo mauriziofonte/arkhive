@@ -12,6 +12,7 @@ use Mfonte\Arkhive\Application\Resilience\Retrier;
 use Mfonte\Arkhive\Application\Run\RunJournal;
 use Mfonte\Arkhive\Domain\Configuration\Config;
 use Mfonte\Arkhive\Domain\Notification\Notification;
+use Mfonte\Arkhive\Domain\Repository\RepositoryKey;
 use Mfonte\Arkhive\Domain\Run\RunRecord;
 use Mfonte\Arkhive\Domain\Shared\RetryPolicy;
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
@@ -29,6 +30,11 @@ abstract class ConfiguredCommand extends ArkhiveCommand
 
     /** @var list<string> */
     protected array $runWarnings = [];
+
+    /** the repository URL and the host a recorded job works on, once known (the run state is kept per repository) */
+    protected ?string $runRepository = null;
+
+    protected ?string $runHost = null;
 
     /** whether this run sent a notification (the OnFailure unit then does not send another) */
     private bool $runNotified = false;
@@ -53,6 +59,11 @@ abstract class ConfiguredCommand extends ArkhiveCommand
         $config = $loader->load(self::stringOption($this->option('config')), $checkSecrets);
         $this->configureLogging($config->logTarget, $config->syslogFacility);
         $this->log->debug("Configuration: {$config->source}");
+        $this->runRepository = $config->restic->repository;
+        $this->runHost = $config->restic->host;
+        foreach ($config->warnings as $warning) {
+            $this->log->warning($warning);
+        }
         if ($config->unknownKeys !== []) {
             $this->log->warning("Unknown keys in {$config->source}, ignored: " . implode(', ', $config->unknownKeys));
         }
@@ -76,18 +87,31 @@ abstract class ConfiguredCommand extends ArkhiveCommand
     {
         $job = $this->recordedJob();
         // a command object serves every call in the process: nothing of this run may leak into the next
-        [$snapshot, $warnings, $notified] = [$this->runSnapshot, $this->runWarnings, $this->runNotified];
+        [$snapshot, $warnings, $notified, $repository, $host] = [$this->runSnapshot, $this->runWarnings, $this->runNotified, $this->runRepository, $this->runHost];
         $this->endedSnapshot = $snapshot;
         $this->runSnapshot = null;
         $this->runWarnings = [];
         $this->runNotified = false;
+        $this->runRepository = $this->runHost = null;
         if ($job === null || $exit === ExitCode::USAGE) {
             return;
         }
         $invocation = strtolower($this->terminal->environment()['INVOCATION_ID'] ?? '');
         try {
             $this->laravel->make(RunJournal::class)->record(
-                new RunRecord($job, $started, $this->clock->now(), $exit, $snapshot, $warnings, $failure?->getMessage(), preg_match('/^[0-9a-f]{32}$/', $invocation) === 1 ? $invocation : null, $notified),
+                new RunRecord(
+                    $job,
+                    $started,
+                    $this->clock->now(),
+                    $exit,
+                    $snapshot,
+                    $warnings,
+                    $failure?->getMessage(),
+                    preg_match('/^[0-9a-f]{32}$/', $invocation) === 1 ? $invocation : null,
+                    $notified,
+                    $repository === null ? null : RepositoryKey::of($repository),
+                    $host,
+                ),
                 $this->log,
             );
         } catch (Throwable $e) {

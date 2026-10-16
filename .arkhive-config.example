@@ -28,6 +28,9 @@ RESTIC_PASSWORD_FILE=/etc/arkhive/restic-password
 # Seconds to wait for a repository locked by another run (another ArkHive run, or restic on
 # another host); 0 fails at once with exit 75.
 #LOCK_WAIT=300
+# A restic lock left by a process that died on this host (kill -9, out of memory) is never released
+# by itself. ArkHive names it and stops (exit 75); true lets it run `restic unlock` and go on.
+#UNLOCK_STALE=false
 
 # Database dumps: one plain .sql file per database, written to DUMP_DIRECTORY (a dedicated directory,
 # emptied after each successful backup) and included in the snapshot.

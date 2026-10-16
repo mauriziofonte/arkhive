@@ -75,6 +75,7 @@ final class SystemdUnits
             // /var/lib/arkhive (the outcome of each run) and /var/cache/arkhive (restic's cache), owned by User=
             . "StateDirectory=arkhive\n"
             . "CacheDirectory=arkhive\n"
+            . self::lockDirectory($schedule)
             . "ProtectSystem=full\n"
             . "ProtectHome=read-only\n"
             . $writable
@@ -85,6 +86,24 @@ final class SystemdUnits
             . "ProtectControlGroups=true\n"
             . "RestrictSUIDSGID=true\n"
             . "LockPersonality=true\n";
+    }
+
+    /**
+     * As root, the lock directory: /run/arkhive, private (0700), kept between runs so that a run by
+     * hand and a scheduled one lock the same file (a directory removed when one unit stops would let
+     * the next run lock a new inode while another still holds the old one). Another user's units
+     * keep the default, which their runs by hand also use.
+     */
+    private static function lockDirectory(Schedule $schedule): string
+    {
+        if (!$schedule->root()) {
+            return '';
+        }
+
+        return "RuntimeDirectory=arkhive\n"
+            . "RuntimeDirectoryMode=0700\n"
+            . "RuntimeDirectoryPreserve=yes\n"
+            . "Environment=ARKHIVE_LOCK_DIR=/run/arkhive\n";
     }
 
     /**

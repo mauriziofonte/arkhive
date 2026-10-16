@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Mfonte\Arkhive\Commands;
 
 use Mfonte\Arkhive\Application\Port\ProcessRunner;
+use Mfonte\Arkhive\Application\Port\ProcessTable;
 use Mfonte\Arkhive\Application\Port\Prompter;
 use Mfonte\Arkhive\Application\Port\SnapshotStore;
 use Mfonte\Arkhive\Application\Resilience\Retrier;
@@ -15,6 +16,7 @@ use Mfonte\Arkhive\Application\System\Dependencies;
 use Mfonte\Arkhive\Domain\Repository\Snapshots;
 use Mfonte\Arkhive\Domain\Restore\RestoreOptions;
 use Mfonte\Arkhive\Domain\Restore\RestorePlan;
+use Mfonte\Arkhive\Domain\System\ProcessState;
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
 use Mfonte\Arkhive\Exceptions\SoftwareException;
 use Mfonte\Arkhive\Exceptions\UsageException;
@@ -124,8 +126,9 @@ final class RestoreCommand extends RepositoryCommand
             return;
         }
         $now = $this->clock->now();
+        $processes = $this->laravel->make(ProcessTable::class);
         foreach ($locks as $lock) {
-            $stale = $lock->isStale($now, self::hostname(), static fn (int $pid): bool => posix_kill($pid, 0) || posix_get_last_error() === 1);
+            $stale = $lock->isStale($now, self::hostname(), static fn (int $pid): bool => $processes->state($pid) !== ProcessState::Gone);
             if ($stale) {
                 $this->log->warning('The repository has a stale lock: ' . $lock->describe() . '; it was left by a restic run that was killed or lost its connection');
                 $this->log->notice('If no other restic process uses the repository, remove it with: RESTIC_PASSWORD_FILE=' . escapeshellarg($restic->settings()->passwordFile) . ' restic -r ' . escapeshellarg($repository) . ' unlock (ArkHive never does this automatically)');

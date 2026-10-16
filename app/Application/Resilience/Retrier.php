@@ -63,7 +63,9 @@ final class Retrier
     }
 
     /**
-     * Retries only while the repository is locked by another run.
+     * Retries only while the repository is locked by another run. A lock left by a dead process is
+     * not waited for: it is removed and the operation run again at once when the failure carries
+     * the unlock (UNLOCK_STALE), once.
      *
      * @template T
      *
@@ -73,7 +75,25 @@ final class Retrier
      */
     public function whileLocked(Closure $operation, RetryPolicy $lock, string $what, Logger $log): mixed
     {
-        return $this->run($operation, $lock, $what, $log, static fn (ArkhiveException $e): bool => $e instanceof LockedException);
+        $unlocked = false;
+        $attempt = static function () use ($operation, $what, $log, &$unlocked): mixed {
+            try {
+                return $operation();
+            } catch (LockedException $e) {
+                $unlock = $e->unlock();
+                if ($unlock === null || $unlocked) {
+                    throw $e;
+                }
+                $unlocked = true;
+                $log->warning("{$what}: {$e->getMessage()}; removing it with restic unlock (UNLOCK_STALE)");
+                $unlock();
+                $log->info('Stale lock removed; trying again');
+
+                return $operation();
+            }
+        };
+
+        return $this->run($attempt, $lock, $what, $log, static fn (ArkhiveException $e): bool => $e instanceof LockedException && $e->transient());
     }
 
     /**

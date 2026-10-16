@@ -28,6 +28,7 @@ trait WritesConfig
             $lines .= "{$key}=\"{$value}\"\n";
         }
         file_put_contents("{$this->dir}/config", $lines);
+        chmod("{$this->dir}/config", 0600);
 
         return "{$this->dir}/config";
     }

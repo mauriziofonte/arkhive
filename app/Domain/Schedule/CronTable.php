@@ -11,6 +11,7 @@ namespace Mfonte\Arkhive\Domain\Schedule;
 final class CronTable
 {
     public const CRON_D = '/etc/cron.d/arkhive';
+    public const LOCK_DIR = 'ARKHIVE_LOCK_DIR=/run/arkhive';
     public const PATH = 'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin';
 
     public static function render(Schedule $schedule): string
@@ -20,7 +21,9 @@ final class CronTable
                 ? '# Save as ' . self::CRON_D . " (root:root, mode 0644). Logs: {$schedule->logFile}\n"
                 : "# Add to the crontab of {$schedule->user} with: crontab -e. Logs: {$schedule->logFile}\n")
             // cron starts jobs with PATH=/usr/bin:/bin, which misses /usr/local/bin
-            . self::PATH . "\n";
+            . self::PATH . "\n"
+            // root's private lock directory, the one systemd units and login shells use too
+            . ($schedule->root() ? self::LOCK_DIR . "\n" : '');
         foreach (Job::cases() as $job) {
             [$hour, $minute] = $schedule->timeOf($job);
             $weekday = $job->weekday();

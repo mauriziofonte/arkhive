@@ -57,6 +57,30 @@ final class CommandTest extends TestCase
         self::assertTrue((new ProcessResult($command, 0, 'ok', ''))->succeeded());
     }
 
+    public function testJsonRecordsAndRepeatedLinesAreReadOnce(): void
+    {
+        $command = new Command(['/usr/bin/restic', 'backup']);
+        $stderr = str_repeat('{"message_type":"error","error":{"message":"read /srv/www/a: input/output error"},"during":"archival","item":"/srv/www/a"}' . "\n", 4)
+            . "\e[2Ksignal terminated received, cleaning up\n"
+            . '{"message_type":"exit_error","code":11,"message":"repository is already locked by PID 1 on host.example.com\nlock was created at 2026-10-12 13:58:02"}' . "\n"
+            . "{not json}\n";
+
+        $result = new ProcessResult($command, 1, '', $stderr);
+
+        self::assertSame('repository is already locked by PID 1 on host.example.com | lock was created at 2026-10-12 13:58:02 | {not json}', $result->stderrTail());
+        self::assertSame('read /srv/www/a: input/output error | signal terminated received, cleaning up | repository is already locked by PID 1 on host.example.com | lock was created at 2026-10-12 13:58:02 | {not json}', $result->stderrTail(10), 'escape sequences removed, each line once');
+        self::assertSame('b | a | c', (new ProcessResult($command, 1, '', "a\nb\na\nc\n"))->stderrTail(), 'a line repeated is kept where it last appears');
+    }
+
+    public function testASignalFromOutsideIsNamed(): void
+    {
+        $command = new Command(['/usr/bin/mariadb-dump']);
+
+        self::assertSame('Dump failed (mariadb-dump killed by SIGKILL)', (new ProcessResult($command, 137, '', '', 1.0, false, 9))->failure('Dump'));
+        self::assertSame('Dump failed (mariadb-dump killed by signal 31)', (new ProcessResult($command, 159, '', '', 1.0, false, 31))->failure('Dump'));
+        self::assertSame('SIGTERM', ProcessResult::signalName(15));
+    }
+
     public function testTimeoutMessage(): void
     {
         $result = new ProcessResult((new Command(['/usr/bin/restic', 'cat', 'config']))->withTimeout(30.0), 143, '', '', 30.1, true);

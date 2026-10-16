@@ -139,7 +139,7 @@ arkhive self-update --allow-major    # needed to cross a major version (read the
 
    Connect once by hand (`sftp -P 23 -i /root/.ssh/arkhive u123456@backup.example.com`) and accept the server's host key after checking its fingerprint: restic runs `ssh` without a terminal, so it cannot ask.
 
-2. Write the configuration to `/etc/arkhive/config` and `chmod 600` it (it may hold database and SMTP passwords). Every 2.0 key, with the defaults the code applies when a key is absent or empty:
+2. Write the configuration to `/etc/arkhive/config` and `chmod 600` it (it may hold database and SMTP passwords). ArkHive refuses a configuration that group or others can write, or that belongs to another user than the one running it or root (exit 77), and warns when one holding passwords is readable by others (a later version will refuse it). Every 2.0 key, with the defaults the code applies when a key is absent or empty:
 
    ```sh
    # What to back up: absolute paths, space-separated ("double quotes" keep a path with spaces together)
@@ -166,6 +166,7 @@ arkhive self-update --allow-major    # needed to cross a major version (read the
    #RESTIC_KEEP_MONTHLY=6
    #RESTIC_CHECK_SUBSET=5%
    #LOCK_WAIT=300
+   #UNLOCK_STALE=false
 
    # Database dumps: one plain .sql file per database, staged here, included in the snapshot,
    # removed after each successful backup. A dedicated directory.
@@ -240,7 +241,7 @@ Syntax: one `KEY=value` per line, optionally prefixed by `export`. `'single quot
 |---|---|---|---|
 | `BACKUP_PATHS` | yes | | Absolute paths to back up, space-separated; double quotes or a backslash keep spaces inside one path |
 | `RESTIC_REPOSITORY` | yes | | The restic repository, e.g. `sftp:u123456@backup.example.com:arkhive` or a local path |
-| `RESTIC_PASSWORD_FILE` | yes | | Absolute path of the repository password file. Refused if it is missing (except by `init`, which generates it), empty, not a regular file, readable by group or others, or not owned by the running user |
+| `RESTIC_PASSWORD_FILE` | yes | | Absolute path of the repository password file. Refused if it is missing (except by `init`, which generates it), empty, a symbolic link or not a regular file, accessible by group or others in any way (mode `& 077`), not owned by the running user, or in a directory that group or others can write (unless the directory is sticky) |
 | `RESTIC_SFTP_COMMAND` | no | restic's own `ssh` call | Passed to restic as `-o sftp.command=...`, for a port or key, e.g. `ssh -p 23 -i /root/.ssh/arkhive u123456@backup.example.com -s sftp`. Without it ArkHive adds `ServerAliveInterval=15`, `ServerAliveCountMax=4` and `BatchMode=yes` to an `sftp:` repository; with it the command is used as written, so add those `-o` options yourself if you want them |
 | `RESTIC_BINARY` | no | `restic` | A name searched in `PATH` and the standard directories, or a path; 0.11.0 or newer |
 | `RESTIC_HOST` | no | system hostname | Host name recorded in the snapshots; retention, `status` and `drill` follow it |
@@ -250,8 +251,9 @@ Syntax: one `KEY=value` per line, optionally prefixed by `export`. `'single quot
 | `RESTIC_KEEP_MONTHLY` | no | `6` | Monthly snapshots kept by `maintain` |
 | `RESTIC_CHECK_SUBSET` | no | `5%` | Data read back by `maintain`: a percentage (`5%`), a fraction (`1/10`) or a size (`500M`); with restic before 0.12 (percentage) or 0.14 (size) ArkHive reads the nearest fraction instead, a different one at each run |
 | `LOCK_WAIT` | no | `300` | Seconds to wait for a repository locked by another ArkHive run or another restic client before giving up with exit 75; `0` gives up at once. See [Retries](#retries) |
+| `UNLOCK_STALE` | no | `false` | `true`: a restic lock left by a process that died on this host (killed, out of memory) is removed with `restic unlock` and the operation goes on. Off by default: ArkHive then names the dead process and the command, and never removes a lock. See [Retries](#retries) |
 | `EXCLUSION_PATTERNS` | no | none | Comma-separated 1.x patterns, see below |
-| `DUMP_DIRECTORY` | when dumps are enabled | | Absolute path of a dedicated staging directory for the dumps (`mysql/<db>.sql`, `pgsql/<db>.sql`), backed up as a path of its own and emptied after each successful backup. It cannot be `/`, cannot be or contain a backup path, and must not be excluded by `EXCLUSION_PATTERNS` |
+| `DUMP_DIRECTORY` | when dumps are enabled | | Absolute path of a dedicated staging directory for the dumps (`mysql/<db>.sql`, `pgsql/<db>.sql`), backed up as a path of its own and emptied after each successful backup. The dumps are private: the directory must belong to the running user and not be writable by group or others (exit 77 otherwise), its `mysql` and `pgsql` subdirectories are made 0700 and every dump file is 0600. It cannot be `/`, cannot be or contain a backup path, and must not be excluded by `EXCLUSION_PATTERNS` |
 | `DUMP_REQUIRED` | no | `false` | A database dump that fails never stops the other dumps nor the backup of the files. `false`: the run ends with exit 3 and names the failed dumps; `true`: the run fails with that dump's exit code (69 server down, 77 credentials, 66 unknown database) and a failure notification |
 | `WITH_MYSQL` | no | `false` | Dump MySQL/MariaDB databases |
 | `MYSQL_HOST` | no | `localhost` | |
@@ -402,7 +404,7 @@ Mounts the repository read-only with FUSE (`restic mount`): snapshots appear und
 arkhive maintain [--json]
 ```
 
-Applies the retention policy to this host's `arkhive` snapshots (`restic forget --prune` with `RESTIC_KEEP_DAILY/WEEKLY/MONTHLY`; safety snapshots are never selected), then `restic check`, then `restic check --read-data-subset RESTIC_CHECK_SUBSET`. Holds the repository lock, so it never overlaps a backup. Errors found by the check are exit 65 with the repair hint; the notification reports kept and removed snapshots, the check results and the repository size.
+Applies the retention policy to this host's `arkhive` snapshots (`restic forget --prune` with `RESTIC_KEEP_DAILY/WEEKLY/MONTHLY`; safety snapshots are never selected), then `restic check`, then `restic check --read-data-subset RESTIC_CHECK_SUBSET`. Holds the repository lock, so it never overlaps a backup. Errors found by the check are exit 65 with the repair hint, which lists restic's repair commands in the order of its troubleshooting guide (ArkHive never runs them). When pack files are missing, `forget --prune` refuses to run: the check still runs, so the report names what is missing, and the exit is 65. The notification reports kept and removed snapshots, the check results and the repository size. A backup cannot see that the repository lost data: only `maintain` and `drill` can, so run them on a schedule and alert on their failures (see [docs/OPERATIONS.md](docs/OPERATIONS.md#repository-damage-what-detects-it-and-when)); until a `maintain` passes again, every backup ends with a warning (exit 3).
 
 ### status
 
@@ -411,9 +413,9 @@ arkhive status [--host <name>] [--max-age <hours>] [--json]
 arkhive status --max-age 26     # monitoring probe for a daily backup
 ```
 
-The latest backup of this host (`RESTIC_HOST`, or `--host`), its age, the snapshot count and the repository size on disk. With `--max-age`, exit 1 when there is no snapshot or the latest is older than that many hours. It also shows how the last `backup`, `maintain` and `drill` of this host ended, and when a last run failed, the last one that succeeded. `--json` fields: `repository`, `host`, `latest` (`id`, `short_id`, `time`, `age_hours`), `snapshots`, `snapshots_total`, `hosts`, `raw_size`, `uncompressed_size`, and `runs`: for each of `backup`, `maintain` and `drill`, `last` and `last_success`, each `null` or an object with `job`, `started`, `ended`, `duration_seconds`, `exit_code`, `status` (`ok`, `warning`, `failed`), `snapshot_id`, `warnings`, `error`, `invocation` (systemd's `INVOCATION_ID` when it ran as a unit) and `notified` (the run sent its e-mail).
+The latest backup of this host (`RESTIC_HOST`, or `--host`), its age, the snapshot count and the repository size on disk. With `--max-age`, exit 1 when there is no snapshot or the latest is older than that many hours. It also shows how the last `backup`, `maintain` and `drill` on this repository ended, and when a last run failed, the last one that succeeded. Exit 65 when the snapshot of the last successful backup recorded for this repository is no longer in it and no newer backup of the host is there: someone deleted it, or the storage was rolled back to an older copy (see [docs/OPERATIONS.md](docs/OPERATIONS.md#deleted-snapshots-and-rollbacks)). `--json` fields: `repository`, `host`, `latest` (`id`, `short_id`, `time`, `age_hours`), `snapshots`, `snapshots_total`, `hosts`, `raw_size`, `uncompressed_size`, `runs`: for each of `backup`, `maintain` and `drill`, `last` and `last_success`, each `null` or an object with `job`, `started`, `ended`, `duration_seconds`, `exit_code`, `status` (`ok`, `warning`, `failed`), `snapshot_id`, `warnings`, `error`, `invocation` (systemd's `INVOCATION_ID` when it ran as a unit), `notified` (the run sent its e-mail), `repository` (the repository key) and `host`; and `continuity`: `status` (`ok`, `missing`, `superseded` when a newer backup replaced the recorded one, `not_recorded`), `recorded_snapshot`, `recorded_at`, `newest_snapshot` and `newest_time` (the newest backup of the host in the repository) and `newest_older` (that newest backup is older than the recorded one).
 
-Each `backup`, `maintain` and `drill` records how it ended in the state directory, one JSON file per job, replaced atomically: `$STATE_DIRECTORY` under systemd (`StateDirectory=arkhive`), otherwise `/var/lib/arkhive` as root and `$XDG_STATE_HOME/arkhive` (or `~/.local/state/arkhive`) for other users. A state directory that cannot be written is a warning, never a failure of the run.
+Each `backup`, `maintain` and `drill` records how it ended in the state directory, replaced atomically: `<job>.json` for the last run on this host, and `<key>/<job>.json` for the runs on each repository, where `<key>` is the first 16 hex digits of the SHA-256 of the repository URL (as in the lock file name). `$STATE_DIRECTORY` under systemd (`StateDirectory=arkhive`), otherwise `/var/lib/arkhive` as root and `$XDG_STATE_HOME/arkhive` (or `~/.local/state/arkhive`) for other users. A state directory that cannot be written is a warning, never a failure of the run. The first read of a repository's records takes over the host records of 2.1.0-rc.1, which named no repository.
 
 Under systemd with `CacheDirectory=arkhive`, restic keeps its cache in `$CACHE_DIRECTORY/restic` (so a unit with `ProtectHome=` still has one); an exported `RESTIC_CACHE_DIR` wins, and elsewhere restic uses its own default (`~/.cache/restic`).
 
@@ -423,7 +425,7 @@ Under systemd with `CacheDirectory=arkhive`, restic keeps its cache in `$CACHE_D
 arkhive init [--json]
 ```
 
-Creates the repository of the configuration. If `RESTIC_PASSWORD_FILE` does not exist, it generates a random password into it (mode 0600; its directory must exist). If the repository already exists and the password opens it, there is nothing to do (exit 0); a generated password never replaces the one of an existing repository. Afterwards, copy the password file off the host.
+Creates the repository of the configuration. If `RESTIC_PASSWORD_FILE` does not exist, it generates a random password into it (mode 0600; its directory must exist, and group or others must not be able to write it). If the repository already exists and the password opens it, there is nothing to do (exit 0); a generated password never replaces the one of an existing repository. Afterwards, copy the password file off the host.
 
 ### drill
 
@@ -440,7 +442,7 @@ arkhive doctor [--json]
 arkhive doctor --repo <repository> --password-file <file> [--sftp-command <cmd>]
 ```
 
-Checks, in order, and says how to fix each problem: PHP version and extensions, distribution and package manager, restic binary and version, the configuration used (or why none was found), removed 1.x keys, password file permissions, SSH command and key, repository reachability and locks, the latest snapshot's age (warning beyond 26 hours), the last recorded backup, maintain and drill (warning when the last one failed), free space for the dumps, clock skew against the repository, the execution context detected, SELinux. It never changes anything. Exit 0 when all is fine, 3 with warnings only, 1 when a check failed.
+Checks, in order, and says how to fix each problem: PHP version and extensions, distribution and package manager, restic binary and version, the configuration used (or why none was found), who else can read or change the configuration file, removed 1.x keys, password file permissions, SSH command and key, repository reachability and locks, the latest snapshot's age (warning beyond 26 hours), the last recorded backup, maintain and drill (warning when the last one failed), free space for the dumps, clock skew against the repository, the execution context detected, SELinux. It never changes anything. Exit 0 when all is fine, 3 with warnings only, 1 when a check failed.
 
 ### schedule
 
@@ -572,7 +574,7 @@ maintain  enabled  Sun 2026-10-18 05:37:02 UTC  Sun 2026-10-11 05:33:40 UTC  suc
 drill     enabled  Wed 2026-10-21 05:31:18 UTC  Wed 2026-10-14 05:38:09 UTC  FAILED: exit 65 (DATAERR)
 ```
 
-- **systemd**: six units (`arkhive-backup`, `arkhive-maintain`, `arkhive-drill`, each a `.service` and a `.timer`) with `Nice=10`, `IOSchedulingClass=idle`, `CPUSchedulingPolicy=batch`, `TimeoutStartSec=` and `Persistent=true` timers that start within 10 minutes of their time (`RandomizedDelaySec`, so hosts with the same `--at` do not reach the repository server together). The services are hardened: `ProtectSystem=full` and `ProtectHome=read-only` (the backup reads everything, writes only `StateDirectory=arkhive`, `CacheDirectory=arkhive`, `/tmp` and, through `ReadWritePaths=`, the `DUMP_DIRECTORY` and a local repository), `PrivateTmp`, `NoNewPrivileges`, `ProtectKernelTunables`, `ProtectKernelModules`, `ProtectControlGroups`, `RestrictSUIDSGID`, `LockPersonality`. `maintain` and `drill` are ordered after `backup` (`After=`), so after a boot, when missed timers fire together, they wait for it. A seventh unit, the template `arkhive-failure@.service`, is started by `OnFailure=` when a job fails and runs [`arkhive notify`](#notify). `--install` saves each under `/etc/systemd/system/` and runs `systemctl daemon-reload && systemctl enable --now arkhive-backup.timer arkhive-maintain.timer arkhive-drill.timer`; run it again after changing `--at`, the configuration path or `DUMP_DIRECTORY`. Logs: `journalctl -u arkhive-backup.service`; timers: `systemctl list-timers 'arkhive-*'`.
+- **systemd**: six units (`arkhive-backup`, `arkhive-maintain`, `arkhive-drill`, each a `.service` and a `.timer`) with `Nice=10`, `IOSchedulingClass=idle`, `CPUSchedulingPolicy=batch`, `TimeoutStartSec=` and `Persistent=true` timers that start within 10 minutes of their time (`RandomizedDelaySec`, so hosts with the same `--at` do not reach the repository server together). The services are hardened: `ProtectSystem=full` and `ProtectHome=read-only` (the backup reads everything, writes only `StateDirectory=arkhive`, `CacheDirectory=arkhive`, `/tmp` and, through `ReadWritePaths=`, the `DUMP_DIRECTORY` and a local repository), `PrivateTmp`, `NoNewPrivileges`, `ProtectKernelTunables`, `ProtectKernelModules`, `ProtectControlGroups`, `RestrictSUIDSGID`, `LockPersonality`. `maintain` and `drill` are ordered after `backup` (`After=`), so after a boot, when missed timers fire together, they wait for it. As root the services also set `RuntimeDirectory=arkhive` (mode 0700, preserved) and `ARKHIVE_LOCK_DIR=/run/arkhive`, root's private lock directory (see [docs/OPERATIONS.md](docs/OPERATIONS.md#the-run-lock)). A seventh unit, the template `arkhive-failure@.service`, is started by `OnFailure=` when a job fails and runs [`arkhive notify`](#notify). `--install` saves each under `/etc/systemd/system/` and runs `systemctl daemon-reload && systemctl enable --now arkhive-backup.timer arkhive-maintain.timer arkhive-drill.timer`; run it again after changing `--at`, the configuration path or `DUMP_DIRECTORY`. Logs: `journalctl -u arkhive-backup.service`; timers: `systemctl list-timers 'arkhive-*'`.
 - **cron**: lines for `/etc/cron.d/arkhive` (root:root, 0644) or `crontab -e` for another user, logging with `--log-file` (`/var/log/arkhive.log` for root, `$XDG_STATE_HOME/arkhive/arkhive.log` or `~/.local/state/arkhive/arkhive.log` otherwise).
 
 Under systemd ArkHive speaks the service manager's notify protocol (`NotifyAccess=main` in the units; nothing is sent when `NOTIFY_SOCKET` is unset). `systemctl status arkhive-backup` shows the current step and its progress (`Status: "Backing up /srv/www /etc: 42.0% 120/300 files 1.20 GiB/3.10 GiB"`), then how the run ended (`arkhive backup failed with exit 69 (UNAVAILABLE): ...`). While a backup or a restore still advances, each progress report gives the unit 30 more minutes (`EXTEND_TIMEOUT_USEC`), so `TimeoutStartSec` stops a run that is stuck, not one that is slow. With `WatchdogSec=` in a unit, ArkHive pings the watchdog while it works and waits.
@@ -592,14 +594,14 @@ ArkHive follows the `sysexits.h` convention, so scripts and systemd can tell a c
 | 3 | WARNING | Completed with warnings: unreadable files in a backup (the snapshot is saved), a notification that could not be sent, `doctor` warnings |
 | 10 | UPDATE | `self-update --check`: an update is available |
 | 64 | USAGE | Bad option or argument, a required answer missing in unattended mode, `--in-place` without `--force`, `self-update` across a major version without `--allow-major` |
-| 65 | DATAERR | Data verified and found wrong: `maintain` check errors, a failed `drill`, a damaged 1.x archive, a download that does not match its checksum |
+| 65 | DATAERR | Data verified and found wrong: `maintain` check errors, a failed `drill`, missing or damaged repository data met by `restore`, `ls` or `find`, the last recorded backup gone from the repository (`status`, `drill`), a damaged 1.x archive, a download that does not match its checksum |
 | 66 | NOINPUT | Something named does not exist: configuration file, password file, snapshot, path in a snapshot, dump, database, release |
 | 69 | UNAVAILABLE | A service or dependency is unavailable: repository unreachable or missing, restic or a dump tool missing or too old, database server down, PHP too old or missing an extension |
 | 70 | SOFTWARE | Internal error, or output of restic that ArkHive cannot understand |
 | 71 | OSERR | The operating system refused to start a process |
 | 73 | CANTCREAT | An output cannot be created: non-empty restore target, not enough space, an existing database for `--import-as`, an unwritable log file |
 | 74 | IOERR | A write failed because a filesystem is full (local repository, restic cache, dump staging, restore target, extraction); the message gives the free space found on each |
-| 75 | TEMPFAIL | Temporary, retry later: another ArkHive run or restic holds the repository lock, a timeout (see Deadlines below), the GitHub API rate limit |
+| 75 | TEMPFAIL | Temporary, retry later: another ArkHive run or restic holds the repository lock (a lock left by a dead process on this host is reported as such and not waited for), a timeout (see Deadlines below), restic killed or stopped by a signal ArkHive did not send (the out-of-memory killer, an administrator; not retried within the run), the GitHub API rate limit |
 | 76 | PROTOCOL | The releases API answered something that is not a valid release |
 | 77 | NOPERM | Wrong repository or archive password, database credentials refused, permission denied, a password file readable by others or owned by another user |
 | 78 | CONFIG | Configuration missing or invalid, including removed 1.x keys |
@@ -612,7 +614,8 @@ ArkHive follows the `sysexits.h` convention, so scripts and systemd can tell a c
 
 Failures that may pass on their own are tried again within the same run, each retry logged as a warning with its reason and the wait; when the last try fails the exit code is that failure's own (75, 69).
 
-- A repository locked by another ArkHive run or another restic client (another host's backup, a `prune`): tried again after 5, 10, 20 seconds, then every minute, until `LOCK_WAIT` seconds have passed (300 by default; `0` fails at once). ArkHive never removes a lock.
+- A repository locked by another ArkHive run or another restic client (another host's backup, a `prune`): tried again after 5, 10, 20 seconds, then every minute, until `LOCK_WAIT` seconds have passed (300 by default; `0` fails at once). ArkHive never removes a lock unless `UNLOCK_STALE` says so.
+- A restic lock that nothing will release, because it was made on this host by a process that is gone or a zombie (restic killed with `kill -9` or by the out-of-memory killer) and no other ArkHive run uses the repository: not waited for. The run fails at once with exit 75, "a stale lock from a dead process on this host (PID N no longer exists)" and the `restic unlock` command. With `UNLOCK_STALE=true`, ArkHive runs `restic unlock` itself (never `--remove-all`) wherever it would wait for a lock (opening the repository, `backup`, `maintain`, `restore`) and tries again at once, when the PID no longer exists and no other lock made on this host in the last 30 minutes belongs to a running process. See [docs/OPERATIONS.md](docs/OPERATIONS.md#stale-restic-locks).
 - A repository that cannot be reached (connection refused or lost, name resolution, a timeout): three tries, about 5 and 15 seconds apart. A refused SSH key or an unknown host key is not tried again.
 - The notification e-mail, refused with a 4xx answer (greylisting, a rate limit) or not delivered for a network error: three tries, about 15 and 45 seconds apart. Its failure only turns the exit code into 3.
 
@@ -666,10 +669,11 @@ rsync -aHAX --numeric-ids "$TARGET/etc/nginx/" /etc/nginx/
 
 ## Upgrading from 2.0
 
-`arkhive self-update` installs 2.1 (same major version). The configuration, the repository and the password file stay as they are; the new keys (`LOCK_WAIT`, `DUMP_REQUIRED`, `LOG_TARGET`, `SYSLOG_FACILITY`) are optional. What to check:
+`arkhive self-update` installs 2.1 (same major version). The configuration, the repository and the password file stay as they are; the new keys (`LOCK_WAIT`, `UNLOCK_STALE`, `DUMP_REQUIRED`, `LOG_TARGET`, `SYSLOG_FACILITY`) are optional. What to check:
 
 - **Exit codes**: scripts or monitors that test for `2` (usage or configuration error) or `4` (refused) must test for `64`/`78` and `73` (see [Exit codes](#exit-codes)); a failed `drill` or repository check is `65` instead of `1`, and a database dump that fails is named and skipped (exit 3) unless `DUMP_REQUIRED=true`.
-- **Units**: reinstall them to get `OnFailure=` notifications, the hardening, `StateDirectory=`/`CacheDirectory=`, the job ordering and the randomized timers: `sudo arkhive schedule --install --config /etc/arkhive/config` (it overwrites the units it generated, never anything else; units you edited by hand are refused, compare them with `arkhive schedule --systemd`). For cron, regenerate the lines with `arkhive schedule --cron`.
+- **Permissions**: run `arkhive doctor` before the first scheduled run. A configuration that group or others can write, or that another user owns, is refused (exit 77); one that holds a database or SMTP password and that others can read is a warning. The password file must be `chmod 600`, owned by the running user, not a symbolic link, in a directory only its owner can write; `DUMP_DIRECTORY` must belong to the running user and not be writable by others. Each message gives the `chmod` or `chown` to run.
+- **Units**: reinstall them to get `OnFailure=` notifications, the hardening, `StateDirectory=`/`CacheDirectory=`, root's private lock directory (`RuntimeDirectory=arkhive`), the job ordering and the randomized timers: `sudo arkhive schedule --install --config /etc/arkhive/config` (it overwrites the units it generated, never anything else; units you edited by hand are refused, compare them with `arkhive schedule --systemd`). For cron, regenerate the lines with `arkhive schedule --cron`.
 - **Logs**: under systemd the events now reach the journal with structured fields (see [Logging](#logging)): `journalctl -u arkhive-backup.service` shows the same messages; filters on the `<N>` prefixes of 2.0 are not needed any more. Elsewhere nothing changes unless `LOG_TARGET=syslog` is set.
 - **restic**: any release from 0.11.0 works, so a distribution package (Debian 11 and later, Ubuntu 22.04 and later) can replace the static binary; `arkhive doctor` lists what an older restic lacks.
 

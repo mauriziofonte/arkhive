@@ -286,6 +286,115 @@ final class OperationsTest extends E2eTestCase
         }
     }
 
+    /**
+     * Pack files deleted on the server: the backup cannot see it (restic trusts its index), maintain
+     * and restore report it as damage (65) with the repair order, and later backups carry a warning.
+     */
+    public function testPackFilesDeletedOnTheServerAreDamageNotSuccess(): void
+    {
+        $repository = "{$this->dir}/repo";
+        $this->arkhiveInit($this->dir, $repository, null);
+        $config = $this->config($repository, null, ['RESTIC_CHECK_SUBSET' => '100%']);
+        $this->backup($config);
+        file_put_contents("{$this->tree}/data/second.txt", "second run\n");
+        $this->backup($config);
+
+        $packs = glob("{$repository}/data/*/*") ?: [];
+        self::assertNotSame([], $packs);
+        foreach ($packs as $pack) {
+            unlink($pack);
+        }
+        file_put_contents("{$this->tree}/data/third.txt", "third run\n");
+        $this->backup($config);
+
+        $maintain = self::arkhive(['maintain', '--config', $config], $this->runEnv());
+        self::assertSame(ExitCode::DATA_ERROR, $maintain->exitCode, $maintain->output());
+        self::assertMatchesRegularExpression('/error The retention policy was not applied: .*pack file\(s\) listed in the index are missing/', $maintain->stderr);
+        self::assertStringContainsString('restic repair index, then arkhive backup', $maintain->stderr);
+        self::assertStringNotContainsString('"message_type"', $maintain->stderr, 'no raw restic JSON');
+        $report = $this->json(['maintain'], ExitCode::DATA_ERROR, $config);
+        self::assertFalse($report['healthy']);
+        self::assertNotSame([], $report['missing_packs']);
+
+        $backup = self::arkhive(['backup', '--config', $config], $this->runEnv());
+        self::assertSame(ExitCode::WARNING, $backup->exitCode, $backup->output());
+        self::assertStringContainsString('found the repository damaged and no maintain has passed since', $backup->stderr);
+
+        $restore = self::arkhive(['restore', '--config', $config, '--snapshot', 'latest', '--target', "{$this->dir}/restored", '--yes'], $this->runEnv());
+        self::assertSame(ExitCode::DATA_ERROR, $restore->exitCode, $restore->output());
+        self::assertStringContainsString('restic repair index', $restore->stderr);
+        self::assertDirectoryDoesNotExist("{$this->dir}/restored");
+    }
+
+    public function testADeletedLastBackupIsCaughtByStatusAndDrill(): void
+    {
+        $repository = "{$this->dir}/repo";
+        $this->arkhiveInit($this->dir, $repository, null);
+        $config = $this->config($repository, null);
+        $this->backup($config);
+        file_put_contents("{$this->tree}/data/second.txt", "second run\n");
+        $this->backup($config);
+
+        $state = json_decode((string) file_get_contents("{$this->dir}/state/" . substr(hash('sha256', $repository), 0, 16) . '/backup.json'), true);
+        self::assertIsArray($state, 'run state kept per repository');
+        $last = (string) $state['last_success']['snapshot_id'];
+        self::assertMatchesRegularExpression('/^[0-9a-f]{64}$/', $last, 'the full snapshot id');
+        self::assertSame('ok', $this->json(['status'], 0, $config)['continuity']['status']);
+
+        // what a rollback of the storage to before the second backup leaves behind
+        unlink("{$repository}/snapshots/{$last}");
+
+        $status = $this->json(['status'], ExitCode::DATA_ERROR, $config);
+        self::assertSame('missing', $status['continuity']['status']);
+        self::assertTrue($status['continuity']['newest_older']);
+        $drill = self::arkhive(['drill', '--config', $config], $this->runEnv());
+        self::assertSame(ExitCode::DATA_ERROR, $drill->exitCode, $drill->output());
+        self::assertStringContainsString("Snapshot {$last} recorded as the last successful backup at", $drill->stderr);
+        self::assertStringContainsString('is missing from the repository (deleted or rolled back)', $drill->stderr);
+
+        $backup = self::arkhive(['backup', '--config', $config], $this->runEnv());
+        self::assertSame(ExitCode::WARNING, $backup->exitCode, 'the failed drill stands until a maintain passes: ' . $backup->output());
+        self::assertSame('ok', $this->json(['status'], 0, $config)['continuity']['status'], 'a new backup starts a new series');
+    }
+
+    public function testALockOfAResticKilledOnThisHostIsNamedAndRemovedOnlyWithUnlockStale(): void
+    {
+        $repository = "{$this->dir}/repo";
+        $this->arkhiveInit($this->dir, $repository, null);
+        $this->backup($this->config($repository, null));
+
+        // a backup that holds its lock while it waits for stdin, then dies by SIGKILL
+        $process = proc_open([self::env('E2E_RESTIC'), 'backup', '--stdin', '--stdin-filename', 'pending.sql', '--host', self::HOST], [0 => ['pipe', 'r'], 1 => ['file', '/dev/null', 'w'], 2 => ['file', '/dev/null', 'w']], $pipes, null, [
+            'RESTIC_REPOSITORY' => $repository,
+            'RESTIC_PASSWORD_FILE' => self::env('E2E_PASSWORD_FILE'),
+            'PATH' => self::path(),
+            'HOME' => $this->dir,
+        ]);
+        self::assertIsResource($process);
+        $pid = proc_get_status($process)['pid'];
+        for ($i = 0; $i < 300 && (glob("{$repository}/locks/*") ?: []) === []; $i++) {
+            usleep(100000);
+        }
+        self::assertCount(1, glob("{$repository}/locks/*") ?: [], 'restic took its lock');
+        posix_kill($pid, SIGKILL);
+        fclose($pipes[0]);
+        proc_close($process);
+        self::assertCount(1, glob("{$repository}/locks/*") ?: [], 'a killed restic leaves its lock behind');
+
+        $started = microtime(true);
+        $maintain = self::arkhive(['maintain', '--config', $this->config($repository, null, ['LOCK_WAIT' => '60'])], $this->runEnv());
+        self::assertSame(ExitCode::TEMPORARY, $maintain->exitCode, $maintain->output());
+        self::assertStringContainsString("a stale lock from a dead process on this host (PID {$pid} no longer exists)", $maintain->stderr);
+        self::assertStringContainsString('or set UNLOCK_STALE=yes to let ArkHive do so', $maintain->stderr);
+        self::assertLessThan(45, microtime(true) - $started, 'not waited for until LOCK_WAIT');
+        self::assertCount(1, glob("{$repository}/locks/*") ?: [], 'never removed by default');
+
+        $maintain = self::arkhive(['maintain', '--config', $this->config($repository, null, ['UNLOCK_STALE' => 'yes'])], $this->runEnv());
+        self::assertSame(0, $maintain->exitCode, $maintain->output());
+        self::assertStringContainsString("(PID {$pid} no longer exists); removing it with restic unlock (UNLOCK_STALE)", $maintain->stderr);
+        self::assertSame([], glob("{$repository}/locks/*") ?: []);
+    }
+
     public function testDoctorIsGreenOnAHealthyHostAndNamesWhatIsMissing(): void
     {
         [$repository, $sftpCommand] = self::sftpRepository();

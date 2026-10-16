@@ -5,16 +5,19 @@ declare(strict_types=1);
 namespace Mfonte\Arkhive\Commands;
 
 use Mfonte\Arkhive\Application\Run\RunJournal;
+use Mfonte\Arkhive\Domain\Repository\RepositoryKey;
 use Mfonte\Arkhive\Domain\Repository\Snapshot;
 use Mfonte\Arkhive\Domain\Repository\Snapshots;
+use Mfonte\Arkhive\Domain\Run\SnapshotContinuity;
 use Mfonte\Arkhive\Domain\Shared\Bytes;
 use Mfonte\Arkhive\Exceptions\UsageException;
 use Mfonte\Arkhive\ExitCode;
 
 /**
  * spec §6 status: latest snapshot and its age, snapshot count, repository size, and the last run of
- * each job on this host (from the state directory). With --max-age it is a monitoring probe: exit 1
- * when the latest backup is older than that or missing.
+ * each job on this repository (from the state directory). With --max-age it is a monitoring probe:
+ * exit 1 when the latest backup is older than that or missing. Exit 65 when the snapshot of the last
+ * successful backup recorded here is gone from the repository (SnapshotContinuity).
  */
 final class StatusCommand extends RepositoryCommand
 {
@@ -39,6 +42,9 @@ final class StatusCommand extends RepositoryCommand
         $latest = $backups->snapshots[0] ?? null;
         $stats = $restic->stats();
         $now = $this->clock->now();
+        $key = RepositoryKey::of($settings->repository);
+        $runs = $this->laravel->make(RunJournal::class)->states($key);
+        $continuity = SnapshotContinuity::check($runs['backup']->lastSuccess ?? null, $key, $all);
         $age = $latest === null ? null : round(max(0, $now->getTimestamp() - $latest->time->getTimestamp()) / 3600, 1);
 
         $status = [
@@ -55,12 +61,21 @@ final class StatusCommand extends RepositoryCommand
             'hosts' => $all->hosts(),
             'raw_size' => $stats->rawBytes,
             'uncompressed_size' => $stats->uncompressedBytes,
-            'runs' => array_map(static fn ($state): array => $state->toArray(), $runs = $this->laravel->make(RunJournal::class)->states()),
+            'runs' => array_map(static fn ($state): array => $state->toArray(), $runs),
+            'continuity' => $continuity->toArray(),
         ];
         if ((bool) $this->option('json')) {
             $this->result(json_encode($status, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION));
         } else {
-            $this->result($this->describe($status, $latest, $now, $runs));
+            $this->result($this->describe($status, $latest, $now, $runs, $continuity));
+        }
+
+        $missing = $continuity->message($now->getTimezone());
+        if ($missing !== null) {
+            $this->log->error(ucfirst($missing), $continuity->toArray());
+            $this->log->notice('Hint: ' . SnapshotContinuity::HINT);
+
+            return ExitCode::DATA_ERROR;
         }
 
         if ($maxAge === null) {
@@ -97,7 +112,7 @@ final class StatusCommand extends RepositoryCommand
      * @param array<string, mixed>                                $status
      * @param array<string, \Mfonte\Arkhive\Domain\Run\JobState> $runs
      */
-    private function describe(array $status, ?Snapshot $latest, \DateTimeImmutable $now, array $runs): string
+    private function describe(array $status, ?Snapshot $latest, \DateTimeImmutable $now, array $runs, SnapshotContinuity $continuity): string
     {
         $rows = [
             'Repository' => (string) $status['repository'],
@@ -116,6 +131,9 @@ final class StatusCommand extends RepositoryCommand
             if (!$state->last->succeeded()) {
                 $rows["Last good {$job}"] = $state->lastSuccess === null ? 'none recorded' : $state->lastSuccess->describe($now->getTimezone());
             }
+        }
+        if ($continuity->broken()) {
+            $rows['Last good snapshot'] = sprintf('%s MISSING from the repository (deleted or rolled back)', substr((string) $continuity->recorded?->snapshotId, 0, 8));
         }
         $width = max(array_map('strlen', array_keys($rows)));
         $lines = [];

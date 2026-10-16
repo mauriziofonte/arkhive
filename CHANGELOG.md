@@ -6,6 +6,86 @@ All notable changes to ArkHive are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [2.1.0-rc.2] - 2026-10-15
+
+Fixes for weak points found by an isolated test against a simulated Hetzner Storage Box
+(chrooted SFTP on port 23, quota, synthetic data): repository damage, file permissions, the run
+lock, run records, exit codes and messages.
+
+### Added
+
+- `UNLOCK_STALE` (optional, default `false`): with `true`, wherever ArkHive would wait for a lock
+  (opening the repository, `backup`, `maintain`, `restore`) it removes a restic lock left by a
+  process that died on this host with `restic unlock` (never `--remove-all`) and tries the
+  operation again at once, once, logged as a warning. Only when the
+  lock's PID no longer exists (restic keeps a zombie's lock) and no other lock made on this host in
+  the last 30 minutes belongs to a running process, since `restic unlock` tests those PIDs with
+  SIGHUP. By default ArkHive still never removes a lock. See docs/OPERATIONS.md.
+
+### Fixed
+
+- A repository whose pack files were deleted on the server is reported as damaged (exit 65) by
+  `maintain`, `restore`, `ls`, `find` and `drill`, with restic's repair commands in the order of its
+  troubleshooting guide (`repair index`, a new backup, `repair snapshots --forget`, a check), never
+  run automatically. `maintain` exited 1 with raw restic JSON when `forget --prune` refused to run on
+  missing packs; it now still runs the check, names the missing packs and exits 65. `restore` exited
+  1 ("Measuring snapshot failed"). A backup that follows a `maintain` or `drill` that found damage,
+  with no passing `maintain` since, ends with a warning (exit 3), since restic cannot detect the
+  damage while backing up. See docs/OPERATIONS.md.
+- Any local user could block root's backups by creating root's lock file in the world-writable
+  `/run/lock` first; root then failed with exit 73 and a misleading hint. Root now locks in
+  `/run/arkhive` (0700 root:root, checked before use), the systemd units and root cron lines set
+  `ARKHIVE_LOCK_DIR=/run/arkhive` (units: `RuntimeDirectory=arkhive`, mode 0700, preserved between
+  runs), and a lock file of another user or a symbolic link in a shared directory is exit 77 naming
+  its owner. Reinstall the units with `arkhive schedule --install`.
+- The configuration file's permissions are checked before every run. A configuration that someone
+  besides the running user and root can change (writable by group or others, or owned by another
+  user) is refused with exit 77, since whoever changes it chooses the commands ArkHive runs. A
+  configuration that holds `MYSQL_PASSWORD`, `PGSQL_PASSWORD` or `SMTP_PASSWORD` and is readable by
+  group or others is a warning in 2.1 ("Run: chmod 600 <path>"), so existing installs keep running;
+  a later minor version will refuse it with exit 77 (`ConfigFileAccess::ENFORCE_PRIVATE`). `doctor`
+  has a new `config file` check: failed for both cases, a warning for a configuration without
+  passwords that others can read.
+- The repository password file is checked more strictly: any permission for group or others
+  (0620, 0602, not only read bits) is refused, a symbolic link is refused (it is no longer followed:
+  point `RESTIC_PASSWORD_FILE` or `--password-file` at the file itself), and so is a file in a
+  directory that group or others can write without the sticky bit, where someone could replace it
+  with a password they know before restic reads it. `init` checks the directory before it generates
+  a password there.
+- SQL dumps could be readable by every local user: `mariadb-dump`, `mysqldump` and `pg_dump` create
+  their file with the process umask (0644 under the usual 022), and `mysql`/`pgsql` directories
+  created by hand or by an older version kept their mode. Each dump file is now created 0600 before
+  the dump tool writes into it and is 0600 after the rename, the engine subdirectories are made 0700
+  on every run, and a `DUMP_DIRECTORY` that belongs to another user or that group or others can
+  write is refused with exit 77.
+- Snapshots deleted on the server, or a storage rolled back to an older copy, went unnoticed:
+  restic sees a healthy repository with fewer snapshots. Each run now records the repository
+  and the host with its full snapshot id, the run state is kept per repository
+  (`<state>/<key>/<job>.json`, the key of the lock file; the host-wide `<job>.json` stays), and
+  `status` and `drill` exit 65 when the snapshot of the last successful backup recorded for the
+  repository is gone with no newer backup of the host in its place ("snapshot <id> recorded as the
+  last successful backup at <time> is missing from the repository (deleted or rolled back)"). A drill
+  then restores nothing, since an older snapshot would pass. `status --json` has a new
+  `continuity` object, and run records have `repository` and `host`. The records of 2.1.0-rc.1 are
+  taken over by the first repository that reads them, and are not checked (they may be of another
+  repository).
+- restic killed by a signal ArkHive did not send (the kernel's out-of-memory killer, an
+  administrator) ended with exit 1 and no message; it is now exit 75, "restic was killed by signal 9
+  (SIGKILL: out of memory?)", and is not tried again within the run. restic stopped by a SIGTERM or
+  SIGINT it caught ("signal terminated received", exit 1 before 0.18, 130 after) is the same. Error
+  messages read restic's JSON records (`--json`, restic 0.18 and later) as their text, without
+  terminal escape sequences and with repeated lines once: "repository is locked" now names the
+  holder and the lock time again with restic 0.18 and later, where the regular expressions met the
+  raw JSON. Missing or damaged data (`tree ... not found`, `blob ... not found`, `LoadRaw`,
+  `ciphertext verification failed`, packs missing from the index) is exit 65 everywhere.
+- A restic lock left by a process that died on this host (`kill -9`, the out-of-memory killer, a
+  crash) is never released, since restic does not skip stale locks; ArkHive waited `LOCK_WAIT` on it
+  at every run and then reported an ordinary lock. When the lock was made on this host, its PID no
+  longer exists or is a zombie (`/proc/<pid>/stat`), and no other ArkHive run holds the repository,
+  the run now fails at once with exit 75, "a stale lock from a dead process on this host (PID N no
+  longer exists)", and the `restic unlock` command. `doctor` and the guided restore no longer call
+  a lock stale when its process runs as another user (`kill(pid, 0)` failing with EPERM).
+
 ## [2.1.0-rc.1] - 2026-10-14
 
 ArkHive 2.1 works with the tools of the host: systemd (status, progress, watchdog, failure
@@ -179,7 +259,8 @@ encryption, deduplication and retention. The configuration is not compatible wit
 
 - Restrict the remote `chmod` to the backup directory of the day.
 
-[Unreleased]: https://github.com/mauriziofonte/arkhive/compare/v2.1.0-rc.1...HEAD
+[Unreleased]: https://github.com/mauriziofonte/arkhive/compare/v2.1.0-rc.2...HEAD
+[2.1.0-rc.2]: https://github.com/mauriziofonte/arkhive/compare/v2.1.0-rc.1...v2.1.0-rc.2
 [2.1.0-rc.1]: https://github.com/mauriziofonte/arkhive/compare/v2.0.0-rc.1...v2.1.0-rc.1
 [2.0.0-rc.1]: https://github.com/mauriziofonte/arkhive/compare/v1.7.1...v2.0.0-rc.1
 [1.7.1]: https://github.com/mauriziofonte/arkhive/releases/tag/v1.7.1

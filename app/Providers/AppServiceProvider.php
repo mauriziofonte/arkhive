@@ -10,6 +10,7 @@ use Mfonte\Arkhive\Application\Port\HttpClient;
 use Mfonte\Arkhive\Application\Port\Notifier;
 use Mfonte\Arkhive\Application\Port\Pause;
 use Mfonte\Arkhive\Application\Port\ProcessRunner;
+use Mfonte\Arkhive\Application\Port\ProcessTable;
 use Mfonte\Arkhive\Application\Port\Prompter;
 use Mfonte\Arkhive\Application\Port\RunStateStore;
 use Mfonte\Arkhive\Application\Port\ServiceManager;
@@ -17,10 +18,12 @@ use Mfonte\Arkhive\Application\Port\ServiceUnits;
 use Mfonte\Arkhive\Application\Port\SnapshotStoreFactory;
 use Mfonte\Arkhive\Application\Port\Terminal;
 use Mfonte\Arkhive\Application\Process\Cleanup;
+use Mfonte\Arkhive\Application\Resilience\StaleLocks;
 use Mfonte\Arkhive\Application\Service\ServiceStatus;
 use Mfonte\Arkhive\Application\System\BinaryFinder;
 use Mfonte\Arkhive\Application\System\CacheDirectory;
 use Mfonte\Arkhive\Application\System\Dependencies;
+use Mfonte\Arkhive\Application\System\Lock;
 use Mfonte\Arkhive\Application\System\StateDirectory;
 use Mfonte\Arkhive\Domain\Shared\Clock;
 use Mfonte\Arkhive\Domain\System\Distro;
@@ -37,6 +40,7 @@ use Mfonte\Arkhive\Infrastructure\Process\SystemProcessRunner;
 use Mfonte\Arkhive\Infrastructure\Restic\ResticFactory;
 use Mfonte\Arkhive\Infrastructure\State\JsonRunStateStore;
 use Mfonte\Arkhive\Infrastructure\System\OsRelease;
+use Mfonte\Arkhive\Infrastructure\System\ProcProcessTable;
 use Mfonte\Arkhive\Infrastructure\System\SystemClock;
 use Mfonte\Arkhive\Infrastructure\Systemd\NotifySocket;
 use Mfonte\Arkhive\Infrastructure\Systemd\Systemctl;
@@ -66,6 +70,15 @@ class AppServiceProvider extends ServiceProvider
             $app->make(ProcessRunner::class),
             $app->make(Dependencies::class),
             CacheDirectory::restic($app->make(Terminal::class)->environment()),
+            $app->make(StaleLocks::class),
+        ));
+        // a restic lock left by a dead process on this host, told apart from one a live run holds
+        $this->app->bind(ProcessTable::class, static fn (): ProcessTable => new ProcProcessTable());
+        $this->app->bind(StaleLocks::class, static fn ($app): StaleLocks => new StaleLocks(
+            $app->make(ProcessTable::class),
+            $app->make(Clock::class),
+            (string) (gethostname() ?: 'localhost'),
+            static fn (string $repository): bool => Lock::forRepository($repository, $app->make(Terminal::class)->environment(), $app->make(Clock::class), posix_geteuid())->heldElsewhere(),
         ));
         $this->app->bind(Notifier::class, SmtpNotifier::class);
         // waits between retries end at once on SIGINT or SIGTERM

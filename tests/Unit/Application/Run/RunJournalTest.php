@@ -9,6 +9,7 @@ use Mfonte\Arkhive\Application\Output\Logger;
 use Mfonte\Arkhive\Application\Run\RunJournal;
 use Mfonte\Arkhive\Domain\Execution\ExecutionContext;
 use Mfonte\Arkhive\Domain\Execution\LogFormat;
+use Mfonte\Arkhive\Domain\Repository\RepositoryKey;
 use Mfonte\Arkhive\Domain\Run\RunRecord;
 use Mfonte\Arkhive\Infrastructure\Logging\LogStream;
 use PHPUnit\Framework\TestCase;
@@ -69,5 +70,25 @@ final class RunJournalTest extends TestCase
 
         self::assertSame([], $store->states);
         self::assertStringContainsString('debug No state directory: the outcome of this run is not recorded', $this->stream->contents());
+    }
+
+    public function testARunOnARepositoryIsRecordedForTheHostAndForThatRepository(): void
+    {
+        $store = new InMemoryRunStateStore();
+        $journal = new RunJournal($store);
+        $a = RepositoryKey::of('/srv/restic-a');
+        $b = RepositoryKey::of('/srv/restic-b');
+        $at = new DateTimeImmutable('2026-10-12T03:00:00+00:00');
+
+        $journal->record(new RunRecord('backup', $at, $at->modify('+60 seconds'), 0, 'aaaa1111', repository: $a, host: 'web1.example.com'), $this->log);
+        $journal->record(new RunRecord('backup', $at->modify('+1 hour'), $at->modify('+61 minutes'), 0, 'bbbb2222', repository: $b, host: 'web1.example.com'), $this->log);
+        $journal->record(self::record('backup', 78), $this->log);
+
+        self::assertSame(78, $journal->states()['backup']->last?->exitCode, 'the host state has every run, the repository unknown too');
+        self::assertSame('bbbb2222', $journal->states()['backup']->lastSuccess?->snapshotId);
+        self::assertSame('aaaa1111', $journal->states($a)['backup']->lastSuccess?->snapshotId);
+        self::assertSame('aaaa1111', $journal->states($a)['backup']->last?->snapshotId, 'runs on b are not runs on a');
+        self::assertSame('bbbb2222', $journal->states($b)['backup']->last?->snapshotId);
+        self::assertSame('', $this->stream->contents());
     }
 }

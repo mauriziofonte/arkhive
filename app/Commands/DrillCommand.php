@@ -6,14 +6,18 @@ namespace Mfonte\Arkhive\Commands;
 
 use Mfonte\Arkhive\Application\Drill\DrillRunner;
 use Mfonte\Arkhive\Application\Port\ProcessRunner;
+use Mfonte\Arkhive\Application\Run\RunJournal;
 use Mfonte\Arkhive\Application\System\Dependencies;
 use Mfonte\Arkhive\Domain\Configuration\Config;
 use Mfonte\Arkhive\Domain\Drill\DrillReport;
 use Mfonte\Arkhive\Domain\Notification\Notification;
+use Mfonte\Arkhive\Domain\Repository\RepositoryKey;
 use Mfonte\Arkhive\Domain\Repository\Snapshots;
+use Mfonte\Arkhive\Domain\Run\SnapshotContinuity;
 use Mfonte\Arkhive\Domain\Shared\Bytes;
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
 use Mfonte\Arkhive\Exceptions\ConfigException;
+use Mfonte\Arkhive\Exceptions\DataException;
 use Mfonte\Arkhive\Exceptions\InterruptedException;
 use Mfonte\Arkhive\Exceptions\UsageException;
 use Mfonte\Arkhive\ExitCode;
@@ -48,7 +52,10 @@ final class DrillCommand extends RepositoryCommand
         try {
             $restic = $this->openRepository($settings, 'to run a restore drill');
             $host = $this->hostOption() ?? $config?->restic->host;
-            $snapshot = (new Snapshots($restic->snapshots()))->resolve('latest', $host, self::hostname());
+            $snapshots = new Snapshots($restic->snapshots());
+            $this->assertContinuity($settings->repository, $snapshots);
+            $snapshot = $snapshots->resolve('latest', $host, self::hostname());
+            $this->runHost = $snapshot->hostname;
             $runner = new DrillRunner(
                 $this->laravel->make(ProcessRunner::class),
                 $this->laravel->make(Dependencies::class),
@@ -87,6 +94,20 @@ final class DrillCommand extends RepositoryCommand
         }
 
         return $exit;
+    }
+
+    /**
+     * The snapshot of the last successful backup recorded for this repository must still be there:
+     * a drill of an older snapshot would pass on a repository that lost its newest backups.
+     */
+    private function assertContinuity(string $repository, Snapshots $snapshots): void
+    {
+        $key = RepositoryKey::of($repository);
+        $continuity = SnapshotContinuity::check($this->laravel->make(RunJournal::class)->states($key)['backup']->lastSuccess ?? null, $key, $snapshots);
+        $missing = $continuity->message($this->clock->now()->getTimezone());
+        if ($missing !== null) {
+            throw new DataException(ucfirst($missing), SnapshotContinuity::HINT);
+        }
     }
 
     /**

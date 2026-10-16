@@ -11,8 +11,9 @@ use Mfonte\Arkhive\Domain\Run\RunRecord;
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
 
 /**
- * Records how each scheduled job ended, for status, doctor and monitoring. Recording never changes
- * the outcome of the run: a state directory that cannot be written is a warning.
+ * Records how each scheduled job ended, for status, doctor and monitoring: the last run on this host,
+ * and the last run (and last good run) on each repository. Recording never changes the outcome of the
+ * run: a state directory that cannot be written is a warning.
  */
 final class RunJournal
 {
@@ -29,19 +30,25 @@ final class RunJournal
         }
         try {
             $this->store->save($run->job, $this->store->load($run->job)->with($run));
+            if ($run->repository !== null) {
+                $this->store->save($run->job, $this->store->load($run->job, $run->repository)->with($run), $run->repository);
+            }
         } catch (ArkhiveException $e) {
             $log->warning("Could not record the outcome of this {$run->job} in {$this->store->location()}: {$e->getMessage()}");
         }
     }
 
     /**
+     * @param string|null $repository a RepositoryKey: the runs on that repository; null: the last
+     *                                runs on this host, whatever the repository
+     *
      * @return array<string, JobState> every job, in RunRecord::JOBS order
      */
-    public function states(): array
+    public function states(?string $repository = null): array
     {
         $states = [];
         foreach (RunRecord::JOBS as $job) {
-            $states[$job] = $this->store->load($job);
+            $states[$job] = $this->store->load($job, $repository);
         }
 
         return $states;

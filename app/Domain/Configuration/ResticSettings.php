@@ -14,7 +14,8 @@ final readonly class ResticSettings
     public const DEFAULT_LOCK_WAIT = 300;
 
     /**
-     * @param int $lockWait seconds to wait for a lock held by another run; 0 fails at once
+     * @param int  $lockWait    seconds to wait for a lock held by another run; 0 fails at once
+     * @param bool $unlockStale run `restic unlock` on a lock left by a dead process on this host (UNLOCK_STALE)
      */
     public function __construct(
         public string $repository,
@@ -24,6 +25,7 @@ final readonly class ResticSettings
         public string $host = '',
         public string $compression = 'auto',
         public int $lockWait = self::DEFAULT_LOCK_WAIT,
+        public bool $unlockStale = false,
     ) {
     }
 
@@ -36,5 +38,15 @@ final readonly class ResticSettings
         $path = str_starts_with($this->repository, 'local:') ? substr($this->repository, 6) : $this->repository;
 
         return str_starts_with($path, '/') ? $path : null;
+    }
+
+    /**
+     * How to run restic by hand on this repository, for hints: the password file in the environment
+     * (never the password itself), the repository and, when set, the sftp command.
+     */
+    public function commandLine(): string
+    {
+        return 'RESTIC_PASSWORD_FILE=' . escapeshellarg($this->passwordFile) . ' restic -r ' . escapeshellarg($this->repository)
+            . ($this->sftpCommand === null ? '' : ' -o sftp.command=' . escapeshellarg($this->sftpCommand));
     }
 }

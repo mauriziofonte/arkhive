@@ -9,6 +9,7 @@ use Mfonte\Arkhive\Application\Port\SnapshotStore;
 use Mfonte\Arkhive\Application\Process\Command;
 use Mfonte\Arkhive\Application\Process\ProcessResult;
 use Mfonte\Arkhive\Application\Process\Timeouts;
+use Mfonte\Arkhive\Application\Resilience\StaleLocks;
 use Mfonte\Arkhive\Application\System\DiskSpace;
 use Mfonte\Arkhive\Domain\Configuration\ResticSettings;
 use Mfonte\Arkhive\Domain\Exclusion\ResticPatternMatcher;
@@ -28,6 +29,7 @@ use Mfonte\Arkhive\Domain\Repository\SftpLocation;
 use Mfonte\Arkhive\Domain\Repository\Snapshot;
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
 use Mfonte\Arkhive\Exceptions\IoException;
+use Mfonte\Arkhive\Exceptions\LockedException;
 use Mfonte\Arkhive\Exceptions\SoftwareException;
 use Mfonte\Arkhive\Exceptions\UnavailableException;
 
@@ -56,6 +58,7 @@ final class Restic implements SnapshotStore
         public readonly string $binary,
         private readonly ProcessRunner $runner,
         private readonly ?string $cacheDirectory = null,
+        private readonly ?StaleLocks $staleLocks = null,
     ) {
     }
 
@@ -114,12 +117,38 @@ final class Restic implements SnapshotStore
         }
         $result = $this->runner->run($command, $onStdoutLine, $onStderrLine);
         if (!in_array($result->exitCode, $acceptedExitCodes, true) || $result->timedOut) {
-            $failure = ResticErrors::exception($result, $what, $this->settings);
-
-            throw $failure instanceof IoException ? DiskSpace::annotate($failure, $this->localPaths($writes)) : $failure;
+            throw $this->failure($result, $what, $writes);
         }
 
         return $result;
+    }
+
+    /**
+     * The classified error of a failed run: a full disk names the local paths that may be full, a
+     * lock left by a dead process on this host is told apart from one held by a live run.
+     *
+     * @param list<string> $writes
+     */
+    private function failure(ProcessResult $result, string $what, array $writes): ArkhiveException
+    {
+        $failure = ResticErrors::exception($result, $what, $this->settings);
+        if ($failure instanceof IoException) {
+            return DiskSpace::annotate($failure, $this->localPaths($writes));
+        }
+        if ($failure instanceof LockedException && $this->staleLocks !== null) {
+            return $this->staleLocks->examine($failure, ResticErrors::text($result->stderr), $this->settings, $this->locks(...), $this->unlock(...)) ?? $failure;
+        }
+
+        return $failure;
+    }
+
+    /**
+     * `restic unlock`: removes the locks restic itself finds stale (older than 30 minutes, or made on
+     * this host by a process that no longer exists), never the others.
+     */
+    private function unlock(): void
+    {
+        $this->run(['unlock'], 'Removing the stale lock', timeout: self::REACH_TIMEOUT);
     }
 
     /**

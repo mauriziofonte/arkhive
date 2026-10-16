@@ -13,6 +13,7 @@ use Mfonte\Arkhive\Domain\Configuration\RemovedKeys;
 use Mfonte\Arkhive\Domain\Execution\LogTarget;
 use Mfonte\Arkhive\Domain\Execution\SyslogFacility;
 use Mfonte\Arkhive\Exceptions\ConfigException;
+use Mfonte\Arkhive\Exceptions\PermissionException;
 use Mfonte\Arkhive\ExitCode;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -72,6 +73,7 @@ final class ConfigFactoryTest extends TestCase
         self::assertSame('web01', $config->restic->host);
         self::assertSame('auto', $config->restic->compression);
         self::assertSame(300, $config->restic->lockWait);
+        self::assertFalse($config->restic->unlockStale, 'ArkHive never removes a lock unless told to');
         self::assertSame([7, 4, 6], [$config->keepDaily, $config->keepWeekly, $config->keepMonthly]);
         self::assertSame('5%', $config->checkSubset);
         self::assertNull($config->dumpDirectory);
@@ -97,6 +99,7 @@ final class ConfigFactoryTest extends TestCase
             'RESTIC_KEEP_MONTHLY' => '12',
             'RESTIC_CHECK_SUBSET' => '1/10',
             'LOCK_WAIT' => '0',
+            'UNLOCK_STALE' => 'yes',
             'DUMP_REQUIRED' => 'yes',
             'EXCLUSION_PATTERNS' => '*.log,/cache/*',
         ]);
@@ -108,6 +111,7 @@ final class ConfigFactoryTest extends TestCase
         self::assertSame([14, 0, 12], [$config->keepDaily, $config->keepWeekly, $config->keepMonthly]);
         self::assertSame('1/10', $config->checkSubset);
         self::assertSame(0, $config->restic->lockWait);
+        self::assertTrue($config->restic->unlockStale);
         self::assertTrue($config->dumpRequired);
         self::assertSame(['*.log', '/cache/*'], $config->exclusionPatterns);
         self::assertSame(['/srv/www/**/*.log', '/etc/**/*.log', '/srv/www/cache/*', '/etc/cache/*'], $config->resticExcludes);
@@ -304,9 +308,10 @@ final class ConfigFactoryTest extends TestCase
     public function testInvalidResticValues(): void
     {
         $this->assertInvalid(
-            ['RESTIC_COMPRESSION' => 'gzip', 'RESTIC_CHECK_SUBSET' => 'half', 'RESTIC_KEEP_DAILY' => '-1', 'RESTIC_KEEP_MONTHLY' => '6.5', 'LOCK_WAIT' => '5m', 'DUMP_REQUIRED' => 'maybe'],
+            ['RESTIC_COMPRESSION' => 'gzip', 'RESTIC_CHECK_SUBSET' => 'half', 'RESTIC_KEEP_DAILY' => '-1', 'RESTIC_KEEP_MONTHLY' => '6.5', 'LOCK_WAIT' => '5m', 'UNLOCK_STALE' => 'always', 'DUMP_REQUIRED' => 'maybe'],
             'RESTIC_COMPRESSION must be auto, max or off, got "gzip"',
             'LOCK_WAIT must be a whole number >= 0, got "5m"',
+            'UNLOCK_STALE must be true or false (also yes/no, 1/0), got "always"',
             'RESTIC_CHECK_SUBSET must be a percentage (5%), a fraction (1/10) or a size (500M), got "half"',
             'RESTIC_KEEP_DAILY must be a whole number >= 0, got "-1"',
             'RESTIC_KEEP_MONTHLY must be a whole number >= 0, got "6.5"',
@@ -449,5 +454,73 @@ final class ConfigFactoryTest extends TestCase
         self::assertSame("{$cwd}/.arkhive-config", $config->source);
         self::assertSame('web02', $config->restic->host);
         self::assertSame("{$cwd}/.arkhive-config", $loader->locator()->locate());
+    }
+
+    public function testTheLoaderWarnsAboutPasswordsOthersCanReadAndKeepsRunning(): void
+    {
+        $dir = $this->tempDir();
+        $path = "{$dir}/config";
+        file_put_contents($path, "BACKUP_PATHS=/srv\nRESTIC_REPOSITORY=/var/restic\nRESTIC_PASSWORD_FILE={$this->passwordFile}\nMYSQL_PASSWORD=db-password-placeholder\n");
+        $loader = new ConfigLoader(new ConfigLocator($dir, ''), 'web02');
+
+        chmod($path, 0600);
+        self::assertSame([], $loader->load($path)->warnings);
+
+        chmod($path, 0644);
+        self::assertSame(
+            ["The configuration {$path} holds MYSQL_PASSWORD and is readable by group or others (mode 0644): Run: chmod 600 {$path} (a later ArkHive version will refuse it)"],
+            $loader->load($path)->warnings,
+        );
+
+        file_put_contents($path, "BACKUP_PATHS=/srv\nRESTIC_REPOSITORY=/var/restic\nRESTIC_PASSWORD_FILE={$this->passwordFile}\n");
+        self::assertSame([], $loader->load($path)->warnings, 'no passwords in it');
+    }
+
+    /**
+     * @return iterable<string, array{int}>
+     */
+    public static function changeableModes(): iterable
+    {
+        yield 'group-writable' => [0660];
+        yield 'world-writable' => [0666];
+        yield 'writable by others only' => [0602];
+    }
+
+    #[DataProvider('changeableModes')]
+    public function testTheLoaderRefusesAConfigurationOthersCanChange(int $mode): void
+    {
+        $dir = $this->tempDir();
+        $path = "{$dir}/config";
+        file_put_contents($path, "BACKUP_PATHS=/srv\nRESTIC_REPOSITORY=/var/restic\nRESTIC_PASSWORD_FILE={$this->passwordFile}\n");
+        chmod($path, $mode);
+
+        try {
+            (new ConfigLoader(new ConfigLocator($dir, ''), 'web02'))->load($path);
+            self::fail('a configuration others can write was loaded');
+        } catch (PermissionException $e) {
+            self::assertSame(ExitCode::NO_PERMISSION, $e->exitCode());
+            self::assertSame(sprintf('The configuration %s is writable by group or others (mode %04o): whoever can change it chooses the commands ArkHive runs', $path, $mode), $e->getMessage());
+            self::assertSame("Run: chmod 600 {$path}", $e->hint());
+        }
+    }
+
+    public function testRootRefusesAConfigurationAnotherUserOwns(): void
+    {
+        if (posix_geteuid() !== 0) {
+            self::markTestSkipped('needs root to give the file to another user');
+        }
+        $dir = $this->tempDir();
+        $path = "{$dir}/config";
+        file_put_contents($path, "BACKUP_PATHS=/srv\nRESTIC_REPOSITORY=/var/restic\nRESTIC_PASSWORD_FILE={$this->passwordFile}\n");
+        chmod($path, 0600);
+        chown($path, 65534);
+
+        try {
+            (new ConfigLoader(new ConfigLocator($dir, ''), 'web02'))->load($path);
+            self::fail('a configuration another user owns was loaded');
+        } catch (PermissionException $e) {
+            self::assertSame("The configuration {$path} belongs to uid 65534, not to the running user (uid 0) or root: that user can change it and so choose the commands ArkHive runs", $e->getMessage());
+            self::assertSame("Run: chown 0 {$path} && chmod 600 {$path}", $e->hint());
+        }
     }
 }

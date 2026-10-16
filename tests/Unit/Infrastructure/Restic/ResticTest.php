@@ -7,12 +7,15 @@ namespace Tests\Unit\Infrastructure\Restic;
 use Mfonte\Arkhive\Application\Process\Command;
 use Mfonte\Arkhive\Application\Process\ProcessResult;
 use Mfonte\Arkhive\Application\Process\Timeouts;
+use Mfonte\Arkhive\Application\Resilience\StaleLocks;
 use Mfonte\Arkhive\Application\System\DiskSpace;
 use Mfonte\Arkhive\Domain\Configuration\ResticSettings;
 use Mfonte\Arkhive\Domain\Repository\BackupStatus;
 use Mfonte\Arkhive\Domain\Repository\RestoreRequest;
+use Mfonte\Arkhive\Domain\System\ProcessState;
 use Mfonte\Arkhive\Exceptions\ArkhiveException;
 use Mfonte\Arkhive\Exceptions\IoException;
+use Mfonte\Arkhive\Exceptions\LockedException;
 use Mfonte\Arkhive\ExitCode;
 use Mfonte\Arkhive\Infrastructure\Restic\Restic;
 use Mfonte\Arkhive\Infrastructure\Restic\ResticErrors;
@@ -23,6 +26,8 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Tests\Support\FakeBinaries;
 use Tests\Support\FakeProcessRunner;
+use Tests\Support\FakeProcessTable;
+use Tests\Support\FixedClock;
 use Tests\Support\TempDir;
 
 /**
@@ -417,5 +422,86 @@ final class ResticTest extends TestCase
 
         $this->expectExceptionObject(new ArkhiveException('restic is needed to back up but /opt/restic is not an executable file (from RESTIC_BINARY)'));
         $factory->create(new ResticSettings('/srv/r', '/etc/p', null, '/opt/restic'), 'to back up');
+    }
+
+    /**
+     * restic refusing to forget on the lock of a backup killed on this host (captured from 0.19.1),
+     * then `list locks`, `cat lock` and `unlock`.
+     */
+    private static function lockedRunner(): FakeProcessRunner
+    {
+        return (new FakeProcessRunner())->on('restic', static fn (Command $command): array => match ($command->argv[1]) {
+            'forget' => [11, '', self::fixture('locked-0.19.stderr')],
+            'list' => [0, str_repeat('6d287ce8', 8) . "\n", ''],
+            'cat' => [0, self::fixture('lock-0.19.json'), ''],
+            'unlock' => [0, "successfully removed 1 locks\n", ''],
+            default => [1, '', 'unexpected'],
+        });
+    }
+
+    private static function staleLocks(FakeProcessTable $processes, bool $arkhiveRunning = false): StaleLocks
+    {
+        return new StaleLocks($processes, new FixedClock(), 'host.example.com', static fn (): bool => $arkhiveRunning);
+    }
+
+    public function testALockLeftByADeadProcessOnThisHostIsNotWaitedFor(): void
+    {
+        $runner = self::lockedRunner();
+        $restic = new Restic(self::settings('/srv/restic-repo'), '/usr/bin/restic', $runner, staleLocks: self::staleLocks(new FakeProcessTable()));
+
+        try {
+            $restic->run(['forget', '--prune'], 'restic forget');
+            self::fail('expected a failure');
+        } catch (LockedException $e) {
+            self::assertSame('The restic repository is locked by PID 25983 on host.example.com by root (UID 0, GID 0), created at 2026-10-12 13:58:02 (1.554904747s ago): a stale lock from a dead process on this host (PID 25983 no longer exists)', $e->getMessage());
+            self::assertStringStartsWith("Nothing will release it. Remove it with: RESTIC_PASSWORD_FILE='/etc/arkhive/restic-password' restic -r '/srv/restic-repo' unlock", (string) $e->hint());
+            self::assertSame(ExitCode::TEMPORARY, $e->exitCode());
+            self::assertFalse($e->transient());
+            self::assertNull($e->unlock());
+        }
+        self::assertCount(1, $runner->commands, 'the locks are listed only to unlock');
+    }
+
+    public function testUnlockStaleRunsResticUnlockWithoutRemoveAll(): void
+    {
+        $runner = self::lockedRunner();
+        $settings = new ResticSettings('/srv/restic-repo', '/etc/arkhive/restic-password', unlockStale: true);
+        $restic = new Restic($settings, '/usr/bin/restic', $runner, staleLocks: self::staleLocks(new FakeProcessTable()));
+
+        try {
+            $restic->run(['forget', '--prune'], 'restic forget');
+            self::fail('expected a failure');
+        } catch (LockedException $e) {
+            $unlock = $e->unlock();
+            self::assertNotNull($unlock);
+            $unlock();
+        }
+
+        self::assertSame([
+            ['/usr/bin/restic', 'forget', '--prune'],
+            ['/usr/bin/restic', 'list', 'locks', '--no-lock'],
+            ['/usr/bin/restic', 'cat', 'lock', '--no-lock', '--', str_repeat('6d287ce8', 8)],
+            ['/usr/bin/restic', 'unlock'],
+        ], array_map(static fn (Command $command): array => $command->argv, $runner->commands));
+        $unlock = $runner->commands[3];
+        self::assertSame('/etc/arkhive/restic-password', $unlock->env['RESTIC_PASSWORD_FILE']);
+        self::assertSame(Restic::REACH_TIMEOUT, $unlock->timeout);
+    }
+
+    public function testALockThatMayBeAliveIsStillWaitedFor(): void
+    {
+        $alive = new Restic(self::settings('/srv/restic-repo'), '/usr/bin/restic', self::lockedRunner(), staleLocks: self::staleLocks(new FakeProcessTable([25983 => ProcessState::Running])));
+        $busy = new Restic(self::settings('/srv/restic-repo'), '/usr/bin/restic', self::lockedRunner(), staleLocks: self::staleLocks(new FakeProcessTable(), arkhiveRunning: true));
+        $unchecked = new Restic(self::settings('/srv/restic-repo'), '/usr/bin/restic', self::lockedRunner());
+
+        foreach ([$alive, $busy, $unchecked] as $restic) {
+            try {
+                $restic->run(['forget', '--prune'], 'restic forget');
+                self::fail('expected a failure');
+            } catch (LockedException $e) {
+                self::assertSame('The restic repository is locked by PID 25983 on host.example.com by root (UID 0, GID 0), created at 2026-10-12 13:58:02 (1.554904747s ago)', $e->getMessage());
+                self::assertTrue($e->transient());
+            }
+        }
     }
 }

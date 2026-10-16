@@ -1,0 +1,4 @@
+The index references 2 needed pack files which are missing from the repository:
+  94971f424cc5015378d7cee9fa221eabc53ac16f98463c573a8e9f041ed78e01
+  b2f99d3cf4d0b7b908f3882089673f4cab4a4216f90dd0470babbe798b406a0b
+{"message_type":"exit_error","code":1,"message":"Fatal: packs from index missing in repo"}

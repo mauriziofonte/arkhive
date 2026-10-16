@@ -178,7 +178,7 @@ final class DrillRunnerTest extends TestCase
         $report = $this->drill()->run($this->restic, $this->snapshot, 50, null, false, $this->log());
 
         self::assertFalse($report->passed());
-        self::assertSame(['the restore failed: restic restore (drill) failed (restic exit 1): Fatal: failed to restore: pack 9c44581e: ciphertext verification failed'], $report->failures);
+        self::assertSame(['the restore failed: restic restore (drill) failed: the repository /srv/restic-repo holds damaged data: Fatal: failed to restore: pack 9c44581e: ciphertext verification failed'], $report->failures);
         self::assertSame([], glob("{$this->root}/tmp/*"));
     }
 
