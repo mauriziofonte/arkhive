@@ -5,6 +5,11 @@
 set -eu
 
 . /etc/os-release
+if [ -d /etc/apt/apt.conf.d ]; then
+    # a mirror or the PPA answering 503 for a moment must not fail the matrix (distro-restic.sh
+    # runs apt-get in the same container afterwards)
+    echo 'Acquire::Retries "5";' > /etc/apt/apt.conf.d/80-retries
+fi
 case "$ID:${VERSION_ID:-}" in
     debian:11* | debian:12*)
         if [ "$VERSION_ID" = 11 ]; then
