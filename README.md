@@ -148,9 +148,9 @@ arkhive self-update --allow-major    # needed to cross a major version (read the
    # 1.x exclusion syntax, comma-separated (see "Exclusion patterns")
    EXCLUSION_PATTERNS="*/node_modules/*,*/vendor/*,*/.git/*,*/cache/*,*/tmp/*,*.log,*.swp"
 
-   # The restic repository, and how to reach it. ArkHive adds -o ServerAliveInterval=15
-   # -o ServerAliveCountMax=4 -o BatchMode=yes after "ssh" unless the command sets them: a server
-   # that stops answering fails the run within a minute instead of hanging it
+   # The restic repository, and how to reach it. ArkHive adds -o ConnectTimeout=30
+   # -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -o BatchMode=yes after "ssh" unless the
+   # command sets them: a server that stops answering fails the run instead of hanging it
    RESTIC_REPOSITORY="sftp:u123456@backup.example.com:arkhive"
    RESTIC_SFTP_COMMAND="ssh -p 23 -i /root/.ssh/arkhive u123456@backup.example.com -s sftp"
 
@@ -244,7 +244,7 @@ Syntax: one `KEY=value` per line, optionally prefixed by `export`. `'single quot
 | `BACKUP_PATHS` | yes | | Absolute paths to back up, space-separated; double quotes or a backslash keep spaces inside one path |
 | `RESTIC_REPOSITORY` | yes | | The restic repository, e.g. `sftp:u123456@backup.example.com:arkhive` or a local path |
 | `RESTIC_PASSWORD_FILE` | yes | | Absolute path of the repository password file. Refused if it is missing (except by `init`, which generates it), empty, a symbolic link or not a regular file, accessible by group or others in any way (mode `& 077`), not owned by the running user, or in a directory that group or others can write (unless the directory is sticky) or that belongs to another user than the running one or root |
-| `RESTIC_SFTP_COMMAND` | no | restic's own `ssh` call | Passed to restic as `-o sftp.command=...`, for a port or key, e.g. `ssh -p 23 -i /root/.ssh/arkhive u123456@backup.example.com -s sftp`. ArkHive adds `-o ServerAliveInterval=15 -o ServerAliveCountMax=4 -o BatchMode=yes` to restic's own `ssh` call for an `sftp:` repository, and right after `ssh` in this command for each of them it does not set (an explicit `-o` wins). A command that does not start with `ssh` (a wrapper script) is used as written, and `doctor` warns that it gets no keepalives: pass those options to the `ssh` it runs |
+| `RESTIC_SFTP_COMMAND` | no | restic's own `ssh` call | Passed to restic as `-o sftp.command=...`, for a port or key, e.g. `ssh -p 23 -i /root/.ssh/arkhive u123456@backup.example.com -s sftp`. ArkHive adds `-o ConnectTimeout=30 -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -o BatchMode=yes` to restic's own `ssh` call for an `sftp:` repository, and right after `ssh` in this command for each of them it does not set (an explicit `-o` wins). A command that does not start with `ssh` (a wrapper script) is used as written, and `doctor` warns that it gets no keepalives: pass those options to the `ssh` it runs. The keepalives only start once the SSH session is up; `ConnectTimeout` bounds the connection and the server's greeting, where a frozen server would otherwise hold `ssh` until it comes back |
 | `RESTIC_BINARY` | no | `restic` | A name searched in `PATH` and the standard directories, or a path; 0.11.0 or newer |
 | `RESTIC_HOST` | no | system hostname | Host name recorded in the snapshots; retention, `status` and `drill` follow it |
 | `RESTIC_COMPRESSION` | no | `auto` | `auto`, `max` or `off`; needs restic 0.14.0 or newer (`doctor` warns when it has no effect) |

@@ -365,10 +365,10 @@ final class DoctorTest extends TestCase
 
         $checks = $this->diagnose(null, $settings("{$wrapper} -o BatchMode=yes backup@backup.example.com"));
         self::assertSame(CheckStatus::Warning, $checks['SSH']->status);
-        self::assertSame("{$wrapper}, with this user's default keys (~/.ssh) and ssh_config; RESTIC_SFTP_COMMAND does not start with ssh, so ArkHive cannot add -o ServerAliveInterval=15 -o ServerAliveCountMax=4: a server that stops answering would hang the run", $checks['SSH']->message);
-        self::assertSame('Start RESTIC_SFTP_COMMAND with ssh, or pass -o ServerAliveInterval=15 -o ServerAliveCountMax=4 to the ssh your command runs', $checks['SSH']->hint);
+        self::assertSame("{$wrapper}, with this user's default keys (~/.ssh) and ssh_config; RESTIC_SFTP_COMMAND does not start with ssh, so ArkHive cannot add -o ConnectTimeout=30 -o ServerAliveInterval=15 -o ServerAliveCountMax=4: a server that stops answering would hang the run", $checks['SSH']->message);
+        self::assertSame('Start RESTIC_SFTP_COMMAND with ssh, or pass -o ConnectTimeout=30 -o ServerAliveInterval=15 -o ServerAliveCountMax=4 to the ssh your command runs', $checks['SSH']->hint);
 
-        $checks = $this->diagnose(null, $settings("{$wrapper} -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -o BatchMode=yes backup@backup.example.com"));
+        $checks = $this->diagnose(null, $settings("{$wrapper} -o ConnectTimeout=30 -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -o BatchMode=yes backup@backup.example.com"));
         self::assertSame(CheckStatus::Ok, $checks['SSH']->status, 'a wrapper that passes them all on is fine');
 
         $checks = $this->diagnose(null, $settings('ssh -p 23 backup@backup.example.com -s sftp'));

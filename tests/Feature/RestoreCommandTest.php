@@ -107,7 +107,7 @@ final class RestoreCommandTest extends TestCase
         $command = $this->runner->commands[1];
         self::assertSame('sftp:backup@backup.example.com:/restic', $command->env['RESTIC_REPOSITORY']);
         self::assertSame("{$this->dir}/password", $command->env['RESTIC_PASSWORD_FILE']);
-        self::assertContains('sftp.command=ssh -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -o BatchMode=yes -p 2222 backup@backup.example.com -s sftp', $command->argv);
+        self::assertContains('sftp.command=ssh -o ConnectTimeout=30 -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -o BatchMode=yes -p 2222 backup@backup.example.com -s sftp', $command->argv);
         self::assertFileExists("{$this->dir}/out/srv/www/site/index.php");
     }
 

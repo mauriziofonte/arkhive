@@ -80,7 +80,7 @@ final class SftpTest extends CompatTestCase
         $calls = array_values(array_filter(explode("\n", self::log($dir))));
         self::assertNotSame([], $calls, 'restic ran ssh');
         foreach ($calls as $call) {
-            self::assertStringContainsString('-o ServerAliveInterval=15 -o ServerAliveCountMax=4 -o BatchMode=yes', $call);
+            self::assertStringContainsString('-o ConnectTimeout=30 -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -o BatchMode=yes', $call);
             self::assertStringContainsString("-p {$port}", $call);
             self::assertStringContainsString('127.0.0.1', $call);
             self::assertStringContainsString('-s sftp', $call);

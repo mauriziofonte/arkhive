@@ -197,7 +197,7 @@ final class ResticTest extends TestCase
         $restic = new Restic(self::settings(), '/usr/bin/restic', self::versionRunner('0.16.1'));
         $command = $restic->command(['snapshots', '--json'], ['RESTIC_PROGRESS_FPS' => '2']);
 
-        self::assertSame(['/usr/bin/restic', '--option', 'sftp.args=-o ServerAliveInterval=15 -o ServerAliveCountMax=4 -o BatchMode=yes', 'snapshots', '--json'], $command->argv);
+        self::assertSame(['/usr/bin/restic', '--option', 'sftp.args=-o ConnectTimeout=30 -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -o BatchMode=yes', 'snapshots', '--json'], $command->argv);
         self::assertSame([
             'RESTIC_REPOSITORY' => 'sftp:backup-user@backup.example.com:/restic',
             'RESTIC_PASSWORD_FILE' => '/etc/arkhive/restic-password',
@@ -208,7 +208,7 @@ final class ResticTest extends TestCase
         ], $command->env);
 
         $custom = new Restic(self::settings(sftpCommand: 'ssh -i /root/.ssh/arkhive_backup -p 23 backup-user@backup.example.com -s sftp'), '/usr/bin/restic', new FakeProcessRunner());
-        self::assertSame(['/usr/bin/restic', '--option', 'sftp.command=ssh -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -o BatchMode=yes -i /root/.ssh/arkhive_backup -p 23 backup-user@backup.example.com -s sftp', 'cat', 'config'], $custom->command(['cat', 'config'])->argv, 'the keepalives are added to a custom command too');
+        self::assertSame(['/usr/bin/restic', '--option', 'sftp.command=ssh -o ConnectTimeout=30 -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -o BatchMode=yes -i /root/.ssh/arkhive_backup -p 23 backup-user@backup.example.com -s sftp', 'cat', 'config'], $custom->command(['cat', 'config'])->argv, 'the keepalives are added to a custom command too');
 
         $wrapper = new Restic(self::settings(sftpCommand: '/usr/local/bin/box-ssh backup-user@backup.example.com'), '/usr/bin/restic', new FakeProcessRunner());
         self::assertSame(['/usr/bin/restic', '--option', 'sftp.command=/usr/local/bin/box-ssh backup-user@backup.example.com', 'cat', 'config'], $wrapper->command(['cat', 'config'])->argv, 'a wrapper is left as written');
@@ -309,7 +309,7 @@ final class ResticTest extends TestCase
      */
     public static function sftpBeforeArgs(): iterable
     {
-        $keepalive = 'ssh -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -o BatchMode=yes';
+        $keepalive = 'ssh -o ConnectTimeout=30 -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -o BatchMode=yes';
         yield 'scp-like' => ['0.16.0', 'sftp:backup-user@backup.example.com:/restic', "{$keepalive} -l backup-user backup.example.com -s sftp"];
         yield 'URL with port' => ['0.14.0', 'sftp://backup-user@backup.example.com:2222//restic', "{$keepalive} -p 2222 -l backup-user backup.example.com -s sftp"];
         yield 'no user' => ['0.11.0', 'sftp:backup.example.com:restic', "{$keepalive} backup.example.com -s sftp"];

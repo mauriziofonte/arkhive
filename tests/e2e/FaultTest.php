@@ -10,8 +10,8 @@ use Mfonte\Arkhive\ExitCode;
 use Tests\Support\CliResult;
 
 /**
- * spec §13.6 fault injection: the SFTP server frozen mid-backup and mid-restore, a full repository
- * disk, a clock that jumped, a dump server that is down. Each case ends with a precise error, no
+ * spec §13.6 fault injection: the SFTP server frozen before and during a backup and mid-restore, a
+ * full repository disk, a clock that jumped, a dump server that is down. Each case ends with a precise error, no
  * snapshot counted as a success, no leftover temporary data and the lock released. (The corrupted
  * pack is OperationsTest::testACorruptedPackFailsTheDrillAndMaintain.)
  */
@@ -98,6 +98,43 @@ final class FaultTest extends E2eTestCase
         self::assertLessThan(150, microtime(true) - $begin, 'failed by the keepalives (15 s x 4), not by the end of the freeze');
         $this->assertCleanAfterFailure();
         self::assertSame([], $this->snapshots(), 'no snapshot from the interrupted upload');
+    }
+
+    /**
+     * A server frozen before the run: the TCP connection opens but the SSH greeting never comes, and
+     * the keepalives only start after it. ConnectTimeout=30 (added by ArkHive) fails each attempt to
+     * open the repository instead of holding the run until the server is back.
+     */
+    public function testTheSftpServerFrozenBeforeTheBackupStarts(): void
+    {
+        $this->needsPause();
+        $this->arkhiveInit($this->dir, $this->repository, $this->sftpCommand);
+        self::assertStringNotContainsString('ConnectTimeout', $this->sftpCommand);
+
+        $begin = microtime(true);
+        $result = $this->whilePaused(function (): CliResult {
+            $started = self::startArkhive(['backup', '--config', $this->config()], $this->runEnv());
+            $exit = null;
+            $ended = self::waitFor(static function () use ($started, &$exit): bool {
+                $status = proc_get_status($started[0]);
+                $exit = $status['exitcode'];
+
+                return !$status['running'];
+            }, 280);
+            if (!$ended) {
+                proc_terminate($started[0], 9);
+                self::finish($started);
+                self::fail('the backup still hung 280 s after it started against a frozen server');
+            }
+            $output = self::finish($started);
+
+            return new CliResult((int) $exit, $output->stdout, $output->stderr);
+        });
+
+        self::assertSame(ExitCode::UNAVAILABLE, $result->exitCode, $result->output());
+        self::assertLessThan(250, microtime(true) - $begin, 'three attempts bounded by ConnectTimeout (30 s each), not by the end of the freeze');
+        $this->assertCleanAfterFailure();
+        self::assertSame([], $this->snapshots());
     }
 
     public function testTheSftpServerFrozenMidRestore(): void

@@ -46,8 +46,8 @@ final class Restic implements SnapshotStore
     /** the restic of Debian 11 (docs/2.1-PLAN.md §3) */
     public const MINIMUM_VERSION = ResticCapabilities::MINIMUM;
 
-    /** keepalives so that a server that stops answering fails the run instead of hanging it (SftpCommand::OPTIONS) */
-    public const SFTP_ARGS = '-o ServerAliveInterval=15 -o ServerAliveCountMax=4 -o BatchMode=yes';
+    /** connect timeout and keepalives so that a server that stops answering fails the run instead of hanging it (SftpCommand::OPTIONS) */
+    public const SFTP_ARGS = '-o ConnectTimeout=30 -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -o BatchMode=yes';
 
     /** seconds allowed for the reachability check and the other metadata reads */
     public const REACH_TIMEOUT = Timeouts::REPOSITORY;
